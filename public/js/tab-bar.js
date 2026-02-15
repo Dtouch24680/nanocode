@@ -1,11 +1,13 @@
 /**
- * Tab bar — switches between Tasks and Terminal views.
+ * Tab bar — switches between Tasks, Terminal, and Settings views.
  * Lazy-initializes the terminal view on first visit.
  */
 
 import { state } from './state.js'
 
 let _onTabSwitch = null
+
+const tabs = ['tasks', 'terminal', 'settings']
 
 /**
  * Initialize the tab bar.
@@ -14,20 +16,18 @@ let _onTabSwitch = null
 export function initTabBar(onTabSwitch) {
   _onTabSwitch = onTabSwitch
 
-  const tasksBtn = document.getElementById('tab-tasks')
-  const terminalBtn = document.getElementById('tab-terminal')
+  for (const tab of tabs) {
+    const btn = document.getElementById(`tab-${tab}`)
+    if (btn) btn.addEventListener('click', () => switchTab(tab))
+  }
 
-  tasksBtn.addEventListener('click', () => switchTab('tasks'))
-  terminalBtn.addEventListener('click', () => switchTab('terminal'))
-
-  // Keyboard shortcuts: Cmd/Ctrl+1 → tasks, Cmd/Ctrl+2 → terminal
+  // Keyboard shortcuts: Cmd/Ctrl+1 → tasks, Cmd/Ctrl+2 → terminal, Cmd/Ctrl+3 → settings
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === '1') {
+    if (!(e.metaKey || e.ctrlKey)) return
+    const idx = parseInt(e.key, 10) - 1
+    if (idx >= 0 && idx < tabs.length) {
       e.preventDefault()
-      switchTab('tasks')
-    } else if ((e.metaKey || e.ctrlKey) && e.key === '2') {
-      e.preventDefault()
-      switchTab('terminal')
+      switchTab(tabs[idx])
     }
   })
 }
@@ -35,15 +35,12 @@ export function initTabBar(onTabSwitch) {
 export function switchTab(tab) {
   state.activeTab = tab
 
-  const tasksBtn = document.getElementById('tab-tasks')
-  const terminalBtn = document.getElementById('tab-terminal')
-  const tasksTab = document.getElementById('tasks-tab')
-  const terminalTab = document.getElementById('terminal-tab')
-
-  tasksBtn.classList.toggle('active', tab === 'tasks')
-  terminalBtn.classList.toggle('active', tab === 'terminal')
-  tasksTab.hidden = tab !== 'tasks'
-  terminalTab.hidden = tab !== 'terminal'
+  for (const t of tabs) {
+    const btn = document.getElementById(`tab-${t}`)
+    const content = document.getElementById(`${t}-tab`)
+    if (btn) btn.classList.toggle('active', t === tab)
+    if (content) content.hidden = t !== tab
+  }
 
   if (_onTabSwitch) _onTabSwitch(tab)
 }

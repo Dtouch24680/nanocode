@@ -46,6 +46,7 @@
       <div class="tab-bar" id="tab-bar">
         <button class="tab-btn active" data-tab="tasks" id="tab-tasks">Tasks</button>
         <button class="tab-btn" data-tab="terminal" id="tab-terminal">Terminal</button>
+        <button class="tab-btn" data-tab="settings" id="tab-settings">Settings</button>
       </div>
 
       <!-- Tasks tab -->
@@ -84,6 +85,26 @@
             <div class="column-cards" id="col-done"></div>
           </div>
         </section>
+      </div>
+
+      <!-- Settings tab -->
+      <div class="tab-content" id="settings-tab" hidden>
+        <div class="settings-container">
+          <h2 class="settings-heading">Settings</h2>
+          <section class="settings-section">
+            <h3 class="settings-section-title">Slack Notifications</h3>
+            <p class="settings-desc">Receive Slack messages when tasks complete, fail, or need review.</p>
+            <label class="settings-label">
+              Webhook URL
+              <input type="url" id="slack-webhook-url" class="settings-input" placeholder="https://hooks.slack.com/services/..." autocomplete="off" spellcheck="false">
+            </label>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-primary" id="slack-save-btn">Save</button>
+              <button type="button" class="btn" id="slack-test-btn">Send Test</button>
+              <span class="settings-status" id="slack-status"></span>
+            </div>
+          </section>
+        </div>
       </div>
 
       <!-- Terminal tab -->

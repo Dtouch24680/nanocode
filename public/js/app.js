@@ -15,6 +15,7 @@ import { initForm } from './task-form.js'
 import { initSidebar, renderSidebar } from './sidebar.js'
 import { initTabBar, switchTab } from './tab-bar.js'
 import { initTerminalView, switchTerminalProject, fitTerminals, isInitialized } from './terminal-view.js'
+import { loadSettings } from './settings.js'
 
 async function init() {
   // Initialize form
@@ -102,12 +103,12 @@ async function onProjectSwitch(projectId) {
 function onTabSwitch(tab) {
   if (tab === 'terminal') {
     if (!isInitialized()) {
-      // Lazy-init terminal on first visit
       initTerminalView(state.activeProjectId)
     } else {
-      // Re-fit terminals when tab becomes visible
       fitTerminals()
     }
+  } else if (tab === 'settings') {
+    loadSettings()
   }
 }
 

@@ -88,6 +88,23 @@ export function isInitialized() {
   return initialized
 }
 
+/**
+ * Open a new Claude session in the terminal view.
+ * Creates a fresh session and switches to it.
+ */
+export function openNewClaudeSession() {
+  if (!initialized) return
+  const newId = 'new-' + newSessionCounter++
+  activeSessionId = newId
+  if (claudePane) claudePane.switchSession(newId)
+  if (currentProjectId) {
+    fetchRunningSessions(currentProjectId).then(running => {
+      runningSessions = running
+      renderSessionTabs()
+    }).catch(() => {})
+  }
+}
+
 // --- Internal functions ---
 
 function createPanes(projectId) {

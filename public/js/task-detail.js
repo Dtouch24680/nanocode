@@ -12,6 +12,7 @@ import { state, selectTask } from './state.js'
 import { updateTask, fetchEvents } from './api.js'
 import { send } from './ws.js'
 import { switchTab } from './tab-bar.js'
+import { openNewClaudeSession, isInitialized } from './terminal-view.js'
 
 const panel = document.getElementById('detail-panel')
 const titleEl = document.getElementById('detail-title')
@@ -117,6 +118,10 @@ export async function renderDetail() {
       onClick: () => {
         selectTask(null)
         switchTab('terminal')
+        // Open a new Claude session after switching to terminal tab
+        if (isInitialized()) {
+          openNewClaudeSession()
+        }
       },
     }))
   }
