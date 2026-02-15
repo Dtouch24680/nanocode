@@ -8,6 +8,7 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { notify } from '../terminal/slack.js'
 
 /** Tools that are safe to auto-approve (read-only). */
 const READ_ONLY_TOOLS = new Set([
@@ -330,6 +331,13 @@ export class Worker {
       type: 'task:updated',
       task: this.store.getTask(this.task.id),
     })
+
+    const cost = this.costUsd > 0 ? ` · $${this.costUsd.toFixed(2)}` : ''
+    if (isPlan) {
+      notify(`*Plan ready for review*\n${this.task.title}${cost}`)
+    } else {
+      notify(`*Task completed*\n${this.task.title}${cost}`)
+    }
   }
 
   /**
@@ -357,6 +365,8 @@ export class Worker {
       type: 'task:updated',
       task: this.store.getTask(this.task.id),
     })
+
+    notify(`*Task failed*\n${this.task.title}\n${err.message}`)
   }
 
   /**

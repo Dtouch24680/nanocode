@@ -1,9 +1,11 @@
 /**
  * Task creation form handler.
+ * Uses the active project's cwd automatically.
  *
  * Architecture: docs/architecture.md#rest-task-crud
  */
 
+import { state } from './state.js'
 import { createTask } from './api.js'
 
 /**
@@ -16,16 +18,21 @@ export function initForm() {
     e.preventDefault()
 
     const title = document.getElementById('task-title').value.trim()
-    const cwd = document.getElementById('task-cwd').value.trim()
     const type = document.getElementById('task-type').value
     const dependsOn =
       document.getElementById('task-depends').value.trim() || undefined
 
-    if (!title || !cwd) return
+    if (!title) return
+
+    const body = { title, type, dependsOn }
+
+    // Use active project's ID (cwd resolved server-side)
+    if (state.activeProjectId) {
+      body.projectId = state.activeProjectId
+    }
 
     try {
-      await createTask({ title, cwd, type, dependsOn })
-      // Clear form on success
+      await createTask(body)
       document.getElementById('task-title').value = ''
       document.getElementById('task-depends').value = ''
     } catch (err) {

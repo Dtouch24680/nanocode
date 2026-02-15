@@ -1,5 +1,5 @@
 /**
- * WebSocket connection with auto-reconnect.
+ * WebSocket connection for task events with auto-reconnect.
  *
  * Architecture: public/docs/state-management.md#websocket
  */
@@ -10,17 +10,16 @@ let ws = null
 let reconnectTimer = null
 
 /**
- * Connect to the WebSocket server.
- *
- * @param {string} url — ws:// or wss:// URL
+ * Connect to the codebuilder WebSocket server at /ws.
  */
-export function connect(url) {
+export function connect() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
 
-  ws = new WebSocket(url)
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  ws = new WebSocket(`${protocol}//${location.host}/ws`)
 
   ws.addEventListener('open', () => {
     const el = document.getElementById('connection-status')
@@ -47,7 +46,7 @@ export function connect(url) {
     const el = document.getElementById('connection-status')
     el.textContent = 'Disconnected'
     el.classList.remove('connected')
-    reconnectTimer = setTimeout(() => connect(url), 2000)
+    reconnectTimer = setTimeout(() => connect(), 2000)
   })
 }
 

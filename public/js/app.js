@@ -1,30 +1,66 @@
 /**
  * Application entry point.
  *
- * Initializes state from REST API, connects WebSocket, sets up form.
+ * Loads projects, selects active project, initializes sidebar + tabs,
+ * connects WebSocket, and wires up both task and terminal views.
  *
  * Architecture: public/docs/state-management.md#initial-load
  */
 
 import { state } from './state.js'
 import { connect } from './ws.js'
-import { fetchTasks, fetchEvents } from './api.js'
+import { fetchProjects, fetchTasks, fetchEvents } from './api.js'
 import { renderBoard } from './task-board.js'
 import { initForm } from './task-form.js'
+import { initSidebar, renderSidebar } from './sidebar.js'
+import { initTabBar, switchTab } from './tab-bar.js'
+import { initTerminalView, switchTerminalProject, fitTerminals, isInitialized } from './terminal-view.js'
 
 async function init() {
   // Initialize form
   initForm()
 
-  // Load initial tasks
+  // Load projects
   try {
-    state.tasks = await fetchTasks()
+    state.projects = await fetchProjects()
+  } catch (err) {
+    console.error('Failed to load projects:', err.message)
+    state.projects = []
+  }
+
+  // Restore or pick active project
+  const lastId = localStorage.getItem('activeProjectId')
+  state.activeProjectId =
+    lastId && state.projects.some((p) => p.id === lastId)
+      ? lastId
+      : state.projects[0]?.id ?? null
+
+  // Initialize sidebar
+  initSidebar(onProjectSwitch)
+  renderSidebar()
+
+  // Initialize tab bar
+  initTabBar(onTabSwitch)
+
+  // Load tasks for active project
+  await loadTasks()
+
+  // Connect codebuilder WebSocket
+  connect()
+}
+
+/**
+ * Load tasks for the active project and render the board.
+ */
+async function loadTasks() {
+  try {
+    state.tasks = await fetchTasks(state.activeProjectId)
   } catch (err) {
     console.error('Failed to load tasks:', err.message)
     state.tasks = []
   }
 
-  // Fetch events for running tasks (to replay on detail open)
+  // Fetch events for running tasks
   for (const task of state.tasks) {
     if (task.status === 'running') {
       try {
@@ -36,17 +72,42 @@ async function init() {
     }
   }
 
-  // Render initial board
   renderBoard()
+}
 
-  // Connect WebSocket
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  connect(`${protocol}//${location.host}`)
+/**
+ * Called when the user switches projects in the sidebar.
+ */
+async function onProjectSwitch(projectId) {
+  state.activeProjectId = projectId
+  state.selectedTaskId = null
+  state.events.clear()
 
-  // Set default cwd to current page URL hint (or empty)
-  const cwdInput = document.getElementById('task-cwd')
-  if (!cwdInput.value) {
-    cwdInput.value = '/storage/home/syzs/codebuilder'
+  // Hide panels
+  document.getElementById('detail-panel').hidden = true
+  document.getElementById('plan-review-panel').hidden = true
+
+  // Reload tasks for new project
+  await loadTasks()
+
+  // Update terminal if initialized
+  if (isInitialized()) {
+    switchTerminalProject(projectId)
+  }
+}
+
+/**
+ * Called when the user switches tabs.
+ */
+function onTabSwitch(tab) {
+  if (tab === 'terminal') {
+    if (!isInitialized()) {
+      // Lazy-init terminal on first visit
+      initTerminalView(state.activeProjectId)
+    } else {
+      // Re-fit terminals when tab becomes visible
+      fitTerminals()
+    }
   }
 }
 

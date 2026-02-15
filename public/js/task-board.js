@@ -1,5 +1,5 @@
 /**
- * Renders the kanban board with 4 columns.
+ * Renders the kanban board with 4 columns, filtered by active project.
  *
  * Architecture: public/docs/state-management.md#board-rendering
  */
@@ -15,18 +15,22 @@ const STATUS_COLUMNS = {
 }
 
 /**
- * Render all tasks into their respective kanban columns.
+ * Render tasks into their respective kanban columns.
+ * Filters to active project (shows legacy tasks without project_id in all projects).
  *
  * Architecture: public/docs/state-management.md#board-rendering
  */
 export function renderBoard() {
-  // Clear all columns
   for (const colId of Object.values(STATUS_COLUMNS)) {
     document.getElementById(colId).innerHTML = ''
   }
 
+  const projectId = state.activeProjectId
+
   for (const task of state.tasks) {
-    // Map failed/cancelled to the done column
+    // Filter by project: show tasks matching active project or legacy tasks without project_id
+    if (projectId && task.project_id && task.project_id !== projectId) continue
+
     const col =
       task.status === 'failed' || task.status === 'cancelled'
         ? 'done'

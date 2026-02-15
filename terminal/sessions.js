@@ -3,6 +3,7 @@
  */
 
 import pty from 'node-pty'
+import { notify } from './slack.js'
 
 const OUTPUT_FLUSH_MS = 12
 const SCROLLBACK_SIZE = 100 * 1024 // 100KB
@@ -85,6 +86,13 @@ class Session {
       const msg = JSON.stringify({ type: 'exit', exitCode, signal })
       for (const ws of this._clients) {
         if (ws.readyState === 1) ws.send(msg)
+      }
+      // Slack notification for claude sessions
+      if (this._key.includes(':claude:')) {
+        const label = this._key.split(':claude:')[1] || 'unknown'
+        const project = this._key.split(':')[0]
+        const status = exitCode === 0 ? 'completed' : `exited (code ${exitCode})`
+        notify(`*Claude session ${status}*\nProject: ${project}\nSession: ${label}`)
       }
     })
   }

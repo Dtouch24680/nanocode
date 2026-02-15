@@ -11,6 +11,7 @@ import { el, md, formatCost, timeAgo } from './render.js'
 import { state, selectTask } from './state.js'
 import { updateTask, fetchEvents } from './api.js'
 import { send } from './ws.js'
+import { switchTab } from './tab-bar.js'
 
 const panel = document.getElementById('detail-panel')
 const titleEl = document.getElementById('detail-title')
@@ -93,6 +94,31 @@ export async function renderDetail() {
       },
     })
     actionsEl.appendChild(cancelBtn)
+  }
+
+  if (task.status === 'failed') {
+    actionsEl.appendChild(el('button', {
+      className: 'btn btn-primary',
+      textContent: 'Retry',
+      onClick: async () => {
+        try {
+          await updateTask(task.id, { status: 'pending' })
+        } catch (err) {
+          console.error('Retry failed:', err.message)
+        }
+      },
+    }))
+  }
+
+  if (task.status === 'done' || task.status === 'failed' || task.status === 'cancelled') {
+    actionsEl.appendChild(el('button', {
+      className: 'btn',
+      textContent: 'Open in Terminal',
+      onClick: () => {
+        selectTask(null)
+        switchTab('terminal')
+      },
+    }))
   }
 }
 

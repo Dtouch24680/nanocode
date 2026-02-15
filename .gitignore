@@ -6,3 +6,4 @@ data/
 .DS_Store
 .claude/
 terminal/projects.json
+terminal/slack-settings.json

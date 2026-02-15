@@ -10,8 +10,12 @@
 import { renderBoard } from './task-board.js'
 import { renderDetail, appendEventToStream } from './task-detail.js'
 import { showPlanReview } from './plan-review.js'
+import { renderSidebar } from './sidebar.js'
 
 export const state = {
+  projects: [],
+  activeProjectId: null,
+  activeTab: 'tasks', // 'tasks' | 'terminal'
   tasks: [],
   events: new Map(),
   selectedTaskId: null,
@@ -28,6 +32,7 @@ export function taskUpdated(task) {
   else state.tasks.push(task)
 
   renderBoard()
+  renderSidebar()
 
   if (task.id === state.selectedTaskId) {
     if (task.status === 'review') {
@@ -65,7 +70,6 @@ export function selectTask(taskId) {
       renderDetail()
     }
   } else {
-    // Hide panels
     document.getElementById('detail-panel').hidden = true
     document.getElementById('plan-review-panel').hidden = true
   }
