@@ -9,7 +9,7 @@
 
 import { state } from './state.js'
 import { connect } from './ws.js'
-import { fetchProjects, fetchTasks, fetchEvents } from './api.js'
+import { fetchProjects, fetchTasks, fetchEvents, fetchSettings } from './api.js'
 import { renderBoard } from './task-board.js'
 import { initForm } from './task-form.js'
 import { initSidebar, renderSidebar } from './sidebar.js'
@@ -45,6 +45,14 @@ async function init() {
 
   // Load tasks for active project
   await loadTasks()
+
+  // Load app settings (CLI provider, etc.)
+  try {
+    const settings = await fetchSettings()
+    if (settings.cli_provider) state.cliProvider = settings.cli_provider
+  } catch {
+    // non-critical, defaults to 'claude'
+  }
 
   // Connect codebuilder WebSocket
   connect()

@@ -61,6 +61,7 @@ export class TerminalPane {
     this.projectId = opts.projectId
     this.sessionType = opts.sessionType
     this.claudeSessionId = opts.claudeSessionId ?? ''
+    this.cliProvider = opts.cliProvider || 'claude'
     this.onStatusChange = opts.onStatusChange || (() => {})
 
     this._ws = null
@@ -118,6 +119,12 @@ export class TerminalPane {
 
     // Terminal input → WS (with local echo when enabled — instant feedback on high latency)
     this._dataDisposable = this.term.onData((data) => {
+      // Filter out focus report sequences (CSI I / CSI O). xterm.js emits these
+      // via onData when a program enables focus tracking mode (DECSET 1004) and
+      // the terminal gains or loses focus. Forwarding them to the PTY causes
+      // literal "[I" / "[O" to appear when clicking outside the terminal region.
+      if (data === '\x1b[I' || data === '\x1b[O') return
+
       if (this._exited) {
         if (data === '\r') {
           const { cols, rows } = this._dimensions()
@@ -237,6 +244,7 @@ export class TerminalPane {
         projectId: this.projectId,
         sessionType: this.sessionType,
         claudeSessionId: this.claudeSessionId,
+        cliProvider: this.cliProvider,
         cols,
         rows,
       })

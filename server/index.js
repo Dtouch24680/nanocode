@@ -22,6 +22,7 @@ import {
   UpdateTaskSchema,
   ConfirmPlanSchema,
   RevisePlanSchema,
+  ContinueTaskSchema,
   WsClientMessageSchema,
 } from './validation.js'
 
@@ -53,6 +54,7 @@ const store = getStore()
 // Migrate projects from terminal/projects.json -> SQLite (one-time)
 store.migrateProjectsJson(path.join(root, 'terminal', 'projects.json'))
 store.ensureStarterProject()
+store.importClaudeSessions()
 
 // --- Terminal routes (projects, sessions, slack, fs) ---
 
@@ -165,7 +167,12 @@ app.post('/api/tasks/:id/confirm', (req, res) => {
     cwd: task.cwd,
     projectId: task.project_id || null,
   })
-  store.updateTask(execTask.id, { feedback: task.plan_result })
+  const execUpdates = { feedback: task.plan_result }
+  // Bridge plan session → execution task so execution resumes with full context
+  if (task.session_id) {
+    execUpdates.resume_session_id = task.session_id
+  }
+  store.updateTask(execTask.id, execUpdates)
   const finalExecTask = store.getTask(execTask.id)
 
   broadcast({ type: 'task:updated', task: finalExecTask })
@@ -194,11 +201,61 @@ app.post('/api/tasks/:id/revise', (req, res) => {
   res.json(updated)
 })
 
+app.post('/api/tasks/:id/continue', (req, res) => {
+  const parent = store.getTask(req.params.id)
+  if (!parent) return res.status(404).json({ error: 'Task not found' })
+  if (!['done', 'failed'].includes(parent.status)) {
+    return res.status(400).json({ error: 'Can only continue done or failed tasks' })
+  }
+  if (!parent.session_id) {
+    return res.status(400).json({ error: 'Parent task has no session_id to resume' })
+  }
+
+  const result = ContinueTaskSchema.safeParse(req.body)
+  if (!result.success) {
+    return res.status(400).json({ error: result.error.flatten() })
+  }
+
+  const task = store.createTask({
+    title: result.data.title,
+    type: result.data.type,
+    cwd: parent.cwd,
+    projectId: parent.project_id || null,
+  })
+  store.updateTask(task.id, { resume_session_id: parent.session_id })
+  const finalTask = store.getTask(task.id)
+
+  broadcast({ type: 'task:updated', task: finalTask })
+  schedulerTick()
+  res.status(201).json(finalTask)
+})
+
 app.get('/api/tasks/:id/events', (req, res) => {
   const task = store.getTask(req.params.id)
   if (!task) return res.status(404).json({ error: 'Task not found' })
   const afterId = parseInt(req.query.after) || 0
   res.json(store.getEvents(task.id, afterId))
+})
+
+// --- REST: Settings ---
+
+const VALID_CLI_PROVIDERS = new Set(['claude', 'agent'])
+
+app.get('/api/settings', (_req, res) => {
+  res.json(store.getAllSettings())
+})
+
+app.put('/api/settings', (req, res) => {
+  const { key, value } = req.body || {}
+  if (!key || value === undefined) {
+    return res.status(400).json({ error: 'key and value required' })
+  }
+  if (key === 'cli_provider' && !VALID_CLI_PROVIDERS.has(value)) {
+    return res.status(400).json({ error: `Invalid cli_provider: ${value}` })
+  }
+  store.setSetting(key, value)
+  broadcast({ type: 'settings:updated', key, value })
+  res.json({ ok: true })
 })
 
 // --- HTTP Server ---

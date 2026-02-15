@@ -87,12 +87,17 @@ class Session {
       for (const ws of this._clients) {
         if (ws.readyState === 1) ws.send(msg)
       }
-      // Slack notification for claude sessions
-      if (this._key.includes(':claude:')) {
-        const label = this._key.split(':claude:')[1] || 'unknown'
-        const project = this._key.split(':')[0]
-        const status = exitCode === 0 ? 'completed' : `exited (code ${exitCode})`
-        notify(`*Claude session ${status}*\nProject: ${project}\nSession: ${label}`)
+      // Slack notification for CLI sessions (claude or cursor)
+      for (const p of CLI_PROVIDERS) {
+        const marker = `:${p}:`
+        if (this._key.includes(marker)) {
+          const label = this._key.split(marker)[1] || 'unknown'
+          const project = this._key.split(':')[0]
+          const providerName = p.charAt(0).toUpperCase() + p.slice(1)
+          const status = exitCode === 0 ? 'completed' : `exited (code ${exitCode})`
+          notify(`*${providerName} session ${status}*\nProject: ${project}\nSession: ${label}`)
+          break
+        }
       }
     })
   }
@@ -233,21 +238,35 @@ export function get(sessionKey) {
   return sessions.get(sessionKey) ?? null
 }
 
+/** CLI provider prefixes used for session keys */
+const CLI_PROVIDERS = ['claude', 'agent']
+
 /**
- * List active claude session IDs for a project.
- * Scans the sessions Map for keys matching `projectId:claude:*`.
+ * List active CLI session IDs for a project.
+ * Scans the sessions Map for keys matching `projectId:<provider>:*`.
  * @param {string} projectId
- * @returns {string[]} array of session ID strings (claude session IDs or new-N keys)
+ * @param {string} [provider] — if omitted, lists sessions for all CLI providers
+ * @returns {string[]} array of session ID strings
  */
-export function listClaudeSessions(projectId) {
-  const prefix = `${projectId}:claude:`
+export function listCliSessions(projectId, provider) {
+  const prefixes = provider
+    ? [`${projectId}:${provider}:`]
+    : CLI_PROVIDERS.map(p => `${projectId}:${p}:`)
   const ids = []
   for (const key of sessions.keys()) {
-    if (key.startsWith(prefix)) {
-      ids.push(key.slice(prefix.length))
+    for (const prefix of prefixes) {
+      if (key.startsWith(prefix)) {
+        ids.push(key.slice(prefix.length))
+        break
+      }
     }
   }
   return ids
+}
+
+/** @deprecated Use listCliSessions instead */
+export function listClaudeSessions(projectId) {
+  return listCliSessions(projectId)
 }
 
 /**
@@ -266,14 +285,21 @@ export function destroySession(sessionKey) {
 }
 
 /**
- * Destroy all sessions for a project (bash + all claude sessions).
+ * Destroy all sessions for a project (bash + all CLI provider sessions).
  * @param {string} projectId
  */
 export function destroySessions(projectId) {
   const toDelete = []
   for (const key of sessions.keys()) {
-    if (key === `${projectId}:bash` || key.startsWith(`${projectId}:claude:`)) {
+    if (key === `${projectId}:bash`) {
       toDelete.push(key)
+      continue
+    }
+    for (const p of CLI_PROVIDERS) {
+      if (key.startsWith(`${projectId}:${p}:`)) {
+        toDelete.push(key)
+        break
+      }
     }
   }
   for (const key of toDelete) {

@@ -21,14 +21,6 @@ const READ_ONLY_TOOLS = new Set([
   'Task',
 ])
 
-/** Tools that plan tasks must never use (write operations). */
-const PLAN_DENY_TOOLS = new Set([
-  'Write',
-  'Edit',
-  'Bash',
-  'NotebookEdit',
-])
-
 /** Default timeout for waiting on UI approval (under SDK's 60s limit). */
 const APPROVAL_TIMEOUT_MS = 55_000
 
@@ -93,6 +85,7 @@ export class Worker {
    */
   _buildPrompt() {
     const parts = []
+    const isResume = !!this.task.resume_session_id
 
     if (this.task.type === 'plan') {
       parts.push(
@@ -103,8 +96,10 @@ export class Worker {
       )
     }
 
-    // If this task has feedback (from plan confirmation or revision), include it
-    if (this.task.feedback) {
+    // If this task has feedback (from plan confirmation or revision), include it.
+    // Skip when resuming a session — the full plan context is already in the
+    // resumed conversation history; injecting it again wastes tokens.
+    if (this.task.feedback && !isResume) {
       if (this.task.type === 'plan') {
         parts.push(
           '## Previous feedback to incorporate:',
@@ -120,6 +115,12 @@ export class Worker {
       }
     }
 
+    // When resuming a plan→execution flow, give a clear instruction
+    if (isResume && this.task.type !== 'plan') {
+      parts.push('Now implement the plan discussed above.')
+      parts.push('')
+    }
+
     parts.push(this.task.title)
     return parts.join('\n')
   }
@@ -129,18 +130,22 @@ export class Worker {
    */
   _buildOptions() {
     const isPlan = this.task.type === 'plan'
-    return {
+    const opts = {
       cwd: this.task.cwd,
       model: process.env.CLAUDE_MODEL || 'sonnet',
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project', 'user', 'local'],
-      permissionMode: isPlan ? 'plan' : 'default',
+      permissionMode: 'default',
       allowedTools: isPlan
         ? ['Read', 'Glob', 'Grep', 'Task', 'WebSearch', 'WebFetch', 'TodoRead', 'TodoWrite']
         : [],
       canUseTool: (toolName, input, context) =>
         this._handleToolApproval(toolName, input, context),
     }
+    if (this.task.resume_session_id) {
+      opts.resume = this.task.resume_session_id
+    }
+    return opts
   }
 
   /**
@@ -153,6 +158,13 @@ export class Worker {
       case 'system':
         if (message.session_id) {
           this.sessionId = message.session_id
+          // Persist immediately so session_id is available for resume/terminal
+          // even if the task is still running or gets interrupted
+          this.store.updateTask(this.task.id, { session_id: this.sessionId })
+          this.broadcast({
+            type: 'task:updated',
+            task: this.store.getTask(this.task.id),
+          })
         }
         break
 
@@ -236,11 +248,11 @@ export class Worker {
       return { behavior: 'allow', updatedInput: input }
     }
 
-    // Plan tasks: deny write operations
-    if (this.task.type === 'plan' && PLAN_DENY_TOOLS.has(toolName)) {
+    // Plan tasks: deny everything that isn't read-only
+    if (this.task.type === 'plan') {
       return {
         behavior: 'deny',
-        message: 'Plan tasks cannot use write tools',
+        message: 'Plan tasks can only use read-only tools',
       }
     }
 
@@ -322,6 +334,10 @@ export class Worker {
       ended_at: Date.now(),
     }
 
+    if (this.sessionId) {
+      updates.session_id = this.sessionId
+    }
+
     if (isPlan) {
       updates.plan_result = this.textChunks.join('\n')
     }
@@ -355,12 +371,16 @@ export class Worker {
       event,
     })
 
-    this.store.updateTask(this.task.id, {
+    const failUpdates = {
       status: 'failed',
       turns: this.turns,
       cost_usd: this.costUsd,
       ended_at: Date.now(),
-    })
+    }
+    if (this.sessionId) {
+      failUpdates.session_id = this.sessionId
+    }
+    this.store.updateTask(this.task.id, failUpdates)
     this.broadcast({
       type: 'task:updated',
       task: this.store.getTask(this.task.id),
@@ -376,6 +396,7 @@ export class Worker {
    */
   async abort() {
     this._aborted = true
+    // session_id already persisted on capture in _processMessage()
     if (this.queryInstance) {
       try {
         await this.queryInstance.interrupt()

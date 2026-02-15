@@ -29,6 +29,12 @@ export const RevisePlanSchema = z.object({
   feedback: z.string().min(1),
 })
 
+/** POST /api/tasks/:id/continue */
+export const ContinueTaskSchema = z.object({
+  title: z.string().min(1),
+  type: z.enum(['task', 'plan']).default('task'),
+})
+
 /** Client -> Server WS */
 export const WsClientMessageSchema = z.discriminatedUnion('type', [
   z.object({

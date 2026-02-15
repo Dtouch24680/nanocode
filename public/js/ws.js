@@ -4,7 +4,8 @@
  * Architecture: public/docs/state-management.md#websocket
  */
 
-import { taskUpdated, eventReceived } from './state.js'
+import { state, taskUpdated, eventReceived } from './state.js'
+import { updateProviderLabels, isInitialized } from './terminal-view.js'
 
 let ws = null
 let reconnectTimer = null
@@ -38,6 +39,12 @@ export function connect() {
         break
       case 'task:approval':
         eventReceived(msg.taskId, msg.event)
+        break
+      case 'settings:updated':
+        if (msg.key === 'cli_provider') {
+          state.cliProvider = msg.value || 'claude'
+          if (isInitialized()) updateProviderLabels()
+        }
         break
     }
   })

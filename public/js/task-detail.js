@@ -9,7 +9,7 @@
 
 import { el, md, formatCost, timeAgo } from './render.js'
 import { state, selectTask } from './state.js'
-import { updateTask, fetchEvents } from './api.js'
+import { updateTask, fetchEvents, continueTask } from './api.js'
 import { send } from './ws.js'
 import { switchTab } from './tab-bar.js'
 import { openNewClaudeSession, isInitialized } from './terminal-view.js'
@@ -95,6 +95,22 @@ export async function renderDetail() {
       },
     })
     actionsEl.appendChild(cancelBtn)
+
+    // Show "Resume in Terminal" for running tasks that have a session_id
+    // (persisted as soon as the SDK provides it)
+    if (task.session_id) {
+      actionsEl.appendChild(el('button', {
+        className: 'btn',
+        textContent: 'Resume in Terminal',
+        onClick: () => {
+          selectTask(null)
+          switchTab('terminal')
+          if (isInitialized()) {
+            openNewClaudeSession(task.session_id)
+          }
+        },
+      }))
+    }
   }
 
   if (task.status === 'failed') {
@@ -112,18 +128,54 @@ export async function renderDetail() {
   }
 
   if (task.status === 'done' || task.status === 'failed' || task.status === 'cancelled') {
+    const hasSession = !!task.session_id
     actionsEl.appendChild(el('button', {
       className: 'btn',
-      textContent: 'Open in Terminal',
+      textContent: hasSession ? 'Resume in Terminal' : 'Open in Terminal',
       onClick: () => {
         selectTask(null)
         switchTab('terminal')
-        // Open a new Claude session after switching to terminal tab
         if (isInitialized()) {
-          openNewClaudeSession()
+          openNewClaudeSession(hasSession ? task.session_id : undefined)
         }
       },
     }))
+
+    // Continue input — only for tasks with a session to resume
+    if (hasSession && (task.status === 'done' || task.status === 'failed')) {
+      const continueRow = el('div', { className: 'continue-row' })
+      const continueInput = el('input', {
+        type: 'text',
+        className: 'continue-input',
+        placeholder: 'Follow-up prompt\u2026',
+      })
+      const continueBtn = el('button', {
+        className: 'btn btn-primary',
+        textContent: 'Continue',
+        onClick: async () => {
+          const title = continueInput.value.trim()
+          if (!title) return
+          try {
+            continueBtn.disabled = true
+            await continueTask(task.id, { title })
+            continueInput.value = ''
+          } catch (err) {
+            console.error('Continue failed:', err.message)
+          } finally {
+            continueBtn.disabled = false
+          }
+        },
+      })
+      continueInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          continueBtn.click()
+        }
+      })
+      continueRow.appendChild(continueInput)
+      continueRow.appendChild(continueBtn)
+      actionsEl.appendChild(continueRow)
+    }
   }
 }
 

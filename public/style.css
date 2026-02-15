@@ -381,21 +381,28 @@ body {
 }
 
 #task-title {
-  width: 100%;
-  margin-bottom: var(--s-2);
+  flex: 1;
   font-size: 15px;
   height: 42px;
   font-weight: 400;
+  min-width: 0;
 }
 
-.form-row {
+.form-row-main {
   display: flex;
   gap: var(--s-2);
   align-items: center;
 }
 
-.form-row input { flex: 1; }
-.form-row select { width: 100px; }
+.form-row-advanced {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  margin-top: var(--s-2);
+}
+
+.form-row-advanced input { flex: 1; }
+.form-row-advanced select { width: 100px; }
 
 /* =================================================================
    Buttons — glass surfaces
@@ -805,6 +812,34 @@ body {
 
 .detail-actions:empty { display: none; }
 
+.continue-row {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.continue-input {
+  flex: 1;
+  background: var(--glass-1);
+  color: var(--fg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 0 var(--s-4);
+  font-family: var(--sans);
+  font-size: 13px;
+  height: 36px;
+  transition: border-color var(--t-fast) ease, background var(--t-fast) ease;
+}
+
+.continue-input::placeholder { color: var(--fg-3); }
+
+.continue-input:focus {
+  outline: none;
+  border-color: rgba(140, 198, 63, 0.3);
+  background: var(--glass-2);
+  box-shadow: 0 0 0 3px var(--glow);
+}
+
 /* =================================================================
    Plan Review
    ================================================================= */
@@ -964,6 +999,14 @@ body {
    Session Tabs (Claude pane)
    ================================================================= */
 
+.session-tabs-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .session-tabs {
   display: flex;
   align-items: center;
@@ -972,9 +1015,43 @@ body {
   flex: 1;
   min-width: 0;
   scrollbar-width: none;
+  scroll-behavior: smooth;
 }
 
 .session-tabs::-webkit-scrollbar { display: none; }
+
+.session-scroll-btn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  border: none;
+  cursor: pointer;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-2);
+  transition: color var(--t-fast) ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.session-scroll-left {
+  left: 0;
+  background: linear-gradient(to right, var(--glass-1) 60%, transparent);
+  padding-right: 4px;
+}
+
+.session-scroll-right {
+  right: 0;
+  background: linear-gradient(to left, var(--glass-1) 60%, transparent);
+  padding-left: 4px;
+}
+
+.session-scroll-btn:hover { color: var(--primary); }
 
 .session-tab {
   display: inline-flex;
@@ -1058,6 +1135,132 @@ body {
 .session-add-btn:hover {
   background: var(--glass-2);
   color: var(--primary);
+}
+
+/* Archive button on session tabs */
+.session-tab-archive {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--t-fast) ease, color var(--t-fast) ease;
+  cursor: pointer;
+  padding: 0 1px;
+}
+
+.session-tab:hover .session-tab-archive { opacity: 0.6; }
+
+.session-tab-archive:hover {
+  opacity: 1 !important;
+  color: var(--warning);
+}
+
+/* Managed filter button */
+.session-managed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+
+.session-managed-btn:hover {
+  background: var(--glass-2);
+  color: var(--fg-2);
+}
+
+.session-managed-btn.active {
+  background: rgba(140, 198, 63, 0.1);
+  color: var(--primary);
+  border-color: rgba(140, 198, 63, 0.2);
+}
+
+/* Archive toggle button */
+.session-archive-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--t-fast) ease, color var(--t-fast) ease;
+}
+
+.session-archive-btn:hover {
+  background: var(--glass-2);
+  color: var(--warning);
+}
+
+/* Archive panel */
+.session-archive-panel {
+  background: var(--glass-0);
+  border-bottom: 1px solid var(--glass-border);
+  padding: var(--s-2) var(--s-3);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.archive-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--fg-2);
+  transition: background var(--t-fast) ease;
+}
+
+.archive-item:hover { background: var(--glass-2); }
+
+.archive-item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-item-time {
+  font-size: 10px;
+  color: var(--fg-3);
+  flex-shrink: 0;
+}
+
+.archive-item-restore {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  background: var(--glass-1);
+  color: var(--fg-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+
+.archive-item-restore:hover {
+  background: var(--glass-3);
+  color: var(--primary);
+  border-color: rgba(140, 198, 63, 0.2);
+}
+
+.archive-empty {
+  font-size: 11px;
+  color: var(--fg-3);
+  text-align: center;
+  padding: var(--s-2) 0;
 }
 
 /* =================================================================
@@ -1549,6 +1752,26 @@ body {
 .settings-status.success { color: var(--primary); }
 .settings-status.error { color: var(--danger); }
 
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.settings-radio-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: 14px;
+  color: var(--fg-1);
+  cursor: pointer;
+}
+
+.settings-radio-hint {
+  color: var(--fg-3);
+  font-size: 12px;
+}
+
 /* =================================================================
    Utilities
    ================================================================= */
@@ -1667,12 +1890,16 @@ body {
     padding: var(--s-3);
   }
 
-  .form-row {
+  .form-row-main {
     flex-wrap: wrap;
   }
 
-  .form-row select { width: auto; flex: 1; }
-  .form-row input { min-width: 0; }
+  .form-row-advanced {
+    flex-wrap: wrap;
+  }
+
+  .form-row-advanced select { width: auto; flex: 1; }
+  .form-row-advanced input { min-width: 0; }
 
   /* Detail panel full-width on mobile */
   .detail-panel,
@@ -1778,6 +2005,10 @@ body {
   /* Session tabs: hide on mobile, show drawer button */
   .session-tabs { display: none; }
   .session-add-btn { display: none; }
+  .session-managed-btn { display: none; }
+  .session-archive-btn { display: none; }
+  .session-archive-panel { display: none; }
+  .session-tabs-wrap { display: none; }
 
   .session-drawer-btn {
     display: inline-flex;
@@ -1877,6 +2108,26 @@ body {
   }
 
   .session-drawer-new:active { background: var(--glass-2); }
+
+  .session-drawer-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-3);
+    padding: 12px var(--s-4) 6px;
+    border-top: 1px solid var(--glass-border);
+  }
+
+  .session-drawer-item.archived { color: var(--fg-3); }
+
+  .session-drawer-item-restore {
+    font-size: 12px;
+    color: var(--primary);
+    font-weight: 500;
+    padding: 2px 8px;
+    flex-shrink: 0;
+  }
 
   /* Settings compact */
   .settings-container {

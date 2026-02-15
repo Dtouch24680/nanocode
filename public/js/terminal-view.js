@@ -7,7 +7,8 @@
 
 import { TerminalPane } from './terminal-pane.js'
 import { initSplitPane } from './split-pane.js'
-import { fetchDiskSessions, fetchRunningSessions, deleteClaudeSession as apiDeleteSession } from './api.js'
+import { fetchDiskSessions, fetchRunningSessions, deleteClaudeSession as apiDeleteSession, archiveSession as apiArchiveSession, unarchiveSession as apiUnarchiveSession, fetchArchivedSessions, markSessionManaged, fetchManagedDiskSessions } from './api.js'
+import { state } from './state.js'
 
 const mobileQuery = window.matchMedia('(max-width: 768px)')
 const isMobile = () => mobileQuery.matches
@@ -23,6 +24,10 @@ let currentProjectId = null
 
 // Mode toggle state
 let activeMode = 'bash'
+
+// Managed-only filter state (persisted in localStorage)
+let managedOnly = false
+try { managedOnly = localStorage.getItem('sessionManagedOnly') === '1' } catch {}
 
 const statusBash = document.getElementById('status-bash')
 const statusClaude = document.getElementById('status-claude')
@@ -89,12 +94,39 @@ export function isInitialized() {
 }
 
 /**
- * Open a new Claude session in the terminal view.
- * Creates a fresh session and switches to it.
+ * Update pane header label and mode toggle button text based on current cliProvider.
+ * Called when settings change via WebSocket.
  */
-export function openNewClaudeSession() {
+export function updateProviderLabels() {
+  const provider = state.cliProvider
+  const label = provider === 'agent' ? 'Cursor Agent' : 'Claude Code'
+
+  // Update pane header label
+  const headerLabel = document.querySelector('.pane-right .pane-header-label')
+  if (headerLabel) headerLabel.textContent = label
+
+  // Update mode toggle button text (preserve the SVG icon)
+  const modeClaudeBtn = document.getElementById('mode-claude')
+  if (modeClaudeBtn) {
+    const shortLabel = provider === 'agent' ? 'Agent' : 'Claude'
+    const textNodes = Array.from(modeClaudeBtn.childNodes).filter(n => n.nodeType === Node.TEXT_NODE)
+    const lastText = textNodes[textNodes.length - 1]
+    if (lastText) lastText.textContent = '\n                ' + shortLabel + '\n              '
+  }
+
+  // Update claude pane's cliProvider for next connection
+  if (claudePane) claudePane.cliProvider = provider
+}
+
+/**
+ * Open a Claude session in the terminal view.
+ * If claudeSessionId is provided, resumes that session; otherwise creates a fresh one.
+ *
+ * @param {string} [claudeSessionId] — optional SDK session UUID to resume
+ */
+export function openNewClaudeSession(claudeSessionId) {
   if (!initialized) return
-  const newId = 'new-' + newSessionCounter++
+  const newId = claudeSessionId || ('new-' + newSessionCounter++)
   activeSessionId = newId
   if (claudePane) claudePane.switchSession(newId)
   if (currentProjectId) {
@@ -124,6 +156,7 @@ function createPanes(projectId) {
     projectId,
     sessionType: 'claude',
     claudeSessionId: activeSessionId || '',
+    cliProvider: state.cliProvider,
     onStatusChange: (c) => setStatus(statusClaude, 'Claude', c),
   })
 }
@@ -131,8 +164,9 @@ function createPanes(projectId) {
 // --- Session management ---
 
 async function fetchAndRenderSessions(projectId) {
+  const fetchDisk = managedOnly ? fetchManagedDiskSessions : fetchDiskSessions
   const [disk, running] = await Promise.all([
-    fetchDiskSessions(projectId).catch(() => []),
+    fetchDisk(projectId).catch(() => []),
     fetchRunningSessions(projectId).catch(() => []),
   ])
   diskSessions = disk
@@ -144,6 +178,16 @@ async function fetchAndRenderSessions(projectId) {
   }
 
   renderSessionTabs()
+}
+
+function updateScrollButtons() {
+  const tabsEl = document.getElementById('session-tabs')
+  const scrollLeft = document.getElementById('session-scroll-left')
+  const scrollRight = document.getElementById('session-scroll-right')
+  if (!tabsEl || !scrollLeft || !scrollRight) return
+  const overflows = tabsEl.scrollWidth > tabsEl.clientWidth + 1
+  scrollLeft.hidden = !overflows || tabsEl.scrollLeft <= 0
+  scrollRight.hidden = !overflows || tabsEl.scrollLeft >= tabsEl.scrollWidth - tabsEl.clientWidth - 1
 }
 
 function truncate(text, maxLen = 24) {
@@ -192,6 +236,19 @@ function renderSessionTabs() {
 
     tab.addEventListener('click', () => switchClaudeSession(session.id))
 
+    // Archive button (only for real disk sessions, not new- sessions)
+    if (!session.id.startsWith('new-')) {
+      const archiveBtn = document.createElement('span')
+      archiveBtn.className = 'session-tab-archive'
+      archiveBtn.innerHTML = '&#8615;'
+      archiveBtn.title = 'Archive session'
+      archiveBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        doArchiveSession(session.id)
+      })
+      tab.appendChild(archiveBtn)
+    }
+
     if (session.isRunning) {
       const closeBtn = document.createElement('span')
       closeBtn.className = 'session-tab-close'
@@ -205,12 +262,23 @@ function renderSessionTabs() {
 
     sessionTabsEl.appendChild(tab)
   }
+
+  // Scroll active tab into view and update scroll button visibility
+  requestAnimationFrame(() => {
+    const activeTab = sessionTabsEl.querySelector('.session-tab.active')
+    if (activeTab) activeTab.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    updateScrollButtons()
+  })
 }
 
 function switchClaudeSession(sessionId) {
   if (sessionId === activeSessionId) return
   activeSessionId = sessionId
   if (claudePane) claudePane.switchSession(sessionId)
+  // Mark as managed when user explicitly switches to it
+  if (currentProjectId && !sessionId.startsWith('new-')) {
+    markSessionManaged(currentProjectId, sessionId).catch(() => {})
+  }
   renderSessionTabs()
 }
 
@@ -238,6 +306,100 @@ async function deleteSession(sessionId) {
   await fetchAndRenderSessions(currentProjectId)
 }
 
+// --- Managed filter ---
+
+function toggleManagedFilter() {
+  managedOnly = !managedOnly
+  try { localStorage.setItem('sessionManagedOnly', managedOnly ? '1' : '0') } catch {}
+  const btn = document.getElementById('session-managed-btn')
+  if (btn) btn.classList.toggle('active', managedOnly)
+  if (currentProjectId) fetchAndRenderSessions(currentProjectId)
+}
+
+// --- Archive management ---
+
+async function doArchiveSession(sessionId) {
+  if (!currentProjectId) return
+  await apiArchiveSession(currentProjectId, sessionId)
+
+  if (sessionId === activeSessionId) {
+    const next = diskSessions.find(s => s.sessionId !== sessionId)
+      || runningSessions.find(id => id !== sessionId)
+    activeSessionId = next?.sessionId || next || null
+    if (claudePane && activeSessionId) claudePane.switchSession(activeSessionId)
+  }
+
+  await fetchAndRenderSessions(currentProjectId)
+  // Refresh archive panel if open
+  const panel = document.getElementById('session-archive-panel')
+  if (panel && !panel.hidden) renderArchivePanel()
+}
+
+async function doUnarchiveSession(sessionId) {
+  if (!currentProjectId) return
+  await apiUnarchiveSession(currentProjectId, sessionId)
+  await fetchAndRenderSessions(currentProjectId)
+  renderArchivePanel()
+}
+
+function toggleArchivePanel() {
+  const panel = document.getElementById('session-archive-panel')
+  if (!panel) return
+  panel.hidden = !panel.hidden
+  if (!panel.hidden) renderArchivePanel()
+}
+
+function timeAgo(ts) {
+  if (!ts) return ''
+  const diff = Date.now() - ts
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+async function renderArchivePanel() {
+  const panel = document.getElementById('session-archive-panel')
+  if (!panel || !currentProjectId) return
+
+  const archived = await fetchArchivedSessions(currentProjectId)
+  panel.innerHTML = ''
+
+  if (!archived.length) {
+    const empty = document.createElement('div')
+    empty.className = 'archive-empty'
+    empty.textContent = 'No archived sessions'
+    panel.appendChild(empty)
+    return
+  }
+
+  for (const s of archived) {
+    const item = document.createElement('div')
+    item.className = 'archive-item'
+
+    const label = document.createElement('span')
+    label.className = 'archive-item-label'
+    label.textContent = s.slug || truncate(s.preview) || s.sessionId.slice(0, 8)
+    item.appendChild(label)
+
+    const time = document.createElement('span')
+    time.className = 'archive-item-time'
+    time.textContent = timeAgo(s.lastActivity)
+    item.appendChild(time)
+
+    const restoreBtn = document.createElement('button')
+    restoreBtn.className = 'archive-item-restore'
+    restoreBtn.textContent = 'Unarchive'
+    restoreBtn.addEventListener('click', () => doUnarchiveSession(s.sessionId))
+    item.appendChild(restoreBtn)
+
+    panel.appendChild(item)
+  }
+}
+
 // --- Setup functions (called once) ---
 
 function setupSplitPane() {
@@ -251,11 +413,31 @@ function setupSessionButtons() {
   const addBtn = document.getElementById('session-add-btn')
   if (addBtn) addBtn.addEventListener('click', createClaudeSession)
 
+  const archiveBtn = document.getElementById('session-archive-btn')
+  if (archiveBtn) archiveBtn.addEventListener('click', toggleArchivePanel)
+
+  const managedBtn = document.getElementById('session-managed-btn')
+  if (managedBtn) {
+    managedBtn.addEventListener('click', toggleManagedFilter)
+    managedBtn.classList.toggle('active', managedOnly)
+  }
+
   const drawerBtn = document.getElementById('session-drawer-btn')
   if (drawerBtn) drawerBtn.addEventListener('click', openSessionDrawer)
 
   const backdrop = document.getElementById('session-drawer-backdrop')
   if (backdrop) backdrop.addEventListener('click', closeSessionDrawer)
+
+  // Scroll buttons for tab overflow
+  const tabsEl = document.getElementById('session-tabs')
+  const scrollLeft = document.getElementById('session-scroll-left')
+  const scrollRight = document.getElementById('session-scroll-right')
+  if (tabsEl && scrollLeft && scrollRight) {
+    scrollLeft.addEventListener('click', () => { tabsEl.scrollLeft -= 120 })
+    scrollRight.addEventListener('click', () => { tabsEl.scrollLeft += 120 })
+    tabsEl.addEventListener('scroll', updateScrollButtons)
+    new ResizeObserver(updateScrollButtons).observe(tabsEl)
+  }
 }
 
 function setupModeToggle() {
@@ -730,4 +912,37 @@ function renderMobileSessionDrawer() {
     closeSessionDrawer()
   })
   drawer.appendChild(newBtn)
+
+  // Archived section
+  if (currentProjectId) {
+    fetchArchivedSessions(currentProjectId).then(archived => {
+      if (!archived.length) return
+      const title = document.createElement('div')
+      title.className = 'session-drawer-section-title'
+      title.textContent = 'Archived'
+      drawer.appendChild(title)
+
+      for (const s of archived) {
+        const item = document.createElement('div')
+        item.className = 'session-drawer-item archived'
+
+        const label = document.createElement('span')
+        label.className = 'session-drawer-item-label'
+        label.textContent = s.slug || truncate(s.preview) || s.sessionId.slice(0, 8)
+        item.appendChild(label)
+
+        const restoreBtn = document.createElement('span')
+        restoreBtn.className = 'session-drawer-item-restore'
+        restoreBtn.textContent = 'Unarchive'
+        restoreBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          doUnarchiveSession(s.sessionId)
+          closeSessionDrawer()
+        })
+        item.appendChild(restoreBtn)
+
+        drawer.appendChild(item)
+      }
+    })
+  }
 }

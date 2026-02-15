@@ -54,14 +54,16 @@
         <!-- Task creation form -->
         <section class="task-form-container" id="task-form-container">
           <form id="task-form" class="task-form">
-            <input type="text" id="task-title" name="title" placeholder="Describe the task\u2026" required autocomplete="off">
-            <div class="form-row">
+            <div class="form-row-main">
+              <input type="text" id="task-title" name="title" placeholder="Describe the task\u2026 (prefix plan: for plans, Shift+Enter for options)" required autocomplete="off">
+              <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+            <div class="form-row-advanced" id="form-advanced" hidden>
               <select id="task-type" name="type">
                 <option value="task">Task</option>
                 <option value="plan">Plan</option>
               </select>
               <input type="text" id="task-depends" name="dependsOn" placeholder="Depends on (ID)">
-              <button type="submit" class="btn btn-primary">Create</button>
             </div>
           </form>
         </section>
@@ -92,6 +94,25 @@
         <div class="settings-container">
           <h2 class="settings-heading">Settings</h2>
           <section class="settings-section">
+            <h3 class="settings-section-title">CLI Provider</h3>
+            <p class="settings-desc">Choose which CLI tool to use for interactive terminal sessions. Headless SDK tasks always use Claude Code.</p>
+            <div class="settings-radio-group" id="cli-provider-group">
+              <label class="settings-radio-label">
+                <input type="radio" name="cli-provider" value="claude" checked>
+                Claude Code
+                <span class="settings-radio-hint">(default)</span>
+              </label>
+              <label class="settings-radio-label">
+                <input type="radio" name="cli-provider" value="agent">
+                Cursor Agent
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-primary" id="cli-save-btn">Save</button>
+              <span class="settings-status" id="cli-status"></span>
+            </div>
+          </section>
+          <section class="settings-section">
             <h3 class="settings-section-title">Slack Notifications</h3>
             <p class="settings-desc">Receive Slack messages when tasks complete, fail, or need review.</p>
             <label class="settings-label">
@@ -119,10 +140,21 @@
             <div class="pane pane-right">
               <div class="pane-header">
                 <span class="pane-header-label">Claude Code</span>
-                <div class="session-tabs" id="session-tabs"></div>
+                <div class="session-tabs-wrap" id="session-tabs-wrap">
+                  <button type="button" class="session-scroll-btn session-scroll-left" id="session-scroll-left" hidden aria-label="Scroll left">&lsaquo;</button>
+                  <div class="session-tabs" id="session-tabs"></div>
+                  <button type="button" class="session-scroll-btn session-scroll-right" id="session-scroll-right" hidden aria-label="Scroll right">&rsaquo;</button>
+                </div>
                 <button type="button" class="session-add-btn" id="session-add-btn" title="New session">+</button>
+                <button type="button" class="session-managed-btn" id="session-managed-btn" title="Show only sessions from this app">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                </button>
+                <button type="button" class="session-archive-btn" id="session-archive-btn" title="Archived sessions">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+                </button>
                 <button class="session-drawer-btn" id="session-drawer-btn">Sessions &#9662;</button>
               </div>
+              <div class="session-archive-panel" id="session-archive-panel" hidden></div>
               <div class="pane-terminal" id="terminal-claude"></div>
             </div>
             <div class="pane-dots" id="pane-dots">
