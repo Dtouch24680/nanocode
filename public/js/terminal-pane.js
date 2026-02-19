@@ -383,6 +383,18 @@ export class TerminalPane {
   switchSession(claudeSessionId) {
     if (claudeSessionId === this.claudeSessionId) return
     this.claudeSessionId = claudeSessionId
+    this._reconnectNow()
+  }
+
+  /**
+   * Force reconnect (e.g. after provider change). Tears down current
+   * WebSocket and creates a fresh connection using current settings.
+   */
+  reconnect() {
+    this._reconnectNow()
+  }
+
+  _reconnectNow() {
     clearTimeout(this._reconnectTimer)
     this._stopPing()
     if (this._ws) {

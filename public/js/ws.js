@@ -5,7 +5,7 @@
  */
 
 import { state, taskUpdated, eventReceived } from './state.js'
-import { updateProviderLabels, isInitialized } from './terminal-view.js'
+import { updateProviderLabels, switchProvider, isInitialized } from './terminal-view.js'
 
 let ws = null
 let reconnectTimer = null
@@ -43,7 +43,10 @@ export function connect() {
       case 'settings:updated':
         if (msg.key === 'cli_provider') {
           state.cliProvider = msg.value || 'claude'
-          if (isInitialized()) updateProviderLabels()
+          if (isInitialized()) {
+            updateProviderLabels()
+            switchProvider()
+          }
         }
         break
     }

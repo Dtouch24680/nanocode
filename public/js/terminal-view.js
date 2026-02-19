@@ -22,6 +22,10 @@ let activeSessionId = null
 let newSessionCounter = 0
 let currentProjectId = null
 
+// Group dropdown state
+let expandedGroupKey = null
+let segmentDropdownEl = null
+
 // Mode toggle state
 let activeMode = 'bash'
 
@@ -113,9 +117,27 @@ export function updateProviderLabels() {
     const lastText = textNodes[textNodes.length - 1]
     if (lastText) lastText.textContent = '\n                ' + shortLabel + '\n              '
   }
+}
 
-  // Update claude pane's cliProvider for next connection
-  if (claudePane) claudePane.cliProvider = provider
+/**
+ * Switch the CLI provider on the active pane. Reconnects the Claude
+ * pane with the new provider and refreshes the session list.
+ * Called when the cli_provider setting changes via WebSocket.
+ */
+export function switchProvider() {
+  if (!initialized || !currentProjectId) return
+  const provider = state.cliProvider
+
+  if (claudePane) {
+    claudePane.cliProvider = provider
+    // Reset to a fresh session with the new provider
+    activeSessionId = null
+    claudePane.claudeSessionId = ''
+    claudePane.reconnect()
+  }
+
+  // Re-fetch sessions — running sessions are keyed by provider
+  fetchAndRenderSessions(currentProjectId)
 }
 
 /**
@@ -195,35 +217,88 @@ function truncate(text, maxLen = 24) {
   return text.length > maxLen ? text.slice(0, maxLen) + '...' : text
 }
 
+/**
+ * Group disk sessions by slug for UI tab consolidation.
+ * Returns array of group objects sorted by most recent activity.
+ */
+function groupSessionsBySlug(disk, running) {
+  const runningSet = new Set(running)
+  const slugMap = new Map()
+  const ungrouped = []
+
+  // Collect new-* running sessions that aren't on disk
+  const diskIds = new Set(disk.map(s => s.sessionId))
+  for (const id of running) {
+    if (!diskIds.has(id) && id.startsWith('new-')) {
+      ungrouped.push({
+        groupKey: id,
+        label: 'New session',
+        isGroup: false,
+        segments: [{ sessionId: id, slug: null, preview: null, lastActivity: Date.now() }],
+        activeSegmentId: id,
+        isRunning: true,
+        lastActivity: Date.now(),
+      })
+    }
+  }
+
+  // Group disk sessions by slug
+  for (const s of disk) {
+    const key = s.slug || null
+    if (!key) {
+      ungrouped.push({
+        groupKey: s.sessionId,
+        label: truncate(s.preview) || s.sessionId.slice(0, 8),
+        isGroup: false,
+        segments: [s],
+        activeSegmentId: s.sessionId,
+        isRunning: runningSet.has(s.sessionId),
+        lastActivity: s.lastActivity || 0,
+      })
+      continue
+    }
+    if (!slugMap.has(key)) slugMap.set(key, [])
+    slugMap.get(key).push(s)
+  }
+
+  const groups = []
+
+  for (const [slug, segments] of slugMap) {
+    // Sort newest-first by lastActivity
+    segments.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
+    const anyRunning = segments.some(s => runningSet.has(s.sessionId))
+    const maxActivity = Math.max(...segments.map(s => s.lastActivity || 0))
+    groups.push({
+      groupKey: slug,
+      label: slug,
+      isGroup: segments.length > 1,
+      segments,
+      activeSegmentId: segments[0].sessionId,
+      isRunning: anyRunning,
+      lastActivity: maxActivity,
+    })
+  }
+
+  // Sort groups by most recent activity, then prepend ungrouped
+  groups.sort((a, b) => b.lastActivity - a.lastActivity)
+  return [...ungrouped, ...groups]
+}
+
 function renderSessionTabs() {
   const sessionTabsEl = document.getElementById('session-tabs')
   if (!sessionTabsEl) return
   sessionTabsEl.textContent = ''
 
-  const allSessions = []
-  const diskIds = new Set(diskSessions.map(s => s.sessionId))
+  const groups = groupSessionsBySlug(diskSessions, runningSessions)
 
-  for (const s of diskSessions) {
-    allSessions.push({
-      id: s.sessionId,
-      label: s.slug || truncate(s.preview) || s.sessionId.slice(0, 8),
-      isRunning: runningSessions.includes(s.sessionId),
-    })
-  }
-
-  for (const id of runningSessions) {
-    if (!diskIds.has(id) && id.startsWith('new-')) {
-      allSessions.push({ id, label: 'New session', isRunning: true })
-    }
-  }
-
-  for (const session of allSessions) {
+  for (const group of groups) {
+    const isActive = group.segments.some(s => s.sessionId === activeSessionId)
     const tab = document.createElement('button')
-    tab.className = 'session-tab' + (session.id === activeSessionId ? ' active' : '')
+    tab.className = 'session-tab' + (isActive ? ' active' : '')
     tab.type = 'button'
-    tab.dataset.sessionId = session.id
+    tab.dataset.groupKey = group.groupKey
 
-    if (session.isRunning) {
+    if (group.isRunning) {
       const dot = document.createElement('span')
       dot.className = 'session-tab-dot'
       tab.appendChild(dot)
@@ -231,31 +306,53 @@ function renderSessionTabs() {
 
     const label = document.createElement('span')
     label.className = 'session-tab-label'
-    label.textContent = session.label
+    label.textContent = group.label
     tab.appendChild(label)
 
-    tab.addEventListener('click', () => switchClaudeSession(session.id))
+    // Count badge for multi-segment groups
+    if (group.isGroup) {
+      const badge = document.createElement('span')
+      badge.className = 'session-tab-count'
+      badge.textContent = group.segments.length
+      tab.appendChild(badge)
+    }
+
+    tab.addEventListener('click', () => {
+      if (!isActive) {
+        // Switch to most recent segment
+        switchClaudeSession(group.activeSegmentId)
+      } else if (group.isGroup) {
+        // Already active group with multiple segments — toggle dropdown
+        toggleSegmentDropdown(group, tab)
+      }
+    })
 
     // Archive button (only for real disk sessions, not new- sessions)
-    if (!session.id.startsWith('new-')) {
+    if (!group.groupKey.startsWith('new-')) {
       const archiveBtn = document.createElement('span')
       archiveBtn.className = 'session-tab-archive'
       archiveBtn.innerHTML = '&#8615;'
-      archiveBtn.title = 'Archive session'
+      archiveBtn.title = group.isGroup ? 'Archive all segments' : 'Archive session'
       archiveBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        doArchiveSession(session.id)
+        if (group.isGroup) {
+          archiveGroup(group)
+        } else {
+          doArchiveSession(group.activeSegmentId)
+        }
       })
       tab.appendChild(archiveBtn)
     }
 
-    if (session.isRunning) {
+    if (group.isRunning) {
       const closeBtn = document.createElement('span')
       closeBtn.className = 'session-tab-close'
       closeBtn.textContent = '\u00d7'
       closeBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        deleteSession(session.id)
+        // Kill all running segments in the group
+        const runningSegments = group.segments.filter(s => runningSessions.includes(s.sessionId))
+        for (const s of runningSegments) deleteSession(s.sessionId)
       })
       tab.appendChild(closeBtn)
     }
@@ -273,6 +370,7 @@ function renderSessionTabs() {
 
 function switchClaudeSession(sessionId) {
   if (sessionId === activeSessionId) return
+  closeSegmentDropdown()
   activeSessionId = sessionId
   if (claudePane) claudePane.switchSession(sessionId)
   // Mark as managed when user explicitly switches to it
@@ -280,6 +378,114 @@ function switchClaudeSession(sessionId) {
     markSessionManaged(currentProjectId, sessionId).catch(() => {})
   }
   renderSessionTabs()
+}
+
+// --- Segment dropdown ---
+
+function toggleSegmentDropdown(group, anchorTab) {
+  if (expandedGroupKey === group.groupKey) {
+    closeSegmentDropdown()
+    return
+  }
+  closeSegmentDropdown()
+  expandedGroupKey = group.groupKey
+  renderSegmentDropdown(group, anchorTab)
+}
+
+function renderSegmentDropdown(group, anchorTab) {
+  const paneHeader = anchorTab.closest('.pane-header')
+  if (!paneHeader) return
+
+  const dropdown = document.createElement('div')
+  dropdown.className = 'session-segment-dropdown'
+  segmentDropdownEl = dropdown
+
+  // Position below the anchor tab
+  const headerRect = paneHeader.getBoundingClientRect()
+  const tabRect = anchorTab.getBoundingClientRect()
+  dropdown.style.left = (tabRect.left - headerRect.left) + 'px'
+  dropdown.style.top = paneHeader.offsetHeight + 'px'
+
+  for (const seg of group.segments) {
+    const isSegActive = seg.sessionId === activeSessionId
+    const item = document.createElement('div')
+    item.className = 'session-segment-item' + (isSegActive ? ' active' : '')
+
+    if (runningSessions.includes(seg.sessionId)) {
+      const dot = document.createElement('span')
+      dot.className = 'session-tab-dot'
+      item.appendChild(dot)
+    }
+
+    const segLabel = document.createElement('span')
+    segLabel.className = 'session-segment-label'
+    segLabel.textContent = truncate(seg.preview) || seg.sessionId.slice(0, 8)
+    item.appendChild(segLabel)
+
+    const segTime = document.createElement('span')
+    segTime.className = 'session-segment-time'
+    segTime.textContent = timeAgo(seg.lastActivity)
+    item.appendChild(segTime)
+
+    const segArchive = document.createElement('span')
+    segArchive.className = 'session-segment-archive'
+    segArchive.innerHTML = '&#8615;'
+    segArchive.title = 'Archive this segment'
+    segArchive.addEventListener('click', (e) => {
+      e.stopPropagation()
+      closeSegmentDropdown()
+      doArchiveSession(seg.sessionId)
+    })
+    item.appendChild(segArchive)
+
+    item.addEventListener('click', () => {
+      closeSegmentDropdown()
+      switchClaudeSession(seg.sessionId)
+    })
+
+    dropdown.appendChild(item)
+  }
+
+  paneHeader.appendChild(dropdown)
+
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', onClickOutsideDropdown, true)
+  }, 0)
+}
+
+function onClickOutsideDropdown(e) {
+  if (segmentDropdownEl && !segmentDropdownEl.contains(e.target)) {
+    closeSegmentDropdown()
+  }
+}
+
+function closeSegmentDropdown() {
+  expandedGroupKey = null
+  if (segmentDropdownEl) {
+    segmentDropdownEl.remove()
+    segmentDropdownEl = null
+  }
+  document.removeEventListener('click', onClickOutsideDropdown, true)
+}
+
+// --- Group archive ---
+
+async function archiveGroup(group) {
+  if (!currentProjectId) return
+  await Promise.all(group.segments.map(s => apiArchiveSession(currentProjectId, s.sessionId)))
+
+  // If active session was in this group, switch to next available
+  if (group.segments.some(s => s.sessionId === activeSessionId)) {
+    const groups = groupSessionsBySlug(diskSessions, runningSessions)
+    const next = groups.find(g => g.groupKey !== group.groupKey)
+    activeSessionId = next?.activeSegmentId || null
+    if (claudePane && activeSessionId) claudePane.switchSession(activeSessionId)
+  }
+
+  await fetchAndRenderSessions(currentProjectId)
+  const panel = document.getElementById('session-archive-panel')
+  if (panel && !panel.hidden) renderArchivePanel()
 }
 
 async function createClaudeSession() {
@@ -870,38 +1076,68 @@ function renderMobileSessionDrawer() {
   if (!drawer) return
   drawer.innerHTML = ''
 
-  const allSessions = []
-  const diskIds = new Set(diskSessions.map(s => s.sessionId))
-  for (const s of diskSessions) {
-    allSessions.push({
-      id: s.sessionId,
-      label: s.slug || truncate(s.preview) || s.sessionId.slice(0, 8),
-      isRunning: runningSessions.includes(s.sessionId),
-    })
-  }
-  for (const id of runningSessions) {
-    if (!diskIds.has(id) && id.startsWith('new-')) {
-      allSessions.push({ id, label: 'New session', isRunning: true })
-    }
-  }
+  const groups = groupSessionsBySlug(diskSessions, runningSessions)
 
-  for (const session of allSessions) {
+  for (const group of groups) {
+    const isActive = group.segments.some(s => s.sessionId === activeSessionId)
     const item = document.createElement('div')
-    item.className = 'session-drawer-item' + (session.id === activeSessionId ? ' active' : '')
-    if (session.isRunning) {
+    item.className = 'session-drawer-item' + (isActive ? ' active' : '')
+
+    if (group.isRunning) {
       const dot = document.createElement('span')
       dot.className = 'session-tab-dot'
       item.appendChild(dot)
     }
+
     const label = document.createElement('span')
     label.className = 'session-drawer-item-label'
-    label.textContent = session.label
+    label.textContent = group.label
     item.appendChild(label)
+
+    if (group.isGroup) {
+      const badge = document.createElement('span')
+      badge.className = 'session-tab-count'
+      badge.textContent = group.segments.length
+      item.appendChild(badge)
+    }
+
     item.addEventListener('click', () => {
-      switchClaudeSession(session.id)
+      switchClaudeSession(group.activeSegmentId)
       closeSessionDrawer()
     })
     drawer.appendChild(item)
+
+    // Render indented sub-items for multi-segment groups
+    if (group.isGroup) {
+      for (const seg of group.segments) {
+        const subItem = document.createElement('div')
+        subItem.className = 'session-drawer-item session-drawer-segment'
+          + (seg.sessionId === activeSessionId ? ' active' : '')
+
+        if (runningSessions.includes(seg.sessionId)) {
+          const dot = document.createElement('span')
+          dot.className = 'session-tab-dot'
+          subItem.appendChild(dot)
+        }
+
+        const segLabel = document.createElement('span')
+        segLabel.className = 'session-drawer-item-label'
+        segLabel.textContent = truncate(seg.preview) || seg.sessionId.slice(0, 8)
+        subItem.appendChild(segLabel)
+
+        const segTime = document.createElement('span')
+        segTime.className = 'session-segment-time'
+        segTime.textContent = timeAgo(seg.lastActivity)
+        subItem.appendChild(segTime)
+
+        subItem.addEventListener('click', (e) => {
+          e.stopPropagation()
+          switchClaudeSession(seg.sessionId)
+          closeSessionDrawer()
+        })
+        drawer.appendChild(subItem)
+      }
+    }
   }
 
   const newBtn = document.createElement('div')
