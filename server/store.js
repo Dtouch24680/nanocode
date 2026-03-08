@@ -6,7 +6,17 @@
  */
 
 import Database from 'better-sqlite3'
-import { mkdirSync, existsSync, readFileSync, readdirSync, renameSync, statSync, openSync, readSync, closeSync } from 'fs'
+import {
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  openSync,
+  readSync,
+  closeSync,
+} from 'fs'
 import { join, basename } from 'path'
 import { homedir } from 'os'
 import { ulid } from 'ulid'
@@ -101,7 +111,9 @@ export function createStore(dbPath = ':memory:') {
   } catch {
     // Column already exists
   }
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id) WHERE session_id IS NOT NULL`)
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id) WHERE session_id IS NOT NULL`
+  )
 
   // Migration: add resume_session_id for continuation tasks
   try {
@@ -139,7 +151,9 @@ export function createStore(dbPath = ':memory:') {
   `)
   const selectTask = db.prepare(`SELECT * FROM tasks WHERE id = ?`)
   const selectAllTasks = db.prepare(`SELECT * FROM tasks ORDER BY seq ASC`)
-  const selectTasksByProject = db.prepare(`SELECT * FROM tasks WHERE project_id = ? ORDER BY seq ASC`)
+  const selectTasksByProject = db.prepare(
+    `SELECT * FROM tasks WHERE project_id = ? ORDER BY seq ASC`
+  )
   const selectTaskBySessionId = db.prepare(`SELECT id FROM tasks WHERE session_id = ?`)
 
   const insertImportedTask = db.prepare(`
@@ -183,7 +197,7 @@ export function createStore(dbPath = ':memory:') {
   }
 
   function listArchivedSessions(projectId) {
-    return selectArchives.all(projectId).map(r => r.session_id)
+    return selectArchives.all(projectId).map((r) => r.session_id)
   }
 
   function isSessionArchived(projectId, sessionId) {
@@ -207,7 +221,7 @@ export function createStore(dbPath = ':memory:') {
   }
 
   function listManagedSessions(projectId) {
-    return selectManaged.all(projectId).map(r => r.session_id)
+    return selectManaged.all(projectId).map((r) => r.session_id)
   }
 
   // ==================== Settings CRUD ====================
@@ -258,15 +272,17 @@ export function createStore(dbPath = ':memory:') {
     try {
       const projects = JSON.parse(readFileSync(jsonPath, 'utf-8'))
       const existing = selectAllProjects.all()
-      const existingIds = new Set(existing.map(p => p.id))
-      const existingCwds = new Set(existing.map(p => p.cwd))
+      const existingIds = new Set(existing.map((p) => p.id))
+      const existingCwds = new Set(existing.map((p) => p.cwd))
       for (const p of projects) {
         if (!existingIds.has(p.id) && !existingCwds.has(p.cwd)) {
           insertProject.run({ id: p.id, name: p.name, cwd: p.cwd, createdAt: Date.now() })
         }
       }
       renameSync(jsonPath, jsonPath + '.bak')
-    } catch { /* ignore migration errors */ }
+    } catch {
+      /* ignore migration errors */
+    }
   }
 
   /** Ensure at least one project exists (starter from cwd). */
@@ -289,7 +305,11 @@ export function createStore(dbPath = ':memory:') {
     const id = ulid()
     const { next } = seqStmt.get()
     insertTask.run({
-      id, seq: next, title, type, cwd,
+      id,
+      seq: next,
+      title,
+      type,
+      cwd,
       projectId: projectId || null,
       dependsOn,
       createdAt: Date.now(),
@@ -313,7 +333,8 @@ export function createStore(dbPath = ':memory:') {
     const keys = Object.keys(fields)
     if (keys.length === 0) return getTask(id)
     for (const key of keys) {
-      if (!TASK_UPDATE_FIELDS.has(key)) throw new Error(`updateTask: unknown field "${key}"`)
+      if (!TASK_UPDATE_FIELDS.has(key))
+        throw new Error(`updateTask: unknown field "${key}"`)
     }
     const setClauses = keys.map((k) => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE tasks SET ${setClauses} WHERE id = @id`).run({ id, ...fields })
@@ -322,7 +343,10 @@ export function createStore(dbPath = ':memory:') {
 
   function appendEvent(taskId, kind, data) {
     const result = insertEvent.run({
-      taskId, kind, data: JSON.stringify(data), createdAt: Date.now(),
+      taskId,
+      kind,
+      data: JSON.stringify(data),
+      createdAt: Date.now(),
     })
     const row = selectEvent.get(result.lastInsertRowid)
     return { ...row, data: JSON.parse(row.data) }
@@ -364,9 +388,13 @@ export function createStore(dbPath = ':memory:') {
                 project: entry.project || '',
               })
             }
-          } catch { /* skip malformed lines */ }
+          } catch {
+            /* skip malformed lines */
+          }
         }
-      } catch { /* history file unreadable */ }
+      } catch {
+        /* history file unreadable */
+      }
     }
 
     const projects = selectAllProjects.all()
@@ -379,7 +407,11 @@ export function createStore(dbPath = ':memory:') {
       if (!existsSync(sessionDir)) continue
 
       let files
-      try { files = readdirSync(sessionDir).filter(f => f.endsWith('.jsonl')) } catch { continue }
+      try {
+        files = readdirSync(sessionDir).filter((f) => f.endsWith('.jsonl'))
+      } catch {
+        continue
+      }
 
       for (const file of files) {
         const sessionId = basename(file, '.jsonl')
@@ -397,7 +429,9 @@ export function createStore(dbPath = ':memory:') {
           const bytesRead = readSync(fd, buf, 0, 32768, 0)
           closeSync(fd)
           chunk = buf.toString('utf-8', 0, bytesRead)
-        } catch { continue }
+        } catch {
+          continue
+        }
 
         let firstTimestamp = null
         let hasRealUser = false
@@ -408,18 +442,24 @@ export function createStore(dbPath = ':memory:') {
             const obj = JSON.parse(line)
             // Grab first timestamp we see
             if (!firstTimestamp && obj.timestamp) {
-              firstTimestamp = typeof obj.timestamp === 'string'
-                ? new Date(obj.timestamp).getTime()
-                : obj.timestamp
+              firstTimestamp =
+                typeof obj.timestamp === 'string'
+                  ? new Date(obj.timestamp).getTime()
+                  : obj.timestamp
             }
             // Check for real (non-meta, non-command) user messages
             if (obj.type === 'user' && !obj.isMeta) {
               const content = obj.message?.content || ''
-              if (!content.startsWith('<command-name>') && !content.startsWith('<local-command')) {
+              if (
+                !content.startsWith('<command-name>') &&
+                !content.startsWith('<local-command')
+              ) {
                 hasRealUser = true
               }
             }
-          } catch { /* skip malformed */ }
+          } catch {
+            /* skip malformed */
+          }
         }
 
         // Skip sessions without real user interaction
@@ -440,7 +480,9 @@ export function createStore(dbPath = ':memory:') {
         try {
           const stat = statSync(filePath)
           endedAt = stat.mtimeMs
-        } catch { /* use createdAt */ }
+        } catch {
+          /* use createdAt */
+        }
         // If history has a later timestamp for this session, prefer it
         if (histEntry?.timestamp && histEntry.timestamp > endedAt) {
           endedAt = histEntry.timestamp
@@ -449,9 +491,17 @@ export function createStore(dbPath = ':memory:') {
         const id = ulid()
         const { next } = seqStmt.get()
         insertImportedTask.run({
-          id, seq: next, title, type: 'task', status: 'done',
-          cwd: project.cwd, projectId: project.id, sessionId,
-          createdAt, startedAt: createdAt, endedAt,
+          id,
+          seq: next,
+          title,
+          type: 'task',
+          status: 'done',
+          cwd: project.cwd,
+          projectId: project.id,
+          sessionId,
+          createdAt,
+          startedAt: createdAt,
+          endedAt,
         })
         imported++
       }
@@ -467,13 +517,30 @@ export function createStore(dbPath = ':memory:') {
   }
 
   return {
-    getSetting, setSetting, getAllSettings,
-    createProject, getProject, listProjects, removeProject,
-    migrateProjectsJson, ensureStarterProject, importClaudeSessions,
-    archiveSession, unarchiveSession, listArchivedSessions, isSessionArchived,
-    markSessionManaged, listManagedSessions,
-    createTask, getTask, listTasks, listTasksByProject, updateTask,
-    appendEvent, getEvents, close,
+    getSetting,
+    setSetting,
+    getAllSettings,
+    createProject,
+    getProject,
+    listProjects,
+    removeProject,
+    migrateProjectsJson,
+    ensureStarterProject,
+    importClaudeSessions,
+    archiveSession,
+    unarchiveSession,
+    listArchivedSessions,
+    isSessionArchived,
+    markSessionManaged,
+    listManagedSessions,
+    createTask,
+    getTask,
+    listTasks,
+    listTasksByProject,
+    updateTask,
+    appendEvent,
+    getEvents,
+    close,
   }
 }
 

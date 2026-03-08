@@ -4,13 +4,13 @@ How task events are rendered in the detail panel.
 
 ## Event Kinds
 
-| Kind | Data | Rendered As |
-|------|------|-------------|
-| `text` | `{text}` | Markdown → sanitized HTML |
-| `tool_use` | `{name, input}` | Tool name header + JSON input |
-| `tool_result` | `{tool_use_id, content}` | Result header + content |
-| `approval_req` | `{name, input}` | Tool info + Allow/Deny buttons |
-| `error` | `{message}` | Red error block |
+| Kind           | Data                     | Rendered As                    |
+| -------------- | ------------------------ | ------------------------------ |
+| `text`         | `{text}`                 | Markdown → sanitized HTML      |
+| `tool_use`     | `{name, input}`          | Tool name header + JSON input  |
+| `tool_result`  | `{tool_use_id, content}` | Result header + content        |
+| `approval_req` | `{name, input}`          | Tool info + Allow/Deny buttons |
+| `error`        | `{message}`              | Red error block                |
 
 ## Task Card
 

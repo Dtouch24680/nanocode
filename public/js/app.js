@@ -14,7 +14,12 @@ import { renderBoard } from './task-board.js'
 import { initForm } from './task-form.js'
 import { initSidebar, renderSidebar } from './sidebar.js'
 import { initTabBar, switchTab } from './tab-bar.js'
-import { initTerminalView, switchTerminalProject, fitTerminals, isInitialized } from './terminal-view.js'
+import {
+  initTerminalView,
+  switchTerminalProject,
+  fitTerminals,
+  isInitialized,
+} from './terminal-view.js'
 import { loadSettings } from './settings.js'
 
 async function init() {
@@ -34,7 +39,7 @@ async function init() {
   state.activeProjectId =
     lastId && state.projects.some((p) => p.id === lastId)
       ? lastId
-      : state.projects[0]?.id ?? null
+      : (state.projects[0]?.id ?? null)
 
   // Initialize sidebar
   initSidebar(onProjectSwitch)

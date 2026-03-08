@@ -33,10 +33,10 @@ const sessionAddBtn = document.getElementById('session-add-btn')
 let projectsList = []
 let bashPane = null
 let claudePane = null
-let diskSessions = []        // { sessionId, slug, preview, lastActivity } from disk
-let runningSessions = []     // string session IDs with active PTYs
-let activeSessionId = null   // current claude session ID (string)
-let newSessionCounter = 0    // counter for new- prefixed sessions
+let diskSessions = [] // { sessionId, slug, preview, lastActivity } from disk
+let runningSessions = [] // string session IDs with active PTYs
+let activeSessionId = null // current claude session ID (string)
+let newSessionCounter = 0 // counter for new- prefixed sessions
 
 function getSelectedProjectId() {
   const id = projectSelect?.value
@@ -118,7 +118,7 @@ function renderSessionTabs() {
 
   // Build combined list: disk sessions + any running new- sessions not on disk
   const allSessions = []
-  const diskIds = new Set(diskSessions.map(s => s.sessionId))
+  const diskIds = new Set(diskSessions.map((s) => s.sessionId))
 
   for (const s of diskSessions) {
     allSessions.push({
@@ -202,8 +202,9 @@ async function deleteClaudeSession(sessionId) {
   // If deleting active session, switch to another
   if (sessionId === activeSessionId) {
     // Pick next available session (prefer disk sessions)
-    const next = diskSessions.find(s => s.sessionId !== sessionId)
-      || runningSessions.find(id => id !== sessionId)
+    const next =
+      diskSessions.find((s) => s.sessionId !== sessionId) ||
+      runningSessions.find((id) => id !== sessionId)
     activeSessionId = next?.sessionId || next || null
     if (claudePane && activeSessionId) claudePane.switchSession(activeSessionId)
   }
@@ -339,11 +340,12 @@ async function init() {
     projectsList = []
   }
 
-  const lastId = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
+  const lastId =
+    typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
   const projectId =
     lastId && projectsList.some((p) => p.id === lastId)
       ? lastId
-      : projectsList[0]?.id ?? null
+      : (projectsList[0]?.id ?? null)
 
   renderProjectSelect(projectId)
   if (projectId) {
@@ -413,7 +415,8 @@ async function init() {
         alert('Cannot delete the only project.')
         return
       }
-      if (!confirm('Delete this project? Terminal sessions for this project will end.')) return
+      if (!confirm('Delete this project? Terminal sessions for this project will end.'))
+        return
       try {
         const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Failed to delete project')
@@ -470,14 +473,18 @@ async function init() {
             claude: Array.isArray(parsed.claude) ? parsed.claude : [],
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return { bash: [], claude: [] }
     }
 
     function saveHistory() {
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     const history = loadHistory()
@@ -549,9 +556,12 @@ async function init() {
         // Highlight the matching portion
         const matchIdx = cmd.toLowerCase().indexOf(q)
         if (matchIdx >= 0) {
-          textEl.innerHTML = escapeHtml(cmd.slice(0, matchIdx))
-            + '<mark>' + escapeHtml(cmd.slice(matchIdx, matchIdx + q.length)) + '</mark>'
-            + escapeHtml(cmd.slice(matchIdx + q.length))
+          textEl.innerHTML =
+            escapeHtml(cmd.slice(0, matchIdx)) +
+            '<mark>' +
+            escapeHtml(cmd.slice(matchIdx, matchIdx + q.length)) +
+            '</mark>' +
+            escapeHtml(cmd.slice(matchIdx + q.length))
         } else {
           textEl.textContent = cmd
         }
@@ -639,7 +649,8 @@ async function init() {
       modeBashBtn.classList.toggle('active', mode === 'bash')
       modeClaudeBtn.classList.toggle('active', mode === 'claude')
       if (panes.bash.el) panes.bash.el.classList.toggle('target-active', mode === 'bash')
-      if (panes.claude.el) panes.claude.el.classList.toggle('target-active', mode === 'claude')
+      if (panes.claude.el)
+        panes.claude.el.classList.toggle('target-active', mode === 'claude')
       chatInput.placeholder = mode === 'bash' ? 'Type a command…' : 'Ask Claude…'
       positionIndicator()
       resetHistoryNav()

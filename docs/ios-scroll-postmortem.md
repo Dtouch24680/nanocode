@@ -19,14 +19,17 @@ After implementing the mobile-friendly terminal interface (stacked panes, touch 
 ## Bug 1: Programmatic `focus()` Opens iOS Keyboard and Scrolls Page
 
 ### Symptom
+
 Swiping between Bash/Claude panes or tapping session tabs caused iOS to open the virtual keyboard and scroll the entire page upward.
 
 ### Root Cause
+
 The `setMode()` function called `chatInput.focus()` unconditionally after switching panes. On desktop this is harmless. On iOS, programmatic `.focus()` on a text input opens the virtual keyboard, and iOS scrolls the focused element into view — displacing the entire fixed layout.
 
 The touch toolbar handler had the same issue: it called `chatInput.focus()` after every button tap.
 
 ### Fix
+
 - Guarded `chatInput.focus()` in `setMode()` with `if (!isMobile())`.
 - Changed the touch toolbar handler from unconditional `chatInput.focus()` to `if (document.activeElement === chatInput) chatInput.focus()` — only re-focus if the keyboard was already open.
 
@@ -35,9 +38,11 @@ The touch toolbar handler had the same issue: it called `chatInput.focus()` afte
 ## Bug 2: iOS Scrolls the Page Instead of the Terminal
 
 ### Symptom
+
 Touch-scrolling inside a terminal pane scrolled the browser page (creating visible overscroll bounce) instead of scrolling the terminal content.
 
 ### Root Cause
+
 Two compounding issues:
 
 1. **`overflow: hidden` on `<body>` is insufficient on iOS.** iOS Safari can scroll the `<html>` element even when `<body>` has `overflow: hidden`. The page needs both `<html>` and `<body>` to have `position: fixed; width: 100%; overflow: hidden` to truly lock scrolling.
@@ -45,6 +50,7 @@ Two compounding issues:
 2. **xterm.js sets inline `touch-action: none` on `.xterm-screen`.** This blocks all touch gestures including the ones we need for terminal scrolling. CSS `!important` cannot reliably override inline styles set by JavaScript. The terminal's built-in touch handling doesn't work well on iOS.
 
 ### Fix
+
 Three changes:
 
 - **CSS**: Added `position: fixed; width: 100%; overflow: hidden` on both `html` and `body` in the `@media (max-width: 768px)` block. Added `overscroll-behavior: none` on `html, body` globally.
@@ -59,12 +65,15 @@ Three changes:
 ## Bug 3: iOS Chrome Scrolls Document When Focusing Textarea
 
 ### Symptom
+
 Tapping the input textarea to open the keyboard caused iOS Chrome to scroll the document downward, creating a large blank space below the input bar. The terminal content disappeared above the viewport.
 
 ### Root Cause
+
 When iOS opens the virtual keyboard, it resizes the visual viewport and scrolls the focused element into view. Even with `position: fixed` on the layout, iOS Chrome still triggers a document scroll event. The `100dvh` height adjusts correctly, but the scroll offset is not reset.
 
 ### Fix
+
 Added a `killScroll` function that aggressively resets scroll position to `(0, 0)` on multiple events:
 
 ```js
@@ -110,8 +119,8 @@ The staggered `setTimeout` calls on focus are necessary because iOS triggers the
 
 ## Affected Files
 
-| File | Changes |
-|------|---------|
-| `terminal/public/js/app.js` | `killScroll` listener, guarded `focus()` calls, `visualViewport` handler |
-| `terminal/public/js/terminal-pane.js` | `_initTouchScroll()` method with manual touch scroll handling |
-| `terminal/public/style.css` | `position: fixed` on html/body, `overscroll-behavior: none`, `touch-action` overrides |
+| File                                  | Changes                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `terminal/public/js/app.js`           | `killScroll` listener, guarded `focus()` calls, `visualViewport` handler              |
+| `terminal/public/js/terminal-pane.js` | `_initTouchScroll()` method with manual touch scroll handling                         |
+| `terminal/public/style.css`           | `position: fixed` on html/body, `overscroll-behavior: none`, `touch-action` overrides |

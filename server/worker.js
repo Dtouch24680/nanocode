@@ -92,7 +92,7 @@ export class Worker {
         'Create a detailed implementation plan. Do NOT write any code or make any file changes.',
         'Only use read-only tools (Read, Glob, Grep) to understand the codebase.',
         'Output your plan as structured markdown.',
-        '',
+        ''
       )
     }
 
@@ -101,17 +101,9 @@ export class Worker {
     // resumed conversation history; injecting it again wastes tokens.
     if (this.task.feedback && !isResume) {
       if (this.task.type === 'plan') {
-        parts.push(
-          '## Previous feedback to incorporate:',
-          this.task.feedback,
-          '',
-        )
+        parts.push('## Previous feedback to incorporate:', this.task.feedback, '')
       } else {
-        parts.push(
-          '## Implementation plan to follow:',
-          this.task.feedback,
-          '',
-        )
+        parts.push('## Implementation plan to follow:', this.task.feedback, '')
       }
     }
 
@@ -137,7 +129,16 @@ export class Worker {
       settingSources: ['project', 'user', 'local'],
       permissionMode: 'default',
       allowedTools: isPlan
-        ? ['Read', 'Glob', 'Grep', 'Task', 'WebSearch', 'WebFetch', 'TodoRead', 'TodoWrite']
+        ? [
+            'Read',
+            'Glob',
+            'Grep',
+            'Task',
+            'WebSearch',
+            'WebFetch',
+            'TodoRead',
+            'TodoWrite',
+          ]
         : [],
       canUseTool: (toolName, input, context) =>
         this._handleToolApproval(toolName, input, context),
@@ -174,33 +175,29 @@ export class Worker {
         for (const block of message.message.content) {
           if (block.type === 'text') {
             this.textChunks.push(block.text)
-            const event = this.store.appendEvent(
-              this.task.id,
-              'text',
-              { text: block.text }
-            )
+            const event = this.store.appendEvent(this.task.id, 'text', {
+              text: block.text,
+            })
             this.broadcast({
               type: 'task:event',
               taskId: this.task.id,
               event,
             })
           } else if (block.type === 'tool_use') {
-            const event = this.store.appendEvent(
-              this.task.id,
-              'tool_use',
-              { name: block.name, input: block.input }
-            )
+            const event = this.store.appendEvent(this.task.id, 'tool_use', {
+              name: block.name,
+              input: block.input,
+            })
             this.broadcast({
               type: 'task:event',
               taskId: this.task.id,
               event,
             })
           } else if (block.type === 'tool_result') {
-            const event = this.store.appendEvent(
-              this.task.id,
-              'tool_result',
-              { tool_use_id: block.tool_use_id, content: block.content }
-            )
+            const event = this.store.appendEvent(this.task.id, 'tool_result', {
+              tool_use_id: block.tool_use_id,
+              content: block.content,
+            })
             this.broadcast({
               type: 'task:event',
               taskId: this.task.id,
@@ -221,12 +218,9 @@ export class Worker {
             const inputTokens =
               (usage.cumulativeInputTokens || usage.inputTokens || 0) +
               (usage.cumulativeCacheReadInputTokens || usage.cacheReadInputTokens || 0)
-            const outputTokens =
-              usage.cumulativeOutputTokens || usage.outputTokens || 0
+            const outputTokens = usage.cumulativeOutputTokens || usage.outputTokens || 0
             // Approximate: $3/M input, $15/M output (Sonnet)
-            this.costUsd =
-              (inputTokens / 1_000_000) * 3 +
-              (outputTokens / 1_000_000) * 15
+            this.costUsd = (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15
           }
         }
         break
@@ -257,11 +251,10 @@ export class Worker {
     }
 
     // Store approval request event and ask user
-    const event = this.store.appendEvent(
-      this.task.id,
-      'approval_req',
-      { name: toolName, input }
-    )
+    const event = this.store.appendEvent(this.task.id, 'approval_req', {
+      name: toolName,
+      input,
+    })
     this.broadcast({
       type: 'task:approval',
       taskId: this.task.id,
@@ -312,9 +305,7 @@ export class Worker {
     const resolver = this._approvalResolvers.get(eventId)
     if (resolver) {
       resolver(
-        allow
-          ? { behavior: 'allow' }
-          : { behavior: 'deny', message: 'User denied' }
+        allow ? { behavior: 'allow' } : { behavior: 'deny', message: 'User denied' }
       )
     }
   }

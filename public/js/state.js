@@ -19,7 +19,7 @@ export const state = {
   tasks: [],
   events: new Map(),
   selectedTaskId: null,
-  cliProvider: 'claude', // 'claude' | 'agent'
+  cliProvider: 'claude', // 'claude' | 'agent' | 'opencode'
 }
 
 /**

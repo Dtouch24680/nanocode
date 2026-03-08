@@ -204,7 +204,9 @@ export class TerminalPane {
             '. Press Enter to restart]\x1b[0m\r\n'
         )
       } else if (msg.type === 'error') {
-        this.term.write('\r\n\x1b[90m[Error: ' + (msg.error || 'unknown') + ']\x1b[0m\r\n')
+        this.term.write(
+          '\r\n\x1b[90m[Error: ' + (msg.error || 'unknown') + ']\x1b[0m\r\n'
+        )
       }
     }
 

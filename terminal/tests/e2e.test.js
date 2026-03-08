@@ -44,7 +44,11 @@ function collectMessages(ws, predicate, timeoutMs = 5000) {
     const t = setTimeout(() => {
       if (settled) return
       settled = true
-      reject(new Error(`Timeout after ${timeoutMs}ms. Got ${messages.length} messages: ${JSON.stringify(messages.map((m) => m.type))}`))
+      reject(
+        new Error(
+          `Timeout after ${timeoutMs}ms. Got ${messages.length} messages: ${JSON.stringify(messages.map((m) => m.type))}`
+        )
+      )
     }, timeoutMs)
     ws.on('message', (raw) => {
       if (settled) return
@@ -71,7 +75,9 @@ function collectMessages(ws, predicate, timeoutMs = 5000) {
 async function openSession(projectId, sessionType = 'bash') {
   const ws = new WebSocket(WS_URL)
   await once(ws, 'open')
-  const collector = collectMessages(ws, (msgs) => msgs.some((m) => m.type === 'output' || m.type === 'history'))
+  const collector = collectMessages(ws, (msgs) =>
+    msgs.some((m) => m.type === 'output' || m.type === 'history')
+  )
   ws.send(JSON.stringify({ type: 'attach', projectId, sessionType, cols: 80, rows: 24 }))
   const messages = await collector
   return { ws, messages }
@@ -86,7 +92,11 @@ function sendAndExpect(ws, input, expectedSubstring, timeoutMs = 5000) {
       if (settled) return
       settled = true
       listener()
-      reject(new Error(`Timeout: expected "${expectedSubstring}" in output, got: ${JSON.stringify(output)}`))
+      reject(
+        new Error(
+          `Timeout: expected "${expectedSubstring}" in output, got: ${JSON.stringify(output)}`
+        )
+      )
     }, timeoutMs)
     const listener = ws.on('message', (raw) => {
       if (settled) return
@@ -190,7 +200,10 @@ describe('terminal e2e', () => {
     const r = await fetch(`${BASE}/api/projects`)
     const list = await r.json()
     const names = list.map((p) => p.name)
-    assert(names.includes('example-project'), `Missing example-project in: ${names.join(', ')}`)
+    assert(
+      names.includes('example-project'),
+      `Missing example-project in: ${names.join(', ')}`
+    )
     assert(list.length >= 2)
   })
 
@@ -237,9 +250,20 @@ describe('terminal e2e', () => {
     const ws = new WebSocket(WS_URL)
     await once(ws, 'open')
     const collector = collectMessages(ws, (msgs) => msgs.some((m) => m.type === 'error'))
-    ws.send(JSON.stringify({ type: 'attach', projectId: 'nonexistent-id', sessionType: 'bash', cols: 80, rows: 24 }))
+    ws.send(
+      JSON.stringify({
+        type: 'attach',
+        projectId: 'nonexistent-id',
+        sessionType: 'bash',
+        cols: 80,
+        rows: 24,
+      })
+    )
     const msgs = await collector
-    assert(msgs.some((m) => m.type === 'error'), 'Expected error message for invalid project')
+    assert(
+      msgs.some((m) => m.type === 'error'),
+      'Expected error message for invalid project'
+    )
     ws.close()
   })
 
@@ -274,14 +298,30 @@ describe('terminal e2e', () => {
     await once(ws2, 'open')
     const collector = collectMessages(
       ws2,
-      (msgs) => msgs.some((m) => (m.type === 'history' || m.type === 'output') && m.data?.includes(marker)),
+      (msgs) =>
+        msgs.some(
+          (m) => (m.type === 'history' || m.type === 'output') && m.data?.includes(marker)
+        ),
       5000
     )
-    ws2.send(JSON.stringify({ type: 'attach', projectId: currentId, sessionType: 'bash', cols: 80, rows: 24 }))
+    ws2.send(
+      JSON.stringify({
+        type: 'attach',
+        projectId: currentId,
+        sessionType: 'bash',
+        cols: 80,
+        rows: 24,
+      })
+    )
     const msgs = await collector
-    const historyOrOutput = msgs.filter((m) => m.type === 'history' || m.type === 'output')
+    const historyOrOutput = msgs.filter(
+      (m) => m.type === 'history' || m.type === 'output'
+    )
     const combined = historyOrOutput.map((m) => m.data).join('')
-    assert(combined.includes(marker), `Expected marker '${marker}' in scrollback history, got: ${combined.slice(0, 200)}`)
+    assert(
+      combined.includes(marker),
+      `Expected marker '${marker}' in scrollback history, got: ${combined.slice(0, 200)}`
+    )
     ws2.close()
   })
 

@@ -24,9 +24,7 @@ export function renderCard(task) {
   const meta = [typeBadge]
 
   if (task.status === 'failed') {
-    meta.push(
-      el('span', { className: 'badge badge-failed', textContent: 'failed' })
-    )
+    meta.push(el('span', { className: 'badge badge-failed', textContent: 'failed' }))
   }
   if (task.status === 'cancelled') {
     meta.push(

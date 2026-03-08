@@ -12,7 +12,12 @@ async function request(path, options = {}) {
     ...options,
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error?.fieldErrors ? JSON.stringify(data.error) : data.error || 'Request failed')
+  if (!res.ok)
+    throw new Error(
+      data.error?.fieldErrors
+        ? JSON.stringify(data.error)
+        : data.error || 'Request failed'
+    )
   return data
 }
 
@@ -82,36 +87,52 @@ export function fetchEvents(taskId, afterId = 0) {
 
 // --- Terminal helpers ---
 
-export function fetchDiskSessions(projectId) {
-  return request(`/projects/${projectId}/claude-sessions`).catch(() => [])
+export function fetchDiskSessions(projectId, provider = 'claude') {
+  return request(
+    `/projects/${projectId}/claude-sessions?provider=${encodeURIComponent(provider)}`
+  ).catch(() => [])
 }
 
-export function fetchRunningSessions(projectId) {
-  return request(`/projects/${projectId}/sessions`).catch(() => [])
+export function fetchRunningSessions(projectId, provider = 'claude') {
+  return request(
+    `/projects/${projectId}/sessions?provider=${encodeURIComponent(provider)}`
+  ).catch(() => [])
 }
 
 export function deleteClaudeSession(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' })
+  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}`, {
+    method: 'DELETE',
+  })
 }
 
 export function archiveSession(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/archive`, { method: 'POST' })
+  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/archive`, {
+    method: 'POST',
+  })
 }
 
 export function unarchiveSession(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/archive`, { method: 'DELETE' })
+  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/archive`, {
+    method: 'DELETE',
+  })
 }
 
-export function fetchArchivedSessions(projectId) {
-  return request(`/projects/${projectId}/archived-sessions`).catch(() => [])
+export function fetchArchivedSessions(projectId, provider = 'claude') {
+  return request(
+    `/projects/${projectId}/archived-sessions?provider=${encodeURIComponent(provider)}`
+  ).catch(() => [])
 }
 
 export function markSessionManaged(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/managed`, { method: 'POST' })
+  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/managed`, {
+    method: 'POST',
+  })
 }
 
-export function fetchManagedDiskSessions(projectId) {
-  return request(`/projects/${projectId}/claude-sessions?managed=1`).catch(() => [])
+export function fetchManagedDiskSessions(projectId, provider = 'claude') {
+  return request(
+    `/projects/${projectId}/claude-sessions?managed=1&provider=${encodeURIComponent(provider)}`
+  ).catch(() => [])
 }
 
 export function fetchDir(path) {

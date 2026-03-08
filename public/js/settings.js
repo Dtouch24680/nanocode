@@ -23,7 +23,9 @@ let loaded = false
 function showStatus(el, text, isError = false) {
   el.textContent = text
   el.className = 'settings-status' + (isError ? ' error' : ' success')
-  setTimeout(() => { el.textContent = '' }, 3000)
+  setTimeout(() => {
+    el.textContent = ''
+  }, 3000)
 }
 
 /**

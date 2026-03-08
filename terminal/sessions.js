@@ -95,7 +95,9 @@ class Session {
           const project = this._key.split(':')[0]
           const providerName = p.charAt(0).toUpperCase() + p.slice(1)
           const status = exitCode === 0 ? 'completed' : `exited (code ${exitCode})`
-          notify(`*${providerName} session ${status}*\nProject: ${project}\nSession: ${label}`)
+          notify(
+            `*${providerName} session ${status}*\nProject: ${project}\nSession: ${label}`
+          )
           break
         }
       }
@@ -239,7 +241,7 @@ export function get(sessionKey) {
 }
 
 /** CLI provider prefixes used for session keys */
-const CLI_PROVIDERS = ['claude', 'agent']
+const CLI_PROVIDERS = ['claude', 'agent', 'opencode']
 
 /**
  * List active CLI session IDs for a project.
@@ -251,7 +253,7 @@ const CLI_PROVIDERS = ['claude', 'agent']
 export function listCliSessions(projectId, provider) {
   const prefixes = provider
     ? [`${projectId}:${provider}:`]
-    : CLI_PROVIDERS.map(p => `${projectId}:${p}:`)
+    : CLI_PROVIDERS.map((p) => `${projectId}:${p}:`)
   const ids = []
   for (const key of sessions.keys()) {
     for (const prefix of prefixes) {

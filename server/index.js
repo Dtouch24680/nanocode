@@ -239,7 +239,7 @@ app.get('/api/tasks/:id/events', (req, res) => {
 
 // --- REST: Settings ---
 
-const VALID_CLI_PROVIDERS = new Set(['claude', 'agent'])
+const VALID_CLI_PROVIDERS = new Set(['claude', 'agent', 'opencode'])
 
 app.get('/api/settings', (_req, res) => {
   res.json(store.getAllSettings())
@@ -271,7 +271,10 @@ const deflateOpts = {
   zlibInflateOptions: { chunkSize: 16 * 1024 },
   threshold: 128,
 }
-const terminalWss = new WebSocketServer({ noServer: true, perMessageDeflate: deflateOpts })
+const terminalWss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: deflateOpts,
+})
 
 server.on('upgrade', (req, socket, head) => {
   const { pathname } = new URL(req.url, `http://${req.headers.host}`)
@@ -293,7 +296,11 @@ codebuilderWss.on('connection', (ws) => {
   ws.on('close', () => clients.delete(ws))
   ws.on('message', (raw) => {
     let msg
-    try { msg = WsClientMessageSchema.parse(JSON.parse(raw)) } catch { return }
+    try {
+      msg = WsClientMessageSchema.parse(JSON.parse(raw))
+    } catch {
+      return
+    }
     if (msg.type === 'approve') {
       const worker = workers.get(msg.taskId)
       if (worker) worker.handleApproval(msg.eventId, msg.allow)

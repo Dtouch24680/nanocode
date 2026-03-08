@@ -73,10 +73,12 @@ They have independent PTY session pools (in-memory per process).
 ### WebSocket Protocols
 
 **Codebuilder WS (`/ws`)** — broadcast protocol:
+
 - Server → Client: `{type: 'task:updated', task}`, `{type: 'task:event', taskId, event}`, `{type: 'task:approval', taskId, event}`
 - Client → Server: `{type: 'approve', taskId, eventId, allow}`
 
 **Terminal WS (`/ws/terminal`)** — per-session protocol:
+
 - Client → Server (first msg): `{type: 'attach', projectId, sessionType, cols, rows, claudeSessionId?}`
 - Client → Server: `{type: 'input', data}`, `{type: 'resize', cols, rows}`, `{type: 'ping', id}`, `{type: 'restart', cols, rows}`
 - Server → Client: `{type: 'output', data}`, `{type: 'history', data}`, `{type: 'exit', exitCode, signal}`, `{type: 'pong', id}`
@@ -123,6 +125,7 @@ task_events (
 ```
 
 **Key relationships:**
+
 - Tasks belong to projects via `project_id` (optional for backward compat)
 - Tasks can depend on other tasks via `depends_on`
 - Task events are append-only log per task
@@ -182,12 +185,12 @@ public/js/
 
 ```js
 state = {
-  projects: [],              // All projects from SQLite
-  activeProjectId: null,     // Currently selected project
-  activeTab: 'tasks',        // 'tasks' | 'terminal'
-  tasks: [],                 // Tasks for active project
-  events: new Map(),         // taskId → event[]
-  selectedTaskId: null,      // Task detail/plan review
+  projects: [], // All projects from SQLite
+  activeProjectId: null, // Currently selected project
+  activeTab: 'tasks', // 'tasks' | 'terminal'
+  tasks: [], // Tasks for active project
+  events: new Map(), // taskId → event[]
+  selectedTaskId: null, // Task detail/plan review
 }
 ```
 
@@ -224,6 +227,7 @@ Terminal pane connects
 ### CSS Architecture
 
 Single `public/style.css` merging both design systems:
+
 - Shared design tokens (identical palette, glass layers, radii)
 - System font stack (no external @import for performance)
 - Component styles: header, sidebar, tab-bar, board, cards, panels, terminals
@@ -249,36 +253,36 @@ but maintain independent PTY session pools.
 
 ### Phase 1+2 (Backend) — DONE
 
-| Action | File | Description |
-|--------|------|-------------|
-| Create | `terminal/routes.js` | Extracted terminal Router + WS handler |
-| Rewrite | `server/index.js` | Unified entry: tasks + terminal + dual WS |
-| Rewrite | `server/store.js` | Added projects table, CRUD, migration, project_id on tasks |
-| Modify | `server/validation.js` | Added optional projectId to CreateTaskSchema |
-| Rewrite | `terminal/server.js` | Thin wrapper importing routes.js + store |
+| Action  | File                   | Description                                                |
+| ------- | ---------------------- | ---------------------------------------------------------- |
+| Create  | `terminal/routes.js`   | Extracted terminal Router + WS handler                     |
+| Rewrite | `server/index.js`      | Unified entry: tasks + terminal + dual WS                  |
+| Rewrite | `server/store.js`      | Added projects table, CRUD, migration, project_id on tasks |
+| Modify  | `server/validation.js` | Added optional projectId to CreateTaskSchema               |
+| Rewrite | `terminal/server.js`   | Thin wrapper importing routes.js + store                   |
 
 ### Phase 3 (Frontend)
 
-| Action | File | Description |
-|--------|------|-------------|
-| Copy | `public/js/terminal-pane.js` | From terminal/public/js/ |
-| Copy | `public/js/split-pane.js` | From terminal/public/js/ |
-| Copy | `public/js/local-echo.js` | From terminal/public/js/ |
-| Create | `public/js/sidebar.js` | Project list, add/delete, active indicator |
-| Create | `public/js/tab-bar.js` | Tab switching, lazy terminal init |
-| Create | `public/js/terminal-view.js` | Terminal tab controller |
-| Rewrite | `public/index.html` | Sidebar + tabs + terminal markup |
-| Rewrite | `public/js/app.js` | Unified orchestrator |
-| Modify | `public/js/state.js` | Add projects, activeProjectId, activeTab |
-| Modify | `public/js/api.js` | Add project CRUD wrappers |
-| Modify | `public/js/task-form.js` | Use project cwd, add projectId |
-| Modify | `public/js/ws.js` | Connect to /ws path |
-| Merge | `public/style.css` | Both CSS files + sidebar/tab styles |
+| Action  | File                         | Description                                |
+| ------- | ---------------------------- | ------------------------------------------ |
+| Copy    | `public/js/terminal-pane.js` | From terminal/public/js/                   |
+| Copy    | `public/js/split-pane.js`    | From terminal/public/js/                   |
+| Copy    | `public/js/local-echo.js`    | From terminal/public/js/                   |
+| Create  | `public/js/sidebar.js`       | Project list, add/delete, active indicator |
+| Create  | `public/js/tab-bar.js`       | Tab switching, lazy terminal init          |
+| Create  | `public/js/terminal-view.js` | Terminal tab controller                    |
+| Rewrite | `public/index.html`          | Sidebar + tabs + terminal markup           |
+| Rewrite | `public/js/app.js`           | Unified orchestrator                       |
+| Modify  | `public/js/state.js`         | Add projects, activeProjectId, activeTab   |
+| Modify  | `public/js/api.js`           | Add project CRUD wrappers                  |
+| Modify  | `public/js/task-form.js`     | Use project cwd, add projectId             |
+| Modify  | `public/js/ws.js`            | Connect to /ws path                        |
+| Merge   | `public/style.css`           | Both CSS files + sidebar/tab styles        |
 
 ### Kept (backward compat)
 
-| File | Purpose |
-|------|---------|
-| `terminal/public/index.html` | Standalone terminal UI on :4000 |
-| `terminal/public/style.css` | Standalone terminal styles |
-| `terminal/public/js/*` | Standalone terminal JS (unchanged) |
+| File                         | Purpose                            |
+| ---------------------------- | ---------------------------------- |
+| `terminal/public/index.html` | Standalone terminal UI on :4000    |
+| `terminal/public/style.css`  | Standalone terminal styles         |
+| `terminal/public/js/*`       | Standalone terminal JS (unchanged) |

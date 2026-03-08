@@ -5,7 +5,16 @@
  */
 
 import { Router } from 'express'
-import { readdirSync, readFileSync, existsSync, openSync, readSync, closeSync, unlinkSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import {
+  readdirSync,
+  readFileSync,
+  existsSync,
+  openSync,
+  readSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs'
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import { homedir } from 'node:os'
 import * as sessions from './sessions.js'
@@ -20,6 +29,135 @@ import * as slack from './slack.js'
 export function createTerminalRoutes(store) {
   const router = Router()
   let newSessionCounter = 0
+  const VALID_CLI_PROVIDERS = new Set(['claude', 'agent', 'opencode'])
+
+  function getCliProvider(rawProvider) {
+    return VALID_CLI_PROVIDERS.has(rawProvider) ? rawProvider : undefined
+  }
+
+  function listClaudeSessions(projectId, cwd) {
+    const encoded = cwd.replace(/\//g, '-')
+    const claudeDir = join(homedir(), '.claude', 'projects', encoded)
+    const result = []
+
+    if (!existsSync(claudeDir)) {
+      return result
+    }
+
+    const historyMap = new Map()
+    const historyPath = join(homedir(), '.claude', 'history.jsonl')
+    if (existsSync(historyPath)) {
+      try {
+        const lines = readFileSync(historyPath, 'utf-8').split('\n')
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const entry = JSON.parse(line)
+            if (entry.project === cwd && entry.sessionId) {
+              const existing = historyMap.get(entry.sessionId)
+              if (!existing || entry.timestamp > existing.timestamp) {
+                historyMap.set(entry.sessionId, {
+                  display: entry.display || '',
+                  timestamp: entry.timestamp,
+                })
+              }
+            }
+          } catch {
+            /* skip malformed lines */
+          }
+        }
+      } catch {
+        /* ignore read errors */
+      }
+    }
+
+    let files
+    try {
+      files = readdirSync(claudeDir).filter((f) => f.endsWith('.jsonl'))
+    } catch {
+      return result
+    }
+
+    for (const file of files) {
+      const sessionId = file.replace('.jsonl', '')
+      let slug = ''
+      let timestamp = 0
+      let hasUserMessage = false
+
+      try {
+        const fd = openSync(join(claudeDir, file), 'r')
+        const buf = Buffer.alloc(32768)
+        const bytesRead = readSync(fd, buf, 0, 32768, 0)
+        closeSync(fd)
+        const content = buf.toString('utf-8', 0, bytesRead)
+        const lines = content.split('\n').slice(0, 25)
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const entry = JSON.parse(line)
+            if (entry.slug && !slug) slug = entry.slug
+            if (entry.type === 'user' && !entry.isMeta) hasUserMessage = true
+            if (entry.timestamp) {
+              const ts =
+                typeof entry.timestamp === 'string'
+                  ? new Date(entry.timestamp).getTime()
+                  : entry.timestamp
+              if (ts > timestamp) timestamp = ts
+            }
+          } catch {
+            /* skip */
+          }
+        }
+      } catch {
+        /* skip unreadable files */
+      }
+
+      if (!hasUserMessage) {
+        try {
+          unlinkSync(join(claudeDir, file))
+        } catch {
+          /* ignore */
+        }
+        continue
+      }
+
+      const hist = historyMap.get(sessionId)
+      const preview = hist?.display || ''
+      const lastActivity = hist?.timestamp || timestamp || 0
+      result.push({ sessionId, slug, preview, lastActivity })
+    }
+
+    result.sort((a, b) => b.lastActivity - a.lastActivity)
+    return result
+  }
+
+  function listOpencodeSessions(cwd) {
+    try {
+      const output = execFileSync('opencode', ['session', 'list', '--format', 'json'], {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      const sessions = JSON.parse(output)
+      return sessions
+        .filter((session) => session.directory === cwd)
+        .map((session) => ({
+          sessionId: session.id,
+          slug: session.title || '',
+          preview: session.title || '',
+          lastActivity: session.updated || session.created || 0,
+        }))
+        .sort((a, b) => b.lastActivity - a.lastActivity)
+    } catch {
+      return []
+    }
+  }
+
+  function listProviderSessions(projectId, cwd, provider) {
+    if (provider === 'opencode') return listOpencodeSessions(cwd)
+    if (provider === 'claude') return listClaudeSessions(projectId, cwd)
+    return []
+  }
 
   // --- REST: projects ---
 
@@ -53,7 +191,8 @@ export function createTerminalRoutes(store) {
     if (!project) {
       return res.status(404).json({ error: 'project not found' })
     }
-    res.json(sessions.listCliSessions(req.params.id))
+    const provider = getCliProvider(req.query.provider)
+    res.json(sessions.listCliSessions(req.params.id, provider))
   })
 
   // --- REST: all claude sessions from disk (resumable) ---
@@ -65,98 +204,21 @@ export function createTerminalRoutes(store) {
     }
 
     const cwd = project.cwd.replace(/\/+$/, '')
-    const encoded = cwd.replace(/\//g, '-')
-    const claudeDir = join(homedir(), '.claude', 'projects', encoded)
-
-    const result = []
-
-    if (!existsSync(claudeDir)) {
-      return res.json(result)
-    }
-
-    const historyMap = new Map()
-    const historyPath = join(homedir(), '.claude', 'history.jsonl')
-    if (existsSync(historyPath)) {
-      try {
-        const lines = readFileSync(historyPath, 'utf-8').split('\n')
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const entry = JSON.parse(line)
-            if (entry.project === cwd && entry.sessionId) {
-              const existing = historyMap.get(entry.sessionId)
-              if (!existing || entry.timestamp > existing.timestamp) {
-                historyMap.set(entry.sessionId, {
-                  display: entry.display || '',
-                  timestamp: entry.timestamp,
-                })
-              }
-            }
-          } catch { /* skip malformed lines */ }
-        }
-      } catch { /* ignore read errors */ }
-    }
-
-    let files
-    try {
-      files = readdirSync(claudeDir).filter(f => f.endsWith('.jsonl'))
-    } catch {
-      return res.json(result)
-    }
-
-    for (const file of files) {
-      const sessionId = file.replace('.jsonl', '')
-      let slug = ''
-      let timestamp = 0
-      let hasUserMessage = false
-
-      try {
-        const fd = openSync(join(claudeDir, file), 'r')
-        const buf = Buffer.alloc(32768)
-        const bytesRead = readSync(fd, buf, 0, 32768, 0)
-        closeSync(fd)
-        const content = buf.toString('utf-8', 0, bytesRead)
-        const lines = content.split('\n').slice(0, 25)
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const entry = JSON.parse(line)
-            if (entry.slug && !slug) slug = entry.slug
-            if (entry.type === 'user' && !entry.isMeta) hasUserMessage = true
-            if (entry.timestamp) {
-              const ts = typeof entry.timestamp === 'string'
-                ? new Date(entry.timestamp).getTime()
-                : entry.timestamp
-              if (ts > timestamp) timestamp = ts
-            }
-          } catch { /* skip */ }
-        }
-      } catch { /* skip unreadable files */ }
-
-      if (!hasUserMessage) {
-        try { unlinkSync(join(claudeDir, file)) } catch { /* ignore */ }
-        continue
-      }
-
-      const hist = historyMap.get(sessionId)
-      const preview = hist?.display || ''
-      const lastActivity = hist?.timestamp || timestamp || 0
-      result.push({ sessionId, slug, preview, lastActivity })
-    }
-
-    result.sort((a, b) => b.lastActivity - a.lastActivity)
+    const provider = getCliProvider(req.query.provider) || 'claude'
+    const result = listProviderSessions(req.params.id, cwd, provider)
 
     // Filter out archived sessions
     const archivedIds = new Set(store.listArchivedSessions(req.params.id))
-    let filtered = archivedIds.size > 0
-      ? result.filter(s => !archivedIds.has(s.sessionId))
-      : result
+    let filtered =
+      archivedIds.size > 0 ? result.filter((s) => !archivedIds.has(s.sessionId)) : result
 
     // Filter to managed-only if requested
     if (req.query.managed === '1') {
       const managedIds = new Set(store.listManagedSessions(req.params.id))
-      const runningIds = new Set(sessions.listCliSessions(req.params.id))
-      filtered = filtered.filter(s => managedIds.has(s.sessionId) || runningIds.has(s.sessionId))
+      const runningIds = new Set(sessions.listCliSessions(req.params.id, provider))
+      filtered = filtered.filter(
+        (s) => managedIds.has(s.sessionId) || runningIds.has(s.sessionId)
+      )
     }
 
     res.json(filtered)
@@ -174,78 +236,10 @@ export function createTerminalRoutes(store) {
     if (archivedIds.size === 0) return res.json([])
 
     const cwd = project.cwd.replace(/\/+$/, '')
-    const encoded = cwd.replace(/\//g, '-')
-    const claudeDir = join(homedir(), '.claude', 'projects', encoded)
-
-    if (!existsSync(claudeDir)) return res.json([])
-
-    const historyMap = new Map()
-    const historyPath = join(homedir(), '.claude', 'history.jsonl')
-    if (existsSync(historyPath)) {
-      try {
-        const lines = readFileSync(historyPath, 'utf-8').split('\n')
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const entry = JSON.parse(line)
-            if (entry.project === cwd && entry.sessionId) {
-              const existing = historyMap.get(entry.sessionId)
-              if (!existing || entry.timestamp > existing.timestamp) {
-                historyMap.set(entry.sessionId, {
-                  display: entry.display || '',
-                  timestamp: entry.timestamp,
-                })
-              }
-            }
-          } catch { /* skip malformed lines */ }
-        }
-      } catch { /* ignore read errors */ }
-    }
-
-    const result = []
-    let files
-    try {
-      files = readdirSync(claudeDir).filter(f => f.endsWith('.jsonl'))
-    } catch {
-      return res.json(result)
-    }
-
-    for (const file of files) {
-      const sessionId = file.replace('.jsonl', '')
-      if (!archivedIds.has(sessionId)) continue
-
-      let slug = ''
-      let timestamp = 0
-
-      try {
-        const fd = openSync(join(claudeDir, file), 'r')
-        const buf = Buffer.alloc(32768)
-        const bytesRead = readSync(fd, buf, 0, 32768, 0)
-        closeSync(fd)
-        const content = buf.toString('utf-8', 0, bytesRead)
-        const lines = content.split('\n').slice(0, 25)
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const entry = JSON.parse(line)
-            if (entry.slug && !slug) slug = entry.slug
-            if (entry.timestamp) {
-              const ts = typeof entry.timestamp === 'string'
-                ? new Date(entry.timestamp).getTime()
-                : entry.timestamp
-              if (ts > timestamp) timestamp = ts
-            }
-          } catch { /* skip */ }
-        }
-      } catch { /* skip unreadable files */ }
-
-      const hist = historyMap.get(sessionId)
-      const preview = hist?.display || ''
-      const lastActivity = hist?.timestamp || timestamp || 0
-      result.push({ sessionId, slug, preview, lastActivity })
-    }
-
-    result.sort((a, b) => b.lastActivity - a.lastActivity)
+    const provider = getCliProvider(req.query.provider) || 'claude'
+    const result = listProviderSessions(req.params.id, cwd, provider).filter((session) =>
+      archivedIds.has(session.sessionId)
+    )
     res.json(result)
   })
 
@@ -258,6 +252,7 @@ export function createTerminalRoutes(store) {
     // Kill any running PTY for this session
     sessions.destroySession(`${req.params.id}:claude:${req.params.sessionId}`)
     sessions.destroySession(`${req.params.id}:agent:${req.params.sessionId}`)
+    sessions.destroySession(`${req.params.id}:opencode:${req.params.sessionId}`)
     res.status(204).send()
   })
 
@@ -281,8 +276,10 @@ export function createTerminalRoutes(store) {
       return res.status(404).json({ error: 'project not found' })
     }
     // Try all CLI providers since frontend may not know which one started the session
-    const destroyed = sessions.destroySession(`${req.params.id}:claude:${req.params.sessionId}`)
-      || sessions.destroySession(`${req.params.id}:agent:${req.params.sessionId}`)
+    const destroyed =
+      sessions.destroySession(`${req.params.id}:claude:${req.params.sessionId}`) ||
+      sessions.destroySession(`${req.params.id}:agent:${req.params.sessionId}`) ||
+      sessions.destroySession(`${req.params.id}:opencode:${req.params.sessionId}`)
     res.status(204).send()
   })
 
@@ -324,7 +321,8 @@ export function createTerminalRoutes(store) {
       res.json({ path: base, entries })
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' })
-      if (err.code === 'ENOTDIR') return res.status(400).json({ error: 'not a directory' })
+      if (err.code === 'ENOTDIR')
+        return res.status(400).json({ error: 'not a directory' })
       res.status(500).json({ error: err.message })
     }
   })
@@ -343,16 +341,26 @@ export function createTerminalRoutes(store) {
       newArgs: '',
       resumeArgs: (id) => `--resume ${id}`,
     },
+    opencode: {
+      bin: 'opencode',
+      newArgs: '.',
+      resumeArgs: (id) => `--session ${id}`,
+    },
   }
 
   function handleTerminalWs(ws) {
     const once = (raw) => {
       let msg
-      try { msg = JSON.parse(raw) } catch { return }
+      try {
+        msg = JSON.parse(raw)
+      } catch {
+        return
+      }
       if (msg.type !== 'attach') return
       const { projectId, sessionType, cols, rows } = msg
       const claudeSessionId = msg.claudeSessionId || ''
-      const cliProvider = (msg.cliProvider && CLI_PROVIDERS[msg.cliProvider]) ? msg.cliProvider : 'claude'
+      const cliProvider =
+        msg.cliProvider && CLI_PROVIDERS[msg.cliProvider] ? msg.cliProvider : 'claude'
       if (!projectId || !sessionType) return
       if (sessionType !== 'bash' && sessionType !== 'claude') return
 
@@ -370,7 +378,7 @@ export function createTerminalRoutes(store) {
       } else {
         const cli = CLI_PROVIDERS[cliProvider]
         const isNew = !claudeSessionId || claudeSessionId.startsWith('new-')
-        sessionKey = `${projectId}:${cliProvider}:${claudeSessionId || ('new-' + newSessionCounter++)}`
+        sessionKey = `${projectId}:${cliProvider}:${claudeSessionId || 'new-' + newSessionCounter++}`
         command = 'bash'
         const cliCmd = isNew
           ? `${cli.bin}${cli.newArgs ? ' ' + cli.newArgs : ''}`
@@ -378,13 +386,20 @@ export function createTerminalRoutes(store) {
         args = ['-lc', cliCmd]
         // Track resumed sessions as managed by Codebuilder
         if (!isNew) {
-          try { store.markSessionManaged(projectId, claudeSessionId) } catch { /* ignore */ }
+          try {
+            store.markSessionManaged(projectId, claudeSessionId)
+          } catch {
+            /* ignore */
+          }
         }
       }
 
       const session = sessions.getOrCreate(
-        sessionKey, command, args,
-        Math.max(1, cols || 80), Math.max(1, rows || 24),
+        sessionKey,
+        command,
+        args,
+        Math.max(1, cols || 80),
+        Math.max(1, rows || 24),
         project.cwd
       )
       session.attach(ws, Math.max(1, cols || 80), Math.max(1, rows || 24))

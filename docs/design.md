@@ -82,7 +82,7 @@ Example from `server/docs/task-lifecycle.md`:
 ```markdown
 ## Task State Machine
 
-​```mermaid
+​`mermaid
 stateDiagram-v2
     [*] --> pending: POST /api/tasks
     pending --> running: scheduler.tick()
@@ -94,21 +94,21 @@ stateDiagram-v2
     failed --> pending: PATCH /api/tasks/:id (retry)
     pending --> cancelled: PATCH /api/tasks/:id
     running --> cancelled: PATCH /api/tasks/:id (aborts worker)
-​```
+​`
 ```
 
 Example from `server/docs/worker-streaming.md`:
 
-```markdown
+````markdown
 ## Event Streaming Flow
 
 ​```mermaid
 sequenceDiagram
-    participant SDK as Claude SDK
-    participant W as Worker
-    participant S as Store
-    participant WS as WebSocket
-    participant UI as Browser
+participant SDK as Claude SDK
+participant W as Worker
+participant S as Store
+participant WS as WebSocket
+participant UI as Browser
 
     SDK->>W: onText(chunk)
     W->>S: appendEvent(taskId, 'text', {text})
@@ -116,8 +116,9 @@ sequenceDiagram
     W->>WS: broadcast({type: 'task:event', taskId, event})
     WS->>UI: JSON message
     UI->>UI: dispatch EVENT_RECEIVED
+
 ​```
-```
+````
 
 ### Architecture Backlinks
 
@@ -264,11 +265,13 @@ Run with: `npm test`
 **Store tests** use an in-memory SQLite database (`:memory:`). No fixtures, no teardown — each test gets a fresh DB.
 
 **Scheduler tests** mock the store and worker pool. Verify that:
+
 - Blocked tasks (unresolved `depends_on`) are skipped
 - `MAX_CONCURRENCY` is respected
 - Completed dependencies unblock waiting tasks
 
 **Worker tests** mock the Claude SDK. Verify that:
+
 - Text chunks produce `text` events
 - Tool calls produce `tool_use` or `approval_req` events
 - Completion sets correct status (`done` vs `review`)
@@ -278,6 +281,7 @@ Run with: `npm test`
 ### Frontend Tests
 
 Deferred until the UI stabilizes. When added, use Playwright for E2E tests following the example-app pattern:
+
 - Co-located in `public/tests/`
 - Visual regression with screenshot comparison
 - Test the full lifecycle: create task → watch stream → approve tool → see completion
@@ -288,10 +292,10 @@ Deferred until the UI stabilizes. When added, use Playwright for E2E tests follo
 
 ### Pre-commit (via lint-staged + husky)
 
-| Check | Tool | Purpose |
-|-------|------|---------|
-| Format | Prettier | Consistent style, no debates |
-| Lint | ESLint | Catch bugs, enforce conventions |
+| Check  | Tool     | Purpose                         |
+| ------ | -------- | ------------------------------- |
+| Format | Prettier | Consistent style, no debates    |
+| Lint   | ESLint   | Catch bugs, enforce conventions |
 
 No TypeScript — vanilla JS with JSDoc annotations. No type-check step, but ESLint catches most structural errors.
 
@@ -390,6 +394,7 @@ See docs/design.md for full conventions.
 ## Skills
 
 [To be added as .claude/skills/ guides when patterns stabilize]
+
 - server-guide: Store, scheduler, worker patterns
 - frontend-guide: DOM rendering, state management, event streaming
 - testing-guide: Test structure, mocks, what to verify
@@ -403,11 +408,11 @@ Following example-app's pattern, agent skill guides will be added as the codebas
 
 **Planned skills:**
 
-| Skill | Purpose |
-|-------|---------|
-| `server-guide` | Store API, scheduler behavior, worker lifecycle, SDK integration |
-| `frontend-guide` | DOM rendering, state mutations, WS message handling, event stream |
-| `testing-guide` | Test structure, mocking patterns, what each test file covers |
+| Skill              | Purpose                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| `server-guide`     | Store API, scheduler behavior, worker lifecycle, SDK integration  |
+| `frontend-guide`   | DOM rendering, state mutations, WS message handling, event stream |
+| `testing-guide`    | Test structure, mocking patterns, what each test file covers      |
 | `validation-guide` | Zod schema conventions, where to add new schemas, error responses |
 
 Skills are written after the initial implementation ships — not before. They document what exists, not what's aspirational.

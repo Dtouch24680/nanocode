@@ -99,47 +99,53 @@ export async function renderDetail() {
     // Show "Resume in Terminal" for running tasks that have a session_id
     // (persisted as soon as the SDK provides it)
     if (task.session_id) {
-      actionsEl.appendChild(el('button', {
-        className: 'btn',
-        textContent: 'Resume in Terminal',
-        onClick: () => {
-          selectTask(null)
-          switchTab('terminal')
-          if (isInitialized()) {
-            openNewClaudeSession(task.session_id)
-          }
-        },
-      }))
+      actionsEl.appendChild(
+        el('button', {
+          className: 'btn',
+          textContent: 'Resume in Terminal',
+          onClick: () => {
+            selectTask(null)
+            switchTab('terminal')
+            if (isInitialized()) {
+              openNewClaudeSession(task.session_id)
+            }
+          },
+        })
+      )
     }
   }
 
   if (task.status === 'failed') {
-    actionsEl.appendChild(el('button', {
-      className: 'btn btn-primary',
-      textContent: 'Retry',
-      onClick: async () => {
-        try {
-          await updateTask(task.id, { status: 'pending' })
-        } catch (err) {
-          console.error('Retry failed:', err.message)
-        }
-      },
-    }))
+    actionsEl.appendChild(
+      el('button', {
+        className: 'btn btn-primary',
+        textContent: 'Retry',
+        onClick: async () => {
+          try {
+            await updateTask(task.id, { status: 'pending' })
+          } catch (err) {
+            console.error('Retry failed:', err.message)
+          }
+        },
+      })
+    )
   }
 
   if (task.status === 'done' || task.status === 'failed' || task.status === 'cancelled') {
     const hasSession = !!task.session_id
-    actionsEl.appendChild(el('button', {
-      className: 'btn',
-      textContent: hasSession ? 'Resume in Terminal' : 'Open in Terminal',
-      onClick: () => {
-        selectTask(null)
-        switchTab('terminal')
-        if (isInitialized()) {
-          openNewClaudeSession(hasSession ? task.session_id : undefined)
-        }
-      },
-    }))
+    actionsEl.appendChild(
+      el('button', {
+        className: 'btn',
+        textContent: hasSession ? 'Resume in Terminal' : 'Open in Terminal',
+        onClick: () => {
+          selectTask(null)
+          switchTab('terminal')
+          if (isInitialized()) {
+            openNewClaudeSession(hasSession ? task.session_id : undefined)
+          }
+        },
+      })
+    )
 
     // Continue input — only for tasks with a session to resume
     if (hasSession && (task.status === 'done' || task.status === 'failed')) {
@@ -228,9 +234,7 @@ function renderEvent(event) {
  */
 function renderToolCall(data) {
   const inputText =
-    typeof data.input === 'string'
-      ? data.input
-      : JSON.stringify(data.input, null, 2)
+    typeof data.input === 'string' ? data.input : JSON.stringify(data.input, null, 2)
 
   return el('div', { className: 'event-tool' }, [
     el('div', { className: 'event-tool-name', textContent: data.name }),
@@ -264,12 +268,13 @@ function renderToolResult(data) {
 function renderApprovalPrompt(event) {
   const data = event.data
   const inputText =
-    typeof data.input === 'string'
-      ? data.input
-      : JSON.stringify(data.input, null, 2)
+    typeof data.input === 'string' ? data.input : JSON.stringify(data.input, null, 2)
 
   const container = el('div', { className: 'event-approval' }, [
-    el('div', { className: 'event-tool-name', textContent: `${data.name} (approval required)` }),
+    el('div', {
+      className: 'event-tool-name',
+      textContent: `${data.name} (approval required)`,
+    }),
     el('pre', { className: 'event-tool-input', textContent: inputText }),
   ])
 

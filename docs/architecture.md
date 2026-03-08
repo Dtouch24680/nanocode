@@ -28,7 +28,7 @@ Our primary data path is WebSocket → state → render. This is the single hard
 useEffect(() => {
   ws.onmessage = (msg) => {
     const data = JSON.parse(msg.data)
-    setTasks([...tasks, data.task])  // `tasks` is stale — always []
+    setTasks([...tasks, data.task]) // `tasks` is stale — always []
   }
 }, [])
 ```
@@ -36,7 +36,7 @@ useEffect(() => {
 The correct version requires functional `setState` — a non-obvious pattern that LLMs frequently miss:
 
 ```jsx
-setTasks(prev => upsert(prev, data.task))  // correct but easy to forget
+setTasks((prev) => upsert(prev, data.task)) // correct but easy to forget
 ```
 
 With mutable state, this bug category doesn't exist:
@@ -77,14 +77,14 @@ Vanilla JS failure modes are **obvious and loud**. A null element throws immedia
 
 For this app specifically:
 
-| Concern | React approach | Vanilla approach | Winner |
-|---------|---------------|-----------------|--------|
-| WebSocket → UI | `useEffect` + `useRef` + functional `setState` (3 patterns that must be correct simultaneously) | `ws.onmessage` + mutate state + call render (linear, no traps) | **Vanilla** |
-| Event stream (append-only) | Re-renders entire list on each event, needs virtualization for long streams | `container.appendChild(renderEvent(evt))` — O(1) per event | **Vanilla** |
-| Kanban board (filter + render) | JSX map with key props (agents misuse index keys) | `column.innerHTML = ''; tasks.filter(...).forEach(t => column.appendChild(renderCard(t)))` | **Tie** |
-| Markdown rendering | `react-markdown` component | `marked.parse(text)` + `DOMPurify.sanitize()` | **Tie** |
-| Build/config | Vite + JSX + Tailwind plugin | `<script type="module">` + `<link>` to CSS file. Zero config. | **Vanilla** |
-| Agent modifiability | Must understand hooks rules, closure semantics, immutable updates | Must understand DOM API, event listeners, innerHTML vs textContent | **Vanilla** (DOM API is more stable and better documented in training data) |
+| Concern                        | React approach                                                                                  | Vanilla approach                                                                           | Winner                                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| WebSocket → UI                 | `useEffect` + `useRef` + functional `setState` (3 patterns that must be correct simultaneously) | `ws.onmessage` + mutate state + call render (linear, no traps)                             | **Vanilla**                                                                 |
+| Event stream (append-only)     | Re-renders entire list on each event, needs virtualization for long streams                     | `container.appendChild(renderEvent(evt))` — O(1) per event                                 | **Vanilla**                                                                 |
+| Kanban board (filter + render) | JSX map with key props (agents misuse index keys)                                               | `column.innerHTML = ''; tasks.filter(...).forEach(t => column.appendChild(renderCard(t)))` | **Tie**                                                                     |
+| Markdown rendering             | `react-markdown` component                                                                      | `marked.parse(text)` + `DOMPurify.sanitize()`                                              | **Tie**                                                                     |
+| Build/config                   | Vite + JSX + Tailwind plugin                                                                    | `<script type="module">` + `<link>` to CSS file. Zero config.                              | **Vanilla**                                                                 |
+| Agent modifiability            | Must understand hooks rules, closure semantics, immutable updates                               | Must understand DOM API, event listeners, innerHTML vs textContent                         | **Vanilla** (DOM API is more stable and better documented in training data) |
 
 ### The chosen stack
 
@@ -216,11 +216,11 @@ Simple loop that runs every 2 seconds (or on task mutation).
 
 ```js
 export function tick(workerPool) {
-  const pending = store.listTasks().filter(t => t.status === 'pending')
+  const pending = store.listTasks().filter((t) => t.status === 'pending')
   for (const task of pending) {
     if (task.depends_on) {
       const dep = store.getTask(task.depends_on)
-      if (dep.status !== 'done') continue  // skip blocked tasks
+      if (dep.status !== 'done') continue // skip blocked tasks
     }
     if (workerPool.size >= MAX_CONCURRENCY) break
     workerPool.start(task)
@@ -236,7 +236,7 @@ Claude SDK wrapper. One worker instance per running task.
 export class Worker {
   constructor(task, broadcast) {
     this.task = task
-    this.broadcast = broadcast  // fn to push WS messages to all clients
+    this.broadcast = broadcast // fn to push WS messages to all clients
   }
 
   async run() {
@@ -245,9 +245,10 @@ export class Worker {
 
     const sdk = new ClaudeSDK({
       cwd: this.task.cwd,
-      prompt: this.task.type === 'plan'
-        ? `Create a detailed implementation plan (do NOT write code):\n${this.task.title}`
-        : this.task.title,
+      prompt:
+        this.task.type === 'plan'
+          ? `Create a detailed implementation plan (do NOT write code):\n${this.task.title}`
+          : this.task.title,
       onText: (text) => {
         const evt = store.appendEvent(this.task.id, 'text', { text })
         this.broadcast({ type: 'task:event', taskId: this.task.id, event: evt })
@@ -269,16 +270,22 @@ export class Worker {
           plan_result: this.task.type === 'plan' ? result : null,
           turns: this.turns,
           cost_usd: this.cost,
-          ended_at: Date.now()
+          ended_at: Date.now(),
         })
         this.broadcast({ type: 'task:updated', task: store.getTask(this.task.id) })
-      }
+      },
     })
   }
 
-  waitForApproval(eventId) { /* Promise + resolver map */ }
-  handleApproval(eventId, approved) { /* resolve the promise */ }
-  abort() { /* sdk.abort() */ }
+  waitForApproval(eventId) {
+    /* Promise + resolver map */
+  }
+  handleApproval(eventId, approved) {
+    /* resolve the promise */
+  }
+  abort() {
+    /* sdk.abort() */
+  }
 }
 ```
 
@@ -288,14 +295,14 @@ export class Worker {
 
 ### REST (task CRUD)
 
-| Method  | Path                      | Body                                   | Purpose                            |
-|---------|---------------------------|----------------------------------------|------------------------------------|
-| `GET`   | `/api/tasks`              | —                                      | List all tasks                     |
-| `POST`  | `/api/tasks`              | `{ title, type?, cwd, dependsOn? }`   | Create task                        |
-| `PATCH` | `/api/tasks/:id`          | `{ status?, feedback? }`               | Cancel, retry                      |
-| `POST`  | `/api/tasks/:id/confirm`  | `{ title? }`                           | Confirm plan, spawn execution task |
-| `POST`  | `/api/tasks/:id/revise`   | `{ feedback }`                         | Revise plan, reset to pending      |
-| `GET`   | `/api/tasks/:id/events`   | `?after=eventId`                       | Incremental event fetch            |
+| Method  | Path                     | Body                                | Purpose                            |
+| ------- | ------------------------ | ----------------------------------- | ---------------------------------- |
+| `GET`   | `/api/tasks`             | —                                   | List all tasks                     |
+| `POST`  | `/api/tasks`             | `{ title, type?, cwd, dependsOn? }` | Create task                        |
+| `PATCH` | `/api/tasks/:id`         | `{ status?, feedback? }`            | Cancel, retry                      |
+| `POST`  | `/api/tasks/:id/confirm` | `{ title? }`                        | Confirm plan, spawn execution task |
+| `POST`  | `/api/tasks/:id/revise`  | `{ feedback }`                      | Revise plan, reset to pending      |
+| `GET`   | `/api/tasks/:id/events`  | `?after=eventId`                    | Incremental event fetch            |
 
 ### WebSocket (single connection, all tasks)
 
@@ -342,15 +349,15 @@ Single mutable state object. Render functions read from it. WebSocket messages m
 // state.js
 
 export const state = {
-  tasks: [],                    // Task[]
-  events: new Map(),            // Map<taskId, Event[]>
-  selectedTaskId: null,         // string | null
+  tasks: [], // Task[]
+  events: new Map(), // Map<taskId, Event[]>
+  selectedTaskId: null, // string | null
 }
 
 // Mutate + re-render the affected view.
 // No immutability discipline needed — there is no virtual DOM diffing.
 export function taskUpdated(task) {
-  const idx = state.tasks.findIndex(t => t.id === task.id)
+  const idx = state.tasks.findIndex((t) => t.id === task.id)
   if (idx >= 0) state.tasks[idx] = task
   else state.tasks.push(task)
   renderBoard()
@@ -377,18 +384,32 @@ const ac = new AbortController()
 export function connect(url) {
   ws = new WebSocket(url)
 
-  ws.addEventListener('message', (e) => {
-    const msg = JSON.parse(e.data)
-    switch (msg.type) {
-      case 'task:updated':  taskUpdated(msg.task); break
-      case 'task:event':    eventReceived(msg.taskId, msg.event); break
-      case 'task:approval': showApproval(msg.taskId, msg.event); break
-    }
-  }, { signal: ac.signal })
+  ws.addEventListener(
+    'message',
+    (e) => {
+      const msg = JSON.parse(e.data)
+      switch (msg.type) {
+        case 'task:updated':
+          taskUpdated(msg.task)
+          break
+        case 'task:event':
+          eventReceived(msg.taskId, msg.event)
+          break
+        case 'task:approval':
+          showApproval(msg.taskId, msg.event)
+          break
+      }
+    },
+    { signal: ac.signal }
+  )
 
-  ws.addEventListener('close', () => {
-    setTimeout(() => connect(url), 2000)  // auto-reconnect
-  }, { signal: ac.signal })
+  ws.addEventListener(
+    'close',
+    () => {
+      setTimeout(() => connect(url), 2000) // auto-reconnect
+    },
+    { signal: ac.signal }
+  )
 }
 
 export function send(msg) {
@@ -488,18 +509,18 @@ Claude continues/stops              ▼
 
 ## Design Decisions
 
-| Decision | voice-doc approach | claudecodeui approach | This design |
-|----------|-------------------|----------------------|-------------|
-| Real-time | HTTP polling (1-5s) | WebSocket streaming | **WebSocket** — lower latency, less server load |
-| Storage | JSON files | SQLite + .jsonl | **SQLite** — atomic, queryable, no corruption |
-| SDK integration | External processes | `@anthropic-ai/claude-agent-sdk` | **SDK** — in-process, streamable, no parsing |
-| Task model | File-based, flat | Session-based (no task concept) | **DB tasks + event log** — best of both |
-| Concurrency | Git worktrees | Single session | **Worker pool** with configurable max |
-| Tool approval | None (auto) | In-flight via WS | **Selective approval via WS** — safe tools auto-approved |
-| Plan workflow | Two-phase (plan, review, execute) | None | **Kept** — valuable for complex tasks |
-| Frontend | React (voice-doc DevPage) | React 18 + Vite | **Vanilla ES modules** — see evaluation above |
-| Styling | Tailwind CSS | Tailwind CSS | **CSS custom properties** — no build step, no config |
-| Markdown | react-markdown | react-markdown + rehype | **marked + DOMPurify** — two deps, CDN loaded |
+| Decision        | voice-doc approach                | claudecodeui approach            | This design                                              |
+| --------------- | --------------------------------- | -------------------------------- | -------------------------------------------------------- |
+| Real-time       | HTTP polling (1-5s)               | WebSocket streaming              | **WebSocket** — lower latency, less server load          |
+| Storage         | JSON files                        | SQLite + .jsonl                  | **SQLite** — atomic, queryable, no corruption            |
+| SDK integration | External processes                | `@anthropic-ai/claude-agent-sdk` | **SDK** — in-process, streamable, no parsing             |
+| Task model      | File-based, flat                  | Session-based (no task concept)  | **DB tasks + event log** — best of both                  |
+| Concurrency     | Git worktrees                     | Single session                   | **Worker pool** with configurable max                    |
+| Tool approval   | None (auto)                       | In-flight via WS                 | **Selective approval via WS** — safe tools auto-approved |
+| Plan workflow   | Two-phase (plan, review, execute) | None                             | **Kept** — valuable for complex tasks                    |
+| Frontend        | React (voice-doc DevPage)         | React 18 + Vite                  | **Vanilla ES modules** — see evaluation above            |
+| Styling         | Tailwind CSS                      | Tailwind CSS                     | **CSS custom properties** — no build step, no config     |
+| Markdown        | react-markdown                    | react-markdown + rehype          | **marked + DOMPurify** — two deps, CDN loaded            |
 
 ---
 

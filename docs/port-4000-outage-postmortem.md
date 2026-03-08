@@ -52,12 +52,13 @@ The old `terminal/public/` was NOT restored — instead, port 4000 now serves th
 
 ## Current State
 
-| Port | Process | Serves |
-|------|---------|--------|
-| 3000 | `codebuilder` | Unified app (tasks + terminal + sidebar) |
-| 4000 | `terminal` | Same unified app (backward compat entry point) |
+| Port | Process       | Serves                                         |
+| ---- | ------------- | ---------------------------------------------- |
+| 3000 | `codebuilder` | Unified app (tasks + terminal + sidebar)       |
+| 4000 | `terminal`    | Same unified app (backward compat entry point) |
 
 Both processes share:
+
 - `terminal/routes.js` — project/session/slack REST routes + WebSocket handler
 - `server/store.js` — SQLite database (projects, tasks, events)
 - `public/` — unified frontend with sidebar, tab bar, kanban board, terminal panes

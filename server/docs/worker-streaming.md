@@ -35,11 +35,11 @@ sequenceDiagram
 
 The SDK yields three message types:
 
-| Type | Contains | Action |
-|------|----------|--------|
-| `system` | `session_id` | Capture for resume capability |
+| Type        | Contains                   | Action                                      |
+| ----------- | -------------------------- | ------------------------------------------- |
+| `system`    | `session_id`               | Capture for resume capability               |
 | `assistant` | `message.content[]` blocks | Map to events (text, tool_use, tool_result) |
-| `result` | `modelUsage` | Extract cumulative token counts for cost |
+| `result`    | `modelUsage`               | Extract cumulative token counts for cost    |
 
 ## Event Append
 

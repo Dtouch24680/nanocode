@@ -32,9 +32,7 @@ export function renderBoard() {
     if (projectId && task.project_id && task.project_id !== projectId) continue
 
     const col =
-      task.status === 'failed' || task.status === 'cancelled'
-        ? 'done'
-        : task.status
+      task.status === 'failed' || task.status === 'cancelled' ? 'done' : task.status
     const colId = STATUS_COLUMNS[col]
     if (colId) {
       document.getElementById(colId).appendChild(renderCard(task))

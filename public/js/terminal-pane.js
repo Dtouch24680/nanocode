@@ -197,37 +197,49 @@ export class TerminalPane {
     let touchActive = false
     let accumDy = 0
 
-    container.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return
-      touchStartY = e.touches[0].clientY
-      touchActive = true
-      accumDy = 0
-    }, { passive: true })
+    container.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length !== 1) return
+        touchStartY = e.touches[0].clientY
+        touchActive = true
+        accumDy = 0
+      },
+      { passive: true }
+    )
 
     // MUST be non-passive so we can preventDefault and stop page scroll
-    container.addEventListener('touchmove', (e) => {
-      if (!touchActive || e.touches.length !== 1) return
+    container.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!touchActive || e.touches.length !== 1) return
 
-      // Always prevent default to stop iOS page scroll
-      e.preventDefault()
+        // Always prevent default to stop iOS page scroll
+        e.preventDefault()
 
-      const dy = touchStartY - e.touches[0].clientY
-      touchStartY = e.touches[0].clientY
+        const dy = touchStartY - e.touches[0].clientY
+        touchStartY = e.touches[0].clientY
 
-      // Accumulate sub-line pixel deltas for smooth scrolling
-      accumDy += dy
-      const cellHeight = (container.clientHeight / (this.term.rows || 24)) || 17
-      const lines = Math.trunc(accumDy / cellHeight)
-      if (lines !== 0) {
-        this.term.scrollLines(lines)
-        accumDy -= lines * cellHeight
-      }
-    }, { passive: false })
+        // Accumulate sub-line pixel deltas for smooth scrolling
+        accumDy += dy
+        const cellHeight = container.clientHeight / (this.term.rows || 24) || 17
+        const lines = Math.trunc(accumDy / cellHeight)
+        if (lines !== 0) {
+          this.term.scrollLines(lines)
+          accumDy -= lines * cellHeight
+        }
+      },
+      { passive: false }
+    )
 
-    container.addEventListener('touchend', () => {
-      touchActive = false
-      accumDy = 0
-    }, { passive: true })
+    container.addEventListener(
+      'touchend',
+      () => {
+        touchActive = false
+        accumDy = 0
+      },
+      { passive: true }
+    )
   }
 
   _connect() {
@@ -280,7 +292,9 @@ export class TerminalPane {
             '. Press Enter to restart]\x1b[0m\r\n'
         )
       } else if (msg.type === 'error') {
-        this.term.write('\r\n\x1b[90m[Error: ' + (msg.error || 'unknown') + ']\x1b[0m\r\n')
+        this.term.write(
+          '\r\n\x1b[90m[Error: ' + (msg.error || 'unknown') + ']\x1b[0m\r\n'
+        )
       }
     }
 

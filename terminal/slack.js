@@ -18,7 +18,9 @@ try {
     const data = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'))
     if (data.webhookUrl) webhookUrl = data.webhookUrl
   }
-} catch { /* ignore */ }
+} catch {
+  /* ignore */
+}
 
 export function getWebhookUrl() {
   return webhookUrl
@@ -28,7 +30,9 @@ export function setWebhookUrl(url) {
   webhookUrl = url
   try {
     writeFileSync(SETTINGS_PATH, JSON.stringify({ webhookUrl: url }), 'utf-8')
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

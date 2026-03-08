@@ -11,7 +11,7 @@
     "pm2:restart": "pm2 restart ecosystem.config.cjs",
     "pm2:logs": "pm2 logs",
     "pm2:status": "pm2 status",
-    "test": "node --test 'server/tests/*.test.js'",
+    "test": "node --test server/tests/*.test.js",
     "test:terminal-e2e": "node --test terminal/tests/e2e.test.js",
     "lint": "prettier --check .",
     "check": "npm run lint && npm run test"

@@ -1,263 +1,447 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Codebuilder</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codebuilder</title>
 
-  <!-- xterm CSS -->
-  <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
+    <!-- xterm CSS -->
+    <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
 
-  <!-- App CSS -->
-  <link rel="stylesheet" href="/style.css">
+    <!-- App CSS -->
+    <link rel="stylesheet" href="/style.css" />
 
-  <!-- xterm UMD bundles — WebGL loaded lazily by terminal-pane.js -->
-  <script src="/vendor/xterm/lib/xterm.js"></script>
-  <script src="/vendor/xterm-addon-fit/lib/addon-fit.js"></script>
-  <script src="/vendor/xterm-addon-web-links/lib/addon-web-links.js"></script>
-  <script src="/vendor/xterm-addon-webgl/lib/addon-webgl.js" defer></script>
-</head>
-<body>
-  <header class="app-header">
-    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    </button>
-    <h1 class="app-title">Codebuilder</h1>
-    <div class="header-pills">
-      <span class="connection-status" id="connection-status">Disconnected</span>
-      <span class="connection-status" id="status-bash" hidden>Bash: disconnected</span>
-      <span class="connection-status" id="status-claude" hidden>Claude: disconnected</span>
-    </div>
-  </header>
-
-  <main class="app-layout">
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <span class="sidebar-title">Projects</span>
-        <button type="button" class="btn-icon" id="project-add" title="Add project">+</button>
+    <!-- xterm UMD bundles — WebGL loaded lazily by terminal-pane.js -->
+    <script src="/vendor/xterm/lib/xterm.js"></script>
+    <script src="/vendor/xterm-addon-fit/lib/addon-fit.js"></script>
+    <script src="/vendor/xterm-addon-web-links/lib/addon-web-links.js"></script>
+    <script src="/vendor/xterm-addon-webgl/lib/addon-webgl.js" defer></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+      <h1 class="app-title">Codebuilder</h1>
+      <div class="header-pills">
+        <span class="connection-status" id="connection-status">Disconnected</span>
+        <span class="connection-status" id="status-bash" hidden>Bash: disconnected</span>
+        <span class="connection-status" id="status-claude" hidden
+          >Claude: disconnected</span
+        >
       </div>
-      <div class="sidebar-projects" id="sidebar-projects"></div>
-    </aside>
+    </header>
 
-    <!-- Main content area -->
-    <div class="main-content">
-      <!-- Tab bar -->
-      <div class="tab-bar" id="tab-bar">
-        <button class="tab-btn active" data-tab="tasks" id="tab-tasks">Tasks</button>
-        <button class="tab-btn" data-tab="terminal" id="tab-terminal">Terminal</button>
-        <button class="tab-btn" data-tab="settings" id="tab-settings">Settings</button>
-      </div>
+    <main class="app-layout">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Projects</span>
+          <button type="button" class="btn-icon" id="project-add" title="Add project">
+            +
+          </button>
+        </div>
+        <div class="sidebar-projects" id="sidebar-projects"></div>
+      </aside>
 
-      <!-- Tasks tab -->
-      <div class="tab-content" id="tasks-tab">
-        <!-- Task creation form -->
-        <section class="task-form-container" id="task-form-container">
-          <form id="task-form" class="task-form">
-            <div class="form-row-main">
-              <input type="text" id="task-title" name="title" placeholder="Describe the task\u2026 (prefix plan: for plans, Shift+Enter for options)" required autocomplete="off">
-              <button type="submit" class="btn btn-primary">Create</button>
-            </div>
-            <div class="form-row-advanced" id="form-advanced" hidden>
-              <select id="task-type" name="type">
-                <option value="task">Task</option>
-                <option value="plan">Plan</option>
-              </select>
-              <input type="text" id="task-depends" name="dependsOn" placeholder="Depends on (ID)">
-            </div>
-          </form>
-        </section>
+      <!-- Main content area -->
+      <div class="main-content">
+        <!-- Tab bar -->
+        <div class="tab-bar" id="tab-bar">
+          <button class="tab-btn active" data-tab="tasks" id="tab-tasks">Tasks</button>
+          <button class="tab-btn" data-tab="terminal" id="tab-terminal">Terminal</button>
+          <button class="tab-btn" data-tab="settings" id="tab-settings">Settings</button>
+        </div>
 
-        <!-- Kanban board -->
-        <section class="board" id="board">
-          <div class="board-column" data-status="pending">
-            <h2 class="column-title"><span class="status-dot dot-pending"></span>Pending</h2>
-            <div class="column-cards" id="col-pending"></div>
-          </div>
-          <div class="board-column" data-status="running">
-            <h2 class="column-title"><span class="status-dot dot-running"></span>Running</h2>
-            <div class="column-cards" id="col-running"></div>
-          </div>
-          <div class="board-column" data-status="review">
-            <h2 class="column-title"><span class="status-dot dot-review"></span>Review</h2>
-            <div class="column-cards" id="col-review"></div>
-          </div>
-          <div class="board-column" data-status="done">
-            <h2 class="column-title"><span class="status-dot dot-done"></span>Done</h2>
-            <div class="column-cards" id="col-done"></div>
-          </div>
-        </section>
-      </div>
-
-      <!-- Settings tab -->
-      <div class="tab-content" id="settings-tab" hidden>
-        <div class="settings-container">
-          <h2 class="settings-heading">Settings</h2>
-          <section class="settings-section">
-            <h3 class="settings-section-title">CLI Provider</h3>
-            <p class="settings-desc">Choose which CLI tool to use for interactive terminal sessions. Headless SDK tasks always use Claude Code.</p>
-            <div class="settings-radio-group" id="cli-provider-group">
-              <label class="settings-radio-label">
-                <input type="radio" name="cli-provider" value="claude" checked>
-                Claude Code
-                <span class="settings-radio-hint">(default)</span>
-              </label>
-              <label class="settings-radio-label">
-                <input type="radio" name="cli-provider" value="agent">
-                Cursor Agent
-              </label>
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="cli-save-btn">Save</button>
-              <span class="settings-status" id="cli-status"></span>
-            </div>
+        <!-- Tasks tab -->
+        <div class="tab-content" id="tasks-tab">
+          <!-- Task creation form -->
+          <section class="task-form-container" id="task-form-container">
+            <form id="task-form" class="task-form">
+              <div class="form-row-main">
+                <input
+                  type="text"
+                  id="task-title"
+                  name="title"
+                  placeholder="Describe the task\u2026 (prefix plan: for plans, Shift+Enter for options)"
+                  required
+                  autocomplete="off"
+                />
+                <button type="submit" class="btn btn-primary">Create</button>
+              </div>
+              <div class="form-row-advanced" id="form-advanced" hidden>
+                <select id="task-type" name="type">
+                  <option value="task">Task</option>
+                  <option value="plan">Plan</option>
+                </select>
+                <input
+                  type="text"
+                  id="task-depends"
+                  name="dependsOn"
+                  placeholder="Depends on (ID)"
+                />
+              </div>
+            </form>
           </section>
-          <section class="settings-section">
-            <h3 class="settings-section-title">Slack Notifications</h3>
-            <p class="settings-desc">Receive Slack messages when tasks complete, fail, or need review.</p>
-            <label class="settings-label">
-              Webhook URL
-              <input type="url" id="slack-webhook-url" class="settings-input" placeholder="https://hooks.slack.com/services/..." autocomplete="off" spellcheck="false">
-            </label>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="slack-save-btn">Save</button>
-              <button type="button" class="btn" id="slack-test-btn">Send Test</button>
-              <span class="settings-status" id="slack-status"></span>
+
+          <!-- Kanban board -->
+          <section class="board" id="board">
+            <div class="board-column" data-status="pending">
+              <h2 class="column-title">
+                <span class="status-dot dot-pending"></span>Pending
+              </h2>
+              <div class="column-cards" id="col-pending"></div>
+            </div>
+            <div class="board-column" data-status="running">
+              <h2 class="column-title">
+                <span class="status-dot dot-running"></span>Running
+              </h2>
+              <div class="column-cards" id="col-running"></div>
+            </div>
+            <div class="board-column" data-status="review">
+              <h2 class="column-title">
+                <span class="status-dot dot-review"></span>Review
+              </h2>
+              <div class="column-cards" id="col-review"></div>
+            </div>
+            <div class="board-column" data-status="done">
+              <h2 class="column-title"><span class="status-dot dot-done"></span>Done</h2>
+              <div class="column-cards" id="col-done"></div>
             </div>
           </section>
         </div>
-      </div>
 
-      <!-- Terminal tab -->
-      <div class="tab-content" id="terminal-tab" hidden>
-        <div class="terminal-layout">
-          <div class="split-container" id="split-container">
-            <div class="pane pane-left">
-              <div class="pane-header">Bash</div>
-              <div class="pane-terminal" id="terminal-bash"></div>
-            </div>
-            <div class="split-divider" id="split-divider"></div>
-            <div class="pane pane-right">
-              <div class="pane-header">
-                <span class="pane-header-label">Claude Code</span>
-                <div class="session-tabs-wrap" id="session-tabs-wrap">
-                  <button type="button" class="session-scroll-btn session-scroll-left" id="session-scroll-left" hidden aria-label="Scroll left">&lsaquo;</button>
-                  <div class="session-tabs" id="session-tabs"></div>
-                  <button type="button" class="session-scroll-btn session-scroll-right" id="session-scroll-right" hidden aria-label="Scroll right">&rsaquo;</button>
+        <!-- Settings tab -->
+        <div class="tab-content" id="settings-tab" hidden>
+          <div class="settings-container">
+            <h2 class="settings-heading">Settings</h2>
+            <section class="settings-section">
+              <h3 class="settings-section-title">CLI Provider</h3>
+              <p class="settings-desc">
+                Choose which CLI tool to use for interactive terminal sessions. Headless
+                SDK tasks always use Claude Code.
+              </p>
+              <div class="settings-radio-group" id="cli-provider-group">
+                <label class="settings-radio-label">
+                  <input type="radio" name="cli-provider" value="claude" checked />
+                  Claude Code
+                  <span class="settings-radio-hint">(default)</span>
+                </label>
+                <label class="settings-radio-label">
+                  <input type="radio" name="cli-provider" value="agent" />
+                  Cursor Agent
+                </label>
+                <label class="settings-radio-label">
+                  <input type="radio" name="cli-provider" value="opencode" />
+                  OpenCode
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="cli-save-btn">
+                  Save
+                </button>
+                <span class="settings-status" id="cli-status"></span>
+              </div>
+            </section>
+            <section class="settings-section">
+              <h3 class="settings-section-title">Slack Notifications</h3>
+              <p class="settings-desc">
+                Receive Slack messages when tasks complete, fail, or need review.
+              </p>
+              <label class="settings-label">
+                Webhook URL
+                <input
+                  type="url"
+                  id="slack-webhook-url"
+                  class="settings-input"
+                  placeholder="https://hooks.slack.com/services/..."
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="slack-save-btn">
+                  Save
+                </button>
+                <button type="button" class="btn" id="slack-test-btn">Send Test</button>
+                <span class="settings-status" id="slack-status"></span>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Terminal tab -->
+        <div class="tab-content" id="terminal-tab" hidden>
+          <div class="terminal-layout">
+            <div class="split-container" id="split-container">
+              <div class="pane pane-left">
+                <div class="pane-header">Bash</div>
+                <div class="pane-terminal" id="terminal-bash"></div>
+              </div>
+              <div class="split-divider" id="split-divider"></div>
+              <div class="pane pane-right">
+                <div class="pane-header">
+                  <span class="pane-header-label">Claude Code</span>
+                  <div class="session-tabs-wrap" id="session-tabs-wrap">
+                    <button
+                      type="button"
+                      class="session-scroll-btn session-scroll-left"
+                      id="session-scroll-left"
+                      hidden
+                      aria-label="Scroll left"
+                    >
+                      &lsaquo;
+                    </button>
+                    <div class="session-tabs" id="session-tabs"></div>
+                    <button
+                      type="button"
+                      class="session-scroll-btn session-scroll-right"
+                      id="session-scroll-right"
+                      hidden
+                      aria-label="Scroll right"
+                    >
+                      &rsaquo;
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    class="session-add-btn"
+                    id="session-add-btn"
+                    title="New session"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    class="session-managed-btn"
+                    id="session-managed-btn"
+                    title="Show only sessions from this app"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="session-archive-btn"
+                    id="session-archive-btn"
+                    title="Archived sessions"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polyline points="21 8 21 21 3 21 3 8" />
+                      <rect x="1" y="3" width="22" height="5" />
+                      <line x1="10" y1="12" x2="14" y2="12" />
+                    </svg>
+                  </button>
+                  <button class="session-drawer-btn" id="session-drawer-btn">
+                    Sessions &#9662;
+                  </button>
                 </div>
-                <button type="button" class="session-add-btn" id="session-add-btn" title="New session">+</button>
-                <button type="button" class="session-managed-btn" id="session-managed-btn" title="Show only sessions from this app">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                </button>
-                <button type="button" class="session-archive-btn" id="session-archive-btn" title="Archived sessions">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
-                </button>
-                <button class="session-drawer-btn" id="session-drawer-btn">Sessions &#9662;</button>
+                <div
+                  class="session-archive-panel"
+                  id="session-archive-panel"
+                  hidden
+                ></div>
+                <div class="pane-terminal" id="terminal-claude"></div>
               </div>
-              <div class="session-archive-panel" id="session-archive-panel" hidden></div>
-              <div class="pane-terminal" id="terminal-claude"></div>
+              <div class="pane-dots" id="pane-dots">
+                <span class="pane-dot active" data-pane="bash"></span>
+                <span class="pane-dot" data-pane="claude"></span>
+              </div>
             </div>
-            <div class="pane-dots" id="pane-dots">
-              <span class="pane-dot active" data-pane="bash"></span>
-              <span class="pane-dot" data-pane="claude"></span>
-            </div>
-          </div>
 
-          <div class="chat-input-bar" id="chat-input-bar">
-            <div class="input-mode-toggle" id="mode-toggle">
-              <button class="mode-btn active" data-mode="bash" id="mode-bash">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                Terminal
-              </button>
-              <button class="mode-btn" data-mode="claude" id="mode-claude">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="12" cy="15" r="2"/></svg>
-                Claude
-              </button>
-              <div class="mode-indicator" id="mode-indicator"></div>
-            </div>
-            <div class="touch-toolbar" id="touch-toolbar">
-              <button class="touch-btn" data-action="ctrl-c">Ctrl+C</button>
-              <button class="touch-btn" data-action="ctrl-l">Clear</button>
-              <button class="touch-btn" data-action="arrow-up">&uarr;</button>
-              <button class="touch-btn" data-action="arrow-down">&darr;</button>
-              <button class="touch-btn" data-action="tab">Tab</button>
-              <button class="touch-btn" data-action="escape">Esc</button>
-            </div>
-            <div class="input-row">
-              <div class="input-wrap">
-                <div class="suggestions-dropdown" id="suggestions-dropdown" hidden></div>
-                <textarea id="chat-input" class="chat-textarea" placeholder="Type a command\u2026" rows="1" autocomplete="off" spellcheck="false"></textarea>
+            <div class="chat-input-bar" id="chat-input-bar">
+              <div class="input-mode-toggle" id="mode-toggle">
+                <button class="mode-btn active" data-mode="bash" id="mode-bash">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                  Terminal
+                </button>
+                <button class="mode-btn" data-mode="claude" id="mode-claude">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"
+                    />
+                    <circle cx="12" cy="15" r="2" />
+                  </svg>
+                  Claude
+                </button>
+                <div class="mode-indicator" id="mode-indicator"></div>
               </div>
-              <button class="send-btn" id="send-btn" aria-label="Send">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              </button>
+              <div class="touch-toolbar" id="touch-toolbar">
+                <button class="touch-btn" data-action="ctrl-c">Ctrl+C</button>
+                <button class="touch-btn" data-action="ctrl-l">Clear</button>
+                <button class="touch-btn" data-action="arrow-up">&uarr;</button>
+                <button class="touch-btn" data-action="arrow-down">&darr;</button>
+                <button class="touch-btn" data-action="tab">Tab</button>
+                <button class="touch-btn" data-action="escape">Esc</button>
+              </div>
+              <div class="input-row">
+                <div class="input-wrap">
+                  <div
+                    class="suggestions-dropdown"
+                    id="suggestions-dropdown"
+                    hidden
+                  ></div>
+                  <textarea
+                    id="chat-input"
+                    class="chat-textarea"
+                    placeholder="Type a command\u2026"
+                    rows="1"
+                    autocomplete="off"
+                    spellcheck="false"
+                  ></textarea>
+                </div>
+                <button class="send-btn" id="send-btn" aria-label="Send">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Task detail panel (event stream, approvals) -->
-    <aside class="detail-panel" id="detail-panel" hidden>
-      <div class="detail-header">
-        <h2 class="detail-title" id="detail-title"></h2>
-        <button class="btn btn-icon" id="detail-close" aria-label="Close">&times;</button>
-      </div>
-      <div class="detail-meta" id="detail-meta"></div>
-      <div class="event-stream" id="event-stream"></div>
-      <div class="detail-actions" id="detail-actions"></div>
-    </aside>
-
-    <!-- Plan review panel -->
-    <aside class="plan-review-panel" id="plan-review-panel" hidden>
-      <div class="detail-header">
-        <h2 class="detail-title" id="plan-title"></h2>
-        <button class="btn btn-icon" id="plan-close" aria-label="Close">&times;</button>
-      </div>
-      <div class="plan-content" id="plan-content"></div>
-      <div class="plan-actions" id="plan-actions">
-        <button class="btn btn-primary" id="plan-confirm">Confirm</button>
-        <div class="plan-revise">
-          <textarea id="plan-feedback" placeholder="Feedback for revision\u2026" rows="2"></textarea>
-          <button class="btn btn-secondary" id="plan-revise-btn">Revise</button>
+      <!-- Task detail panel (event stream, approvals) -->
+      <aside class="detail-panel" id="detail-panel" hidden>
+        <div class="detail-header">
+          <h2 class="detail-title" id="detail-title"></h2>
+          <button class="btn btn-icon" id="detail-close" aria-label="Close">
+            &times;
+          </button>
         </div>
-      </div>
-    </aside>
-  </main>
+        <div class="detail-meta" id="detail-meta"></div>
+        <div class="event-stream" id="event-stream"></div>
+        <div class="detail-actions" id="detail-actions"></div>
+      </aside>
 
-  <!-- Add project dialog -->
-  <dialog id="add-project-dialog" class="add-project-dialog">
-    <form method="dialog" id="add-project-form">
-      <h2 class="dialog-title">Add project</h2>
-      <label class="dialog-label">Name <input id="proj-name" type="text" required autocomplete="off" placeholder="Project name" /></label>
-      <div class="dialog-label">Folder (select from home directory)</div>
-      <div class="folder-browser">
-        <div class="folder-breadcrumb" id="folder-breadcrumb"></div>
-        <div class="folder-list" id="folder-list"></div>
-        <div class="folder-current" id="folder-current"></div>
-        <button type="button" id="folder-select-btn" class="btn-primary">Select this folder</button>
-      </div>
-      <input type="hidden" id="proj-cwd" />
-      <p class="dialog-hint" id="proj-cwd-hint">Click "Select this folder" to set the project path.</p>
-      <div class="dialog-actions">
-        <button type="button" id="proj-cancel" class="btn-secondary">Cancel</button>
-        <button type="submit" class="btn-primary">Add</button>
-      </div>
-    </form>
-  </dialog>
+      <!-- Plan review panel -->
+      <aside class="plan-review-panel" id="plan-review-panel" hidden>
+        <div class="detail-header">
+          <h2 class="detail-title" id="plan-title"></h2>
+          <button class="btn btn-icon" id="plan-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="plan-content" id="plan-content"></div>
+        <div class="plan-actions" id="plan-actions">
+          <button class="btn btn-primary" id="plan-confirm">Confirm</button>
+          <div class="plan-revise">
+            <textarea
+              id="plan-feedback"
+              placeholder="Feedback for revision\u2026"
+              rows="2"
+            ></textarea>
+            <button class="btn btn-secondary" id="plan-revise-btn">Revise</button>
+          </div>
+        </div>
+      </aside>
+    </main>
 
-  <!-- Session drawer (mobile) -->
-  <div class="session-drawer-backdrop" id="session-drawer-backdrop"></div>
-  <div class="session-drawer" id="session-drawer"></div>
+    <!-- Add project dialog -->
+    <dialog id="add-project-dialog" class="add-project-dialog">
+      <form method="dialog" id="add-project-form">
+        <h2 class="dialog-title">Add project</h2>
+        <label class="dialog-label"
+          >Name
+          <input
+            id="proj-name"
+            type="text"
+            required
+            autocomplete="off"
+            placeholder="Project name"
+        /></label>
+        <div class="dialog-label">Folder (select from home directory)</div>
+        <div class="folder-browser">
+          <div class="folder-breadcrumb" id="folder-breadcrumb"></div>
+          <div class="folder-list" id="folder-list"></div>
+          <div class="folder-current" id="folder-current"></div>
+          <button type="button" id="folder-select-btn" class="btn-primary">
+            Select this folder
+          </button>
+        </div>
+        <input type="hidden" id="proj-cwd" />
+        <p class="dialog-hint" id="proj-cwd-hint">
+          Click "Select this folder" to set the project path.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" id="proj-cancel" class="btn-secondary">Cancel</button>
+          <button type="submit" class="btn-primary">Add</button>
+        </div>
+      </form>
+    </dialog>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "marked": "https://cdn.jsdelivr.net/npm/marked@15/lib/marked.esm.js",
-      "dompurify": "https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.es.mjs"
-    }
-  }
-  </script>
-  <script type="module" src="/js/app.js"></script>
-</body>
+    <!-- Session drawer (mobile) -->
+    <div class="session-drawer-backdrop" id="session-drawer-backdrop"></div>
+    <div class="session-drawer" id="session-drawer"></div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "marked": "https://cdn.jsdelivr.net/npm/marked@15/lib/marked.esm.js",
+          "dompurify": "https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.es.mjs"
+        }
+      }
+    </script>
+    <script type="module" src="/js/app.js"></script>
+  </body>
 </html>

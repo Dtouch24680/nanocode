@@ -81,7 +81,8 @@ export function renderSidebar() {
 
   for (const project of state.projects) {
     const item = document.createElement('button')
-    item.className = 'sidebar-project' + (project.id === state.activeProjectId ? ' active' : '')
+    item.className =
+      'sidebar-project' + (project.id === state.activeProjectId ? ' active' : '')
     item.type = 'button'
 
     const name = document.createElement('span')
@@ -133,7 +134,9 @@ export function renderSidebar() {
 function switchProject(projectId) {
   if (projectId === state.activeProjectId) return
   state.activeProjectId = projectId
-  try { localStorage.setItem('activeProjectId', projectId) } catch {}
+  try {
+    localStorage.setItem('activeProjectId', projectId)
+  } catch {}
   renderSidebar()
 
   // Close mobile sidebar
@@ -152,7 +155,8 @@ let browsePath = ''
 function openAddDialog() {
   document.getElementById('proj-name').value = ''
   document.getElementById('proj-cwd').value = ''
-  document.getElementById('proj-cwd-hint').textContent = 'Click "Select this folder" to set the project path.'
+  document.getElementById('proj-cwd-hint').textContent =
+    'Click "Select this folder" to set the project path.'
   browsePath = ''
   loadFolder('')
   document.getElementById('add-project-dialog').showModal()
@@ -189,7 +193,10 @@ function renderBreadcrumb(path) {
   const homeLink = document.createElement('a')
   homeLink.href = '#'
   homeLink.textContent = 'Home'
-  homeLink.addEventListener('click', (e) => { e.preventDefault(); loadFolder('') })
+  homeLink.addEventListener('click', (e) => {
+    e.preventDefault()
+    loadFolder('')
+  })
   el.appendChild(homeLink)
   if (!path) return
   const parts = path.replace(/\/$/, '').split('/').filter(Boolean)
@@ -199,7 +206,10 @@ function renderBreadcrumb(path) {
     const a = document.createElement('a')
     a.href = '#'
     a.textContent = parts[i]
-    a.addEventListener('click', (e) => { e.preventDefault(); loadFolder(segPath) })
+    a.addEventListener('click', (e) => {
+      e.preventDefault()
+      loadFolder(segPath)
+    })
     el.appendChild(a)
   }
 }
