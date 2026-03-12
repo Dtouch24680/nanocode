@@ -1,24 +1,26 @@
 /**
  * Sidebar — project list with add/delete, active project indicator.
+ *
+ * Architecture: docs/architecture.md#frontend-architecture
  */
 
 import { state } from './state.js'
 import { fetchProjects, createProject, deleteProject, fetchDir } from './api.js'
 
 let _onProjectSwitch = null
+let browsePath = ''
 
 /**
  * Initialize the sidebar.
- * @param {function} onProjectSwitch — callback(projectId) when project changes
+ *
+ * Architecture: docs/architecture.md#frontend-architecture
  */
 export function initSidebar(onProjectSwitch) {
   _onProjectSwitch = onProjectSwitch
 
-  // Sidebar toggle (mobile hamburger)
   const sidebar = document.getElementById('sidebar')
   const toggleBtn = document.getElementById('sidebar-toggle')
   if (toggleBtn && sidebar) {
-    // Create backdrop element for mobile overlay
     let backdrop = document.querySelector('.sidebar-backdrop')
     if (!backdrop) {
       backdrop = document.createElement('div')
@@ -45,8 +47,8 @@ export function initSidebar(onProjectSwitch) {
   cancelBtn?.addEventListener('click', () => dialog.close())
   selectFolderBtn?.addEventListener('click', selectCurrentFolder)
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault()
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault()
     const name = document.getElementById('proj-name').value.trim()
     const cwd = document.getElementById('proj-cwd').value.trim()
     if (!name || !cwd) return
@@ -63,21 +65,16 @@ export function initSidebar(onProjectSwitch) {
   })
 }
 
+/**
+ * Render the list of available projects.
+ *
+ * Architecture: docs/architecture.md#frontend-architecture
+ */
 export function renderSidebar() {
   const container = document.getElementById('sidebar-projects')
-  container.textContent = ''
+  if (!container) return
 
-  // Count tasks per project
-  const taskCounts = new Map()
-  const runningCounts = new Map()
-  for (const task of state.tasks) {
-    if (task.project_id) {
-      taskCounts.set(task.project_id, (taskCounts.get(task.project_id) || 0) + 1)
-      if (task.status === 'running') {
-        runningCounts.set(task.project_id, (runningCounts.get(task.project_id) || 0) + 1)
-      }
-    }
-  }
+  container.textContent = ''
 
   for (const project of state.projects) {
     const item = document.createElement('button')
@@ -90,31 +87,14 @@ export function renderSidebar() {
     name.textContent = project.name
     item.appendChild(name)
 
-    // Task count badge
-    const running = runningCounts.get(project.id) || 0
-    const total = taskCounts.get(project.id) || 0
-    if (running > 0) {
-      const badge = document.createElement('span')
-      badge.className = 'sidebar-project-badge running'
-      badge.textContent = running
-      badge.title = `${running} running`
-      item.appendChild(badge)
-    } else if (total > 0 && project.id !== state.activeProjectId) {
-      const badge = document.createElement('span')
-      badge.className = 'sidebar-project-badge'
-      badge.textContent = total
-      item.appendChild(badge)
-    }
-
     item.addEventListener('click', () => switchProject(project.id))
 
-    // Delete button (only if more than one project)
     if (state.projects.length > 1) {
       const del = document.createElement('span')
       del.className = 'sidebar-project-del'
-      del.textContent = '\u00d7'
-      del.addEventListener('click', async (e) => {
-        e.stopPropagation()
+      del.textContent = 'x'
+      del.addEventListener('click', async (event) => {
+        event.stopPropagation()
         if (!confirm('Delete this project? Terminal sessions will end.')) return
         await deleteProject(project.id)
         state.projects = await fetchProjects()
@@ -139,7 +119,6 @@ function switchProject(projectId) {
   } catch {}
   renderSidebar()
 
-  // Close mobile sidebar
   const sidebar = document.getElementById('sidebar')
   const backdrop = document.querySelector('.sidebar-backdrop')
   if (sidebar) sidebar.classList.remove('open')
@@ -147,10 +126,6 @@ function switchProject(projectId) {
 
   if (_onProjectSwitch) _onProjectSwitch(projectId)
 }
-
-// --- Add project dialog + folder browser ---
-
-let browsePath = ''
 
 function openAddDialog() {
   document.getElementById('proj-name').value = ''
@@ -181,8 +156,8 @@ async function loadFolder(path) {
     renderFolderList(data.entries || [], data.path)
     const current = document.getElementById('folder-current')
     if (current) current.textContent = data.path || '(home)'
-  } catch (e) {
-    console.error(e)
+  } catch (err) {
+    console.error(err)
   }
 }
 
@@ -190,27 +165,29 @@ function renderBreadcrumb(path) {
   const el = document.getElementById('folder-breadcrumb')
   if (!el) return
   el.textContent = ''
+
   const homeLink = document.createElement('a')
   homeLink.href = '#'
   homeLink.textContent = 'Home'
-  homeLink.addEventListener('click', (e) => {
-    e.preventDefault()
+  homeLink.addEventListener('click', (event) => {
+    event.preventDefault()
     loadFolder('')
   })
   el.appendChild(homeLink)
+
   if (!path) return
   const parts = path.replace(/\/$/, '').split('/').filter(Boolean)
   for (let i = 0; i < parts.length; i++) {
     const segPath = '/' + parts.slice(0, i + 1).join('/')
     el.appendChild(document.createTextNode(' / '))
-    const a = document.createElement('a')
-    a.href = '#'
-    a.textContent = parts[i]
-    a.addEventListener('click', (e) => {
-      e.preventDefault()
+    const link = document.createElement('a')
+    link.href = '#'
+    link.textContent = parts[i]
+    link.addEventListener('click', (event) => {
+      event.preventDefault()
       loadFolder(segPath)
     })
-    el.appendChild(a)
+    el.appendChild(link)
   }
 }
 
@@ -218,6 +195,7 @@ function renderFolderList(entries, currentPath) {
   const el = document.getElementById('folder-list')
   if (!el) return
   el.textContent = ''
+
   for (const entry of entries) {
     if (!entry.isDir) continue
     const btn = document.createElement('button')

@@ -33,7 +33,7 @@ The touch toolbar handler had the same issue: it called `chatInput.focus()` afte
 - Guarded `chatInput.focus()` in `setMode()` with `if (!isMobile())`.
 - Changed the touch toolbar handler from unconditional `chatInput.focus()` to `if (document.activeElement === chatInput) chatInput.focus()` — only re-focus if the keyboard was already open.
 
-**Files**: `terminal/public/js/app.js`
+**Files**: `public/js/terminal-view.js`
 
 ## Bug 2: iOS Scrolls the Page Instead of the Terminal
 
@@ -60,7 +60,7 @@ Three changes:
   - Manually scrolls the terminal using `this.term.scrollLines()` based on touch delta, with a sub-line pixel accumulator for smooth scrolling
 - **CSS**: Added `touch-action: none !important` on `.pane-terminal`, `.xterm-viewport`, and `.xterm-screen` in the mobile media query as a belt-and-suspenders measure.
 
-**Files**: `terminal/public/style.css`, `terminal/public/js/terminal-pane.js`
+**Files**: `public/style.css`, `public/js/terminal-pane.js`
 
 ## Bug 3: iOS Chrome Scrolls Document When Focusing Textarea
 
@@ -101,7 +101,7 @@ window.visualViewport.addEventListener('scroll', killScroll)
 
 The staggered `setTimeout` calls on focus are necessary because iOS triggers the scroll at unpredictable times during the keyboard animation (which takes ~250ms).
 
-**Files**: `terminal/public/js/app.js`
+**Files**: `public/js/terminal-view.js`
 
 ## Lessons Learned
 
@@ -119,8 +119,8 @@ The staggered `setTimeout` calls on focus are necessary because iOS triggers the
 
 ## Affected Files
 
-| File                                  | Changes                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------- |
-| `terminal/public/js/app.js`           | `killScroll` listener, guarded `focus()` calls, `visualViewport` handler              |
-| `terminal/public/js/terminal-pane.js` | `_initTouchScroll()` method with manual touch scroll handling                         |
-| `terminal/public/style.css`           | `position: fixed` on html/body, `overscroll-behavior: none`, `touch-action` overrides |
+| File                         | Changes                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| `public/js/terminal-view.js` | `killScroll` listener, guarded `focus()` calls, `visualViewport` handler              |
+| `public/js/terminal-pane.js` | `_initTouchScroll()` method with manual touch scroll handling                         |
+| `public/style.css`           | `position: fixed` on html/body, `overscroll-behavior: none`, `touch-action` overrides |

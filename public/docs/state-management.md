@@ -1,66 +1,53 @@
 # State Management
 
-How the frontend manages state without a framework.
+How the reduced frontend keeps the active project, tab, and CLI provider in sync.
 
 ## Architecture
 
 ```mermaid
 graph TD
-    WS[WebSocket] -->|task:updated| MUT[state.taskUpdated]
-    WS -->|task:event| EVT[state.eventReceived]
-    WS -->|task:approval| EVT
-    REST[REST API] -->|initial load| INIT[app.js init]
+    REST[REST API] --> INIT[app.js init]
     INIT --> STATE[state object]
-
-    MUT --> STATE
-    EVT --> STATE
-
-    MUT -->|calls| BOARD[renderBoard]
-    MUT -->|calls| DETAIL[renderDetail / showPlanReview]
-    EVT -->|calls| APPEND[appendEventToStream]
-
-    STATE --> BOARD
-    STATE --> DETAIL
-    STATE --> APPEND
+    STATE --> SIDEBAR[sidebar.js]
+    STATE --> TABS[tab-bar.js]
+    STATE --> TERMINAL[terminal-view.js]
+    STATE --> SETTINGS[settings.js]
 ```
 
 ## State Object
 
 ```js
 {
-  tasks: [],                    // Task[] — all tasks from API
-  events: new Map(),            // Map<taskId, Event[]>
-  selectedTaskId: null,         // string | null
+  projects: [],
+  activeProjectId: null,
+  activeTab: 'terminal',
+  cliProvider: 'claude',
 }
 ```
 
-Mutations are direct property assignments. After mutation, the
-responsible function calls the targeted render function.
-
-## Why No Immutability
-
-There is no virtual DOM to diff. Each mutation triggers exactly
-the render function for the affected view. We know at write time
-which view is affected:
-
-- `taskUpdated` → `renderBoard()` + `renderDetail()` if selected
-- `eventReceived` → `appendEventToStream()` if selected
-
-## Board Rendering
-
-`renderBoard()` clears all 4 column containers and re-populates
-them by iterating `state.tasks`. Failed and cancelled tasks go
-to the "done" column.
-
-## WebSocket
-
-Single connection, auto-reconnects every 2s on close. All messages
-are JSON with a `type` discriminator. The connection status badge
-toggles between "Connected" (green) and "Disconnected" (red).
+Mutations are direct assignments. Each caller updates the specific UI it owns.
 
 ## Initial Load
 
-1. `app.js` calls `fetchTasks()` to populate `state.tasks`
-2. For any running tasks, events are pre-fetched
-3. Board is rendered
-4. WebSocket connects for live updates
+1. `app.js` fetches projects and restores `activeProjectId` from local storage
+2. `app.js` fetches settings and applies `cliProvider`
+3. Sidebar and tab bar render from shared state
+4. `terminal-view.js` initializes the active project's bash and assistant panes
+
+## Project Switching
+
+- The sidebar writes `state.activeProjectId`
+- `app.js` forwards that project to `terminal-view.js`
+- Existing PTY connections reconnect under the new project's workspace
+
+## Tab Switching
+
+### Terminal
+
+- First visit initializes terminal panes
+- Later visits call `fitTerminals()` so xterm resizes cleanly
+
+### Settings
+
+- `settings.js` re-syncs the radio state from `state.cliProvider`
+- Saving a new provider updates shared state and reconnects the assistant pane

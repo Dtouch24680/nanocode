@@ -1,7 +1,6 @@
 /**
  * Terminal view — manages bash + claude panes, sessions, unified input.
  *
- * Adapted from terminal/public/js/app.js for the unified frontend.
  * Created lazily on first terminal tab visit.
  */
 

@@ -5,13 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Codebuilder</title>
 
-    <!-- xterm CSS -->
     <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
-
-    <!-- App CSS -->
     <link rel="stylesheet" href="/style.css" />
 
-    <!-- xterm UMD bundles — WebGL loaded lazily by terminal-pane.js -->
     <script src="/vendor/xterm/lib/xterm.js"></script>
     <script src="/vendor/xterm-addon-fit/lib/addon-fit.js"></script>
     <script src="/vendor/xterm-addon-web-links/lib/addon-web-links.js"></script>
@@ -36,16 +32,12 @@
       </button>
       <h1 class="app-title">Codebuilder</h1>
       <div class="header-pills">
-        <span class="connection-status" id="connection-status">Disconnected</span>
-        <span class="connection-status" id="status-bash" hidden>Bash: disconnected</span>
-        <span class="connection-status" id="status-claude" hidden
-          >Claude: disconnected</span
-        >
+        <span class="connection-status" id="status-bash">Bash: disconnected</span>
+        <span class="connection-status" id="status-claude">Claude: disconnected</span>
       </div>
     </header>
 
     <main class="app-layout">
-      <!-- Sidebar -->
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
           <span class="sidebar-title">Projects</span>
@@ -56,82 +48,22 @@
         <div class="sidebar-projects" id="sidebar-projects"></div>
       </aside>
 
-      <!-- Main content area -->
       <div class="main-content">
-        <!-- Tab bar -->
         <div class="tab-bar" id="tab-bar">
-          <button class="tab-btn active" data-tab="tasks" id="tab-tasks">Tasks</button>
-          <button class="tab-btn" data-tab="terminal" id="tab-terminal">Terminal</button>
+          <button class="tab-btn active" data-tab="terminal" id="tab-terminal">
+            Terminal
+          </button>
           <button class="tab-btn" data-tab="settings" id="tab-settings">Settings</button>
         </div>
 
-        <!-- Tasks tab -->
-        <div class="tab-content" id="tasks-tab">
-          <!-- Task creation form -->
-          <section class="task-form-container" id="task-form-container">
-            <form id="task-form" class="task-form">
-              <div class="form-row-main">
-                <input
-                  type="text"
-                  id="task-title"
-                  name="title"
-                  placeholder="Describe the task\u2026 (prefix plan: for plans, Shift+Enter for options)"
-                  required
-                  autocomplete="off"
-                />
-                <button type="submit" class="btn btn-primary">Create</button>
-              </div>
-              <div class="form-row-advanced" id="form-advanced" hidden>
-                <select id="task-type" name="type">
-                  <option value="task">Task</option>
-                  <option value="plan">Plan</option>
-                </select>
-                <input
-                  type="text"
-                  id="task-depends"
-                  name="dependsOn"
-                  placeholder="Depends on (ID)"
-                />
-              </div>
-            </form>
-          </section>
-
-          <!-- Kanban board -->
-          <section class="board" id="board">
-            <div class="board-column" data-status="pending">
-              <h2 class="column-title">
-                <span class="status-dot dot-pending"></span>Pending
-              </h2>
-              <div class="column-cards" id="col-pending"></div>
-            </div>
-            <div class="board-column" data-status="running">
-              <h2 class="column-title">
-                <span class="status-dot dot-running"></span>Running
-              </h2>
-              <div class="column-cards" id="col-running"></div>
-            </div>
-            <div class="board-column" data-status="review">
-              <h2 class="column-title">
-                <span class="status-dot dot-review"></span>Review
-              </h2>
-              <div class="column-cards" id="col-review"></div>
-            </div>
-            <div class="board-column" data-status="done">
-              <h2 class="column-title"><span class="status-dot dot-done"></span>Done</h2>
-              <div class="column-cards" id="col-done"></div>
-            </div>
-          </section>
-        </div>
-
-        <!-- Settings tab -->
         <div class="tab-content" id="settings-tab" hidden>
           <div class="settings-container">
             <h2 class="settings-heading">Settings</h2>
             <section class="settings-section">
               <h3 class="settings-section-title">CLI Provider</h3>
               <p class="settings-desc">
-                Choose which CLI tool to use for interactive terminal sessions. Headless
-                SDK tasks always use Claude Code.
+                Choose which CLI tool to use for interactive assistant sessions in the
+                terminal pane.
               </p>
               <div class="settings-radio-group" id="cli-provider-group">
                 <label class="settings-radio-label">
@@ -155,35 +87,10 @@
                 <span class="settings-status" id="cli-status"></span>
               </div>
             </section>
-            <section class="settings-section">
-              <h3 class="settings-section-title">Slack Notifications</h3>
-              <p class="settings-desc">
-                Receive Slack messages when tasks complete, fail, or need review.
-              </p>
-              <label class="settings-label">
-                Webhook URL
-                <input
-                  type="url"
-                  id="slack-webhook-url"
-                  class="settings-input"
-                  placeholder="https://hooks.slack.com/services/..."
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-              </label>
-              <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="slack-save-btn">
-                  Save
-                </button>
-                <button type="button" class="btn" id="slack-test-btn">Send Test</button>
-                <span class="settings-status" id="slack-status"></span>
-              </div>
-            </section>
           </div>
         </div>
 
-        <!-- Terminal tab -->
-        <div class="tab-content" id="terminal-tab" hidden>
+        <div class="tab-content" id="terminal-tab">
           <div class="terminal-layout">
             <div class="split-container" id="split-container">
               <div class="pane pane-left">
@@ -336,7 +243,7 @@
                   <textarea
                     id="chat-input"
                     class="chat-textarea"
-                    placeholder="Type a command\u2026"
+                    placeholder="Type a command..."
                     rows="1"
                     autocomplete="off"
                     spellcheck="false"
@@ -362,42 +269,8 @@
           </div>
         </div>
       </div>
-
-      <!-- Task detail panel (event stream, approvals) -->
-      <aside class="detail-panel" id="detail-panel" hidden>
-        <div class="detail-header">
-          <h2 class="detail-title" id="detail-title"></h2>
-          <button class="btn btn-icon" id="detail-close" aria-label="Close">
-            &times;
-          </button>
-        </div>
-        <div class="detail-meta" id="detail-meta"></div>
-        <div class="event-stream" id="event-stream"></div>
-        <div class="detail-actions" id="detail-actions"></div>
-      </aside>
-
-      <!-- Plan review panel -->
-      <aside class="plan-review-panel" id="plan-review-panel" hidden>
-        <div class="detail-header">
-          <h2 class="detail-title" id="plan-title"></h2>
-          <button class="btn btn-icon" id="plan-close" aria-label="Close">&times;</button>
-        </div>
-        <div class="plan-content" id="plan-content"></div>
-        <div class="plan-actions" id="plan-actions">
-          <button class="btn btn-primary" id="plan-confirm">Confirm</button>
-          <div class="plan-revise">
-            <textarea
-              id="plan-feedback"
-              placeholder="Feedback for revision\u2026"
-              rows="2"
-            ></textarea>
-            <button class="btn btn-secondary" id="plan-revise-btn">Revise</button>
-          </div>
-        </div>
-      </aside>
     </main>
 
-    <!-- Add project dialog -->
     <dialog id="add-project-dialog" class="add-project-dialog">
       <form method="dialog" id="add-project-form">
         <h2 class="dialog-title">Add project</h2>
@@ -430,18 +303,9 @@
       </form>
     </dialog>
 
-    <!-- Session drawer (mobile) -->
     <div class="session-drawer-backdrop" id="session-drawer-backdrop"></div>
     <div class="session-drawer" id="session-drawer"></div>
 
-    <script type="importmap">
-      {
-        "imports": {
-          "marked": "https://cdn.jsdelivr.net/npm/marked@15/lib/marked.esm.js",
-          "dompurify": "https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.es.mjs"
-        }
-      }
-    </script>
     <script type="module" src="/js/app.js"></script>
   </body>
 </html>

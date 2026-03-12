@@ -1,17 +1,19 @@
 /**
- * Tab bar — switches between Tasks, Terminal, and Settings views.
- * Lazy-initializes the terminal view on first visit.
+ * Tab bar for the reduced workspace.
+ *
+ * Architecture: public/docs/state-management.md#tab-switching
  */
 
 import { state } from './state.js'
 
 let _onTabSwitch = null
 
-const tabs = ['tasks', 'terminal', 'settings']
+const tabs = ['terminal', 'settings']
 
 /**
  * Initialize the tab bar.
- * @param {function} onTabSwitch — callback(tabName) when tab changes
+ *
+ * Architecture: public/docs/state-management.md#tab-switching
  */
 export function initTabBar(onTabSwitch) {
   _onTabSwitch = onTabSwitch
@@ -21,25 +23,29 @@ export function initTabBar(onTabSwitch) {
     if (btn) btn.addEventListener('click', () => switchTab(tab))
   }
 
-  // Keyboard shortcuts: Cmd/Ctrl+1 → tasks, Cmd/Ctrl+2 → terminal, Cmd/Ctrl+3 → settings
-  document.addEventListener('keydown', (e) => {
-    if (!(e.metaKey || e.ctrlKey)) return
-    const idx = parseInt(e.key, 10) - 1
+  document.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey)) return
+    const idx = parseInt(event.key, 10) - 1
     if (idx >= 0 && idx < tabs.length) {
-      e.preventDefault()
+      event.preventDefault()
       switchTab(tabs[idx])
     }
   })
 }
 
+/**
+ * Switch the visible tab.
+ *
+ * Architecture: public/docs/state-management.md#tab-switching
+ */
 export function switchTab(tab) {
   state.activeTab = tab
 
-  for (const t of tabs) {
-    const btn = document.getElementById(`tab-${t}`)
-    const content = document.getElementById(`${t}-tab`)
-    if (btn) btn.classList.toggle('active', t === tab)
-    if (content) content.hidden = t !== tab
+  for (const current of tabs) {
+    const btn = document.getElementById(`tab-${current}`)
+    const content = document.getElementById(`${current}-tab`)
+    if (btn) btn.classList.toggle('active', current === tab)
+    if (content) content.hidden = current !== tab
   }
 
   if (_onTabSwitch) _onTabSwitch(tab)

@@ -1,7 +1,7 @@
 /**
- * REST API helpers (fetch wrappers).
+ * REST API helpers.
  *
- * Architecture: docs/architecture.md#rest-task-crud
+ * Architecture: docs/architecture.md#rest-api
  */
 
 const BASE = '/api'
@@ -12,16 +12,15 @@ async function request(path, options = {}) {
     ...options,
   })
   const data = await res.json()
-  if (!res.ok)
+  if (!res.ok) {
     throw new Error(
       data.error?.fieldErrors
         ? JSON.stringify(data.error)
         : data.error || 'Request failed'
     )
+  }
   return data
 }
-
-// --- Projects ---
 
 export function fetchProjects() {
   return request('/projects')
@@ -37,55 +36,6 @@ export function createProject(body) {
 export function deleteProject(id) {
   return fetch(`${BASE}/projects/${id}`, { method: 'DELETE' })
 }
-
-// --- Tasks ---
-
-export function fetchTasks(projectId) {
-  const params = projectId ? `?projectId=${projectId}` : ''
-  return request(`/tasks${params}`)
-}
-
-export function createTask(body) {
-  return request('/tasks', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export function updateTask(id, body) {
-  return request(`/tasks/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  })
-}
-
-export function confirmPlan(id, body = {}) {
-  return request(`/tasks/${id}/confirm`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export function revisePlan(id, body) {
-  return request(`/tasks/${id}/revise`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export function continueTask(id, body) {
-  return request(`/tasks/${id}/continue`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export function fetchEvents(taskId, afterId = 0) {
-  const params = afterId ? `?after=${afterId}` : ''
-  return request(`/tasks/${taskId}/events${params}`)
-}
-
-// --- Terminal helpers ---
 
 export function fetchDiskSessions(projectId, provider = 'claude') {
   return request(
@@ -139,8 +89,6 @@ export function fetchDir(path) {
   const url = path ? `/fs?path=${encodeURIComponent(path)}` : '/fs'
   return request(url)
 }
-
-// --- Settings ---
 
 export function fetchSettings() {
   return request('/settings')

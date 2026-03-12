@@ -1,9 +1,10 @@
 /**
  * Persistent PTY sessions with scrollback. Sessions survive client disconnect.
+ *
+ * Architecture: docs/architecture.md#websocket-protocol
  */
 
 import pty from 'node-pty'
-import { notify } from './slack.js'
 
 const OUTPUT_FLUSH_MS = 12
 const SCROLLBACK_SIZE = 100 * 1024 // 100KB
@@ -86,20 +87,6 @@ class Session {
       const msg = JSON.stringify({ type: 'exit', exitCode, signal })
       for (const ws of this._clients) {
         if (ws.readyState === 1) ws.send(msg)
-      }
-      // Slack notification for CLI sessions (claude or cursor)
-      for (const p of CLI_PROVIDERS) {
-        const marker = `:${p}:`
-        if (this._key.includes(marker)) {
-          const label = this._key.split(marker)[1] || 'unknown'
-          const project = this._key.split(':')[0]
-          const providerName = p.charAt(0).toUpperCase() + p.slice(1)
-          const status = exitCode === 0 ? 'completed' : `exited (code ${exitCode})`
-          notify(
-            `*${providerName} session ${status}*\nProject: ${project}\nSession: ${label}`
-          )
-          break
-        }
       }
     })
   }
@@ -240,7 +227,6 @@ export function get(sessionKey) {
   return sessions.get(sessionKey) ?? null
 }
 
-/** CLI provider prefixes used for session keys */
 const CLI_PROVIDERS = ['claude', 'agent', 'opencode']
 
 /**

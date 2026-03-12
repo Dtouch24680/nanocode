@@ -1,7 +1,8 @@
 /**
  * Terminal routes — Express Router + WebSocket handler.
- * Extracted from terminal/server.js for mounting in both the unified
- * server (:3000) and the standalone terminal server (:4000).
+ * Mounted by the main application server.
+ *
+ * Architecture: docs/architecture.md#rest-api
  */
 
 import { Router } from 'express'
@@ -18,13 +19,11 @@ import {
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import { homedir } from 'node:os'
 import * as sessions from './sessions.js'
-import * as slack from './slack.js'
 
 /**
  * Create terminal routes backed by the given store.
  *
- * @param {object} store — must expose listProjects, getProject, createProject, removeProject
- * @returns {{ router: Router, handleTerminalWs: (ws: import('ws').WebSocket) => void }}
+ * Architecture: docs/architecture.md#server-architecture
  */
 export function createTerminalRoutes(store) {
   const router = Router()
@@ -40,9 +39,7 @@ export function createTerminalRoutes(store) {
     const claudeDir = join(homedir(), '.claude', 'projects', encoded)
     const result = []
 
-    if (!existsSync(claudeDir)) {
-      return result
-    }
+    if (!existsSync(claudeDir)) return result
 
     const historyMap = new Map()
     const historyPath = join(homedir(), '.claude', 'history.jsonl')
@@ -73,7 +70,7 @@ export function createTerminalRoutes(store) {
 
     let files
     try {
-      files = readdirSync(claudeDir).filter((f) => f.endsWith('.jsonl'))
+      files = readdirSync(claudeDir).filter((file) => file.endsWith('.jsonl'))
     } catch {
       return result
     }
@@ -138,8 +135,8 @@ export function createTerminalRoutes(store) {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore'],
       })
-      const sessions = JSON.parse(output)
-      return sessions
+      const allSessions = JSON.parse(output)
+      return allSessions
         .filter((session) => session.directory === cwd)
         .map((session) => ({
           sessionId: session.id,
@@ -158,8 +155,6 @@ export function createTerminalRoutes(store) {
     if (provider === 'claude') return listClaudeSessions(projectId, cwd)
     return []
   }
-
-  // --- REST: projects ---
 
   router.get('/api/projects', (_req, res) => {
     res.json(store.listProjects())
@@ -184,8 +179,6 @@ export function createTerminalRoutes(store) {
     res.status(204).send()
   })
 
-  // --- REST: running CLI sessions (PTY keys) ---
-
   router.get('/api/projects/:id/sessions', (req, res) => {
     const project = store.getProject(req.params.id)
     if (!project) {
@@ -194,8 +187,6 @@ export function createTerminalRoutes(store) {
     const provider = getCliProvider(req.query.provider)
     res.json(sessions.listCliSessions(req.params.id, provider))
   })
-
-  // --- REST: all claude sessions from disk (resumable) ---
 
   router.get('/api/projects/:id/claude-sessions', (req, res) => {
     const project = store.getProject(req.params.id)
@@ -207,24 +198,23 @@ export function createTerminalRoutes(store) {
     const provider = getCliProvider(req.query.provider) || 'claude'
     const result = listProviderSessions(req.params.id, cwd, provider)
 
-    // Filter out archived sessions
     const archivedIds = new Set(store.listArchivedSessions(req.params.id))
     let filtered =
-      archivedIds.size > 0 ? result.filter((s) => !archivedIds.has(s.sessionId)) : result
+      archivedIds.size > 0
+        ? result.filter((session) => !archivedIds.has(session.sessionId))
+        : result
 
-    // Filter to managed-only if requested
     if (req.query.managed === '1') {
       const managedIds = new Set(store.listManagedSessions(req.params.id))
       const runningIds = new Set(sessions.listCliSessions(req.params.id, provider))
       filtered = filtered.filter(
-        (s) => managedIds.has(s.sessionId) || runningIds.has(s.sessionId)
+        (session) =>
+          managedIds.has(session.sessionId) || runningIds.has(session.sessionId)
       )
     }
 
     res.json(filtered)
   })
-
-  // --- REST: archived sessions ---
 
   router.get('/api/projects/:id/archived-sessions', (req, res) => {
     const project = store.getProject(req.params.id)
@@ -249,7 +239,6 @@ export function createTerminalRoutes(store) {
       return res.status(404).json({ error: 'project not found' })
     }
     store.archiveSession(req.params.id, req.params.sessionId)
-    // Kill any running PTY for this session
     sessions.destroySession(`${req.params.id}:claude:${req.params.sessionId}`)
     sessions.destroySession(`${req.params.id}:agent:${req.params.sessionId}`)
     sessions.destroySession(`${req.params.id}:opencode:${req.params.sessionId}`)
@@ -275,35 +264,11 @@ export function createTerminalRoutes(store) {
     if (!project) {
       return res.status(404).json({ error: 'project not found' })
     }
-    // Try all CLI providers since frontend may not know which one started the session
-    const destroyed =
-      sessions.destroySession(`${req.params.id}:claude:${req.params.sessionId}`) ||
+    sessions.destroySession(`${req.params.id}:claude:${req.params.sessionId}`) ||
       sessions.destroySession(`${req.params.id}:agent:${req.params.sessionId}`) ||
       sessions.destroySession(`${req.params.id}:opencode:${req.params.sessionId}`)
     res.status(204).send()
   })
-
-  // --- REST: Slack webhook settings ---
-
-  router.get('/api/slack', (_req, res) => {
-    res.json({ webhookUrl: slack.getWebhookUrl() })
-  })
-
-  router.put('/api/slack', (req, res) => {
-    const { webhookUrl } = req.body || {}
-    slack.setWebhookUrl(webhookUrl || '')
-    res.json({ ok: true })
-  })
-
-  router.post('/api/slack/test', async (_req, res) => {
-    if (!slack.getWebhookUrl()) {
-      return res.status(400).json({ error: 'No webhook URL configured' })
-    }
-    await slack.notify('Test notification from Codebuilder')
-    res.json({ ok: true })
-  })
-
-  // --- REST: directory listing for folder picker ---
 
   const home = homedir()
   router.get('/api/fs', (req, res) => {
@@ -313,11 +278,12 @@ export function createTerminalRoutes(store) {
     if (rel.startsWith('..') || isAbsolute(rel)) {
       return res.status(400).json({ error: 'path must be under home directory' })
     }
+
     try {
       const entries = readdirSync(base, { withFileTypes: true })
-        .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+        .filter((dirent) => dirent.isDirectory() && !dirent.name.startsWith('.'))
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
-        .map((d) => ({ name: d.name, isDir: true }))
+        .map((dirent) => ({ name: dirent.name, isDir: true }))
       res.json({ path: base, entries })
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' })
@@ -327,9 +293,6 @@ export function createTerminalRoutes(store) {
     }
   })
 
-  // --- WebSocket handler ---
-
-  // CLI provider configurations
   const CLI_PROVIDERS = {
     claude: {
       bin: 'claude',
@@ -357,6 +320,7 @@ export function createTerminalRoutes(store) {
         return
       }
       if (msg.type !== 'attach') return
+
       const { projectId, sessionType, cols, rows } = msg
       const claudeSessionId = msg.claudeSessionId || ''
       const cliProvider =
@@ -370,7 +334,10 @@ export function createTerminalRoutes(store) {
         return
       }
 
-      let sessionKey, command, args
+      let sessionKey
+      let command
+      let args
+
       if (sessionType === 'bash') {
         sessionKey = `${projectId}:bash`
         command = 'bash'
@@ -384,7 +351,6 @@ export function createTerminalRoutes(store) {
           ? `${cli.bin}${cli.newArgs ? ' ' + cli.newArgs : ''}`
           : `${cli.bin}${cli.resumeArgs(claudeSessionId) ? ' ' + cli.resumeArgs(claudeSessionId) : ''}`
         args = ['-lc', cliCmd]
-        // Track resumed sessions as managed by Codebuilder
         if (!isNew) {
           try {
             store.markSessionManaged(projectId, claudeSessionId)
@@ -404,6 +370,7 @@ export function createTerminalRoutes(store) {
       )
       session.attach(ws, Math.max(1, cols || 80), Math.max(1, rows || 24))
     }
+
     ws.once('message', once)
   }
 
