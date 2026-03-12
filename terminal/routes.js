@@ -379,6 +379,7 @@ export function createTerminalRoutes(store) {
   const SHELL = IS_WIN
     ? (process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe')
     : 'bash'
+  const SSH = IS_WIN ? 'C:\\Windows\\System32\\OpenSSH\\ssh.exe' : 'ssh'
 
   /** Build SSH args for a remote project. */
   function buildSshArgs(project, remoteCmd) {
@@ -432,7 +433,7 @@ export function createTerminalRoutes(store) {
       if (sessionType === 'bash') {
         sessionKey = `${projectId}:bash`
         if (isRemote) {
-          command = 'ssh'
+          command = SSH
           args = buildSshArgs(project, `cd ${sq(project.cwd)} && exec bash -l`)
           cwd = home
         } else {
@@ -448,7 +449,7 @@ export function createTerminalRoutes(store) {
           ? `${cli.bin}${cli.newArgs ? ' ' + cli.newArgs : ''}`
           : `${cli.bin}${cli.resumeArgs(claudeSessionId) ? ' ' + cli.resumeArgs(claudeSessionId) : ''}`
         if (isRemote) {
-          command = 'ssh'
+          command = SSH
           args = buildSshArgs(project, `cd ${sq(project.cwd)} && ${cliCmd}`)
           cwd = home
         } else if (IS_WIN) {
