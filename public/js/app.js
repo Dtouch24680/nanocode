@@ -1,8 +1,9 @@
 /**
  * Application entry point.
  *
- * Shows a landing screen for workspace selection, then loads projects,
- * restores the active workspace, and wires up the terminal and settings views.
+ * Uses hash-based routing:
+ *   #/            — landing screen (workspace picker)
+ *   #/project/ID  — workspace for a specific project
  *
  * Architecture: public/docs/state-management.md#initial-load
  */
@@ -18,7 +19,9 @@ import {
   isInitialized,
 } from './terminal-view.js'
 import { loadSettings } from './settings.js'
-import { showLanding } from './landing.js'
+import { showLanding, hideLanding } from './landing.js'
+
+let workspaceReady = false
 
 async function init() {
   try {
@@ -28,50 +31,97 @@ async function init() {
     state.projects = []
   }
 
-  // Show landing screen
-  const { projectId, projects } = await showLanding(state.projects)
-  state.projects = projects || state.projects
-
-  // Determine active project
-  const lastId = localStorage.getItem('activeProjectId')
-  state.activeProjectId = projectId
-    || (lastId && state.projects.some((p) => p.id === lastId) ? lastId : null)
-    || (state.projects[0]?.id ?? null)
-
   initSidebar(onProjectSwitch)
-  renderSidebar()
-
   initTabBar(onTabSwitch)
 
   try {
     const settings = await fetchSettings()
     if (settings.cli_provider) state.cliProvider = settings.cli_provider
   } catch {
-    // non-critical, defaults to claude
+    // non-critical
   }
 
-  await initTerminalView(state.activeProjectId)
+  // Wire up back-to-menu button
+  const backBtn = document.getElementById('back-to-menu')
+  if (backBtn) {
+    backBtn.addEventListener('click', () => navigateTo('/'))
+  }
+
+  // Handle initial route
+  window.addEventListener('hashchange', onHashChange)
+  await onHashChange()
+}
+
+/** Parse the current hash into a route. */
+function parseHash() {
+  const hash = location.hash.replace(/^#/, '') || '/'
+  const projectMatch = hash.match(/^\/project\/(.+)$/)
+  if (projectMatch) return { view: 'project', projectId: projectMatch[1] }
+  return { view: 'landing' }
+}
+
+/** Navigate to a hash route. */
+export function navigateTo(path) {
+  location.hash = '#' + path
+}
+
+/** React to hash changes. */
+async function onHashChange() {
+  const route = parseHash()
+
+  if (route.view === 'project') {
+    const project = state.projects.find((p) => p.id === route.projectId)
+    if (!project) {
+      // Unknown project — go to landing
+      navigateTo('/')
+      return
+    }
+    await enterWorkspace(route.projectId)
+  } else {
+    await enterLanding()
+  }
+}
+
+async function enterLanding() {
+  // Refresh project list
+  try {
+    state.projects = await fetchProjects()
+  } catch {}
+
+  document.body.classList.remove('workspace-active')
+  const { projectId, projects } = await showLanding(state.projects)
+  state.projects = projects || state.projects
+
+  if (projectId) {
+    navigateTo(`/project/${projectId}`)
+  }
+}
+
+async function enterWorkspace(projectId) {
+  hideLanding()
+  document.body.classList.add('workspace-active')
+  state.activeProjectId = projectId
+  localStorage.setItem('activeProjectId', projectId)
+
+  renderSidebar()
+
+  if (!workspaceReady) {
+    workspaceReady = true
+    await initTerminalView(projectId)
+  } else {
+    switchTerminalProject(projectId)
+  }
 }
 
 /**
  * Called when the user switches projects in the sidebar.
- *
- * Architecture: public/docs/state-management.md#project-switching
  */
 async function onProjectSwitch(projectId) {
-  state.activeProjectId = projectId
-
-  if (isInitialized()) {
-    switchTerminalProject(projectId)
-  } else {
-    await initTerminalView(projectId)
-  }
+  navigateTo(`/project/${projectId}`)
 }
 
 /**
  * Called when the user switches tabs.
- *
- * Architecture: public/docs/state-management.md#tab-switching
  */
 function onTabSwitch(tab) {
   if (tab === 'terminal') {

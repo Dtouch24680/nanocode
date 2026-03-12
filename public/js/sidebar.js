@@ -46,9 +46,10 @@ export function initSidebar(onProjectSwitch) {
 
   cancelBtn?.addEventListener('click', () => {
     dialog.close()
-    // If landing overlay was hidden to open this dialog, re-show it
-    const landing = document.getElementById('landing-overlay')
-    if (landing && !state.activeProjectId) landing.hidden = false
+    // If landing was showing, navigate back to it
+    if (!state.activeProjectId) {
+      location.hash = '#/'
+    }
   })
   selectFolderBtn?.addEventListener('click', selectCurrentFolder)
 

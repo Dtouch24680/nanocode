@@ -133,6 +133,26 @@ body {
   flex: 1;
 }
 
+.back-to-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--t-fast) ease, background var(--t-fast) ease;
+}
+
+.back-to-menu:hover {
+  background: var(--glass-2);
+  color: var(--fg);
+}
+
 .sidebar-toggle {
   display: none;
   align-items: center;

@@ -5,6 +5,8 @@
 
 import { fetchSshHosts, fetchProjects, createProject } from './api.js'
 
+let _resolve = null
+
 /**
  * Show the landing screen overlay.
  * Resolves with the selected project ID when the user makes a choice.
@@ -46,7 +48,6 @@ export async function showLanding(existingProjects) {
   newLocal.innerHTML = '<span class="landing-card-plus">+</span><span>New local project</span>'
   newLocal.addEventListener('click', () => {
     overlay.hidden = true
-    // Open the add project dialog (it's handled by sidebar)
     document.getElementById('project-add')?.click()
   })
   localCards.appendChild(newLocal)
@@ -54,7 +55,6 @@ export async function showLanding(existingProjects) {
   grid.appendChild(localSection)
 
   // --- Remote section ---
-  // Existing remote projects
   const remoteProjects = existingProjects.filter((p) => !!p.ssh_host)
 
   if (sshHosts.length || remoteProjects.length) {
@@ -62,7 +62,6 @@ export async function showLanding(existingProjects) {
     remoteSection.appendChild(el('h2', 'landing-section-title', 'SSH Remote'))
     const remoteCards = el('div', 'landing-cards')
 
-    // Existing remote projects first
     for (const proj of remoteProjects) {
       const subtitle = `${proj.ssh_user || 'root'}@${proj.ssh_host}`
       const card = makeProjectCard(proj.name, subtitle, proj.cwd)
@@ -71,7 +70,7 @@ export async function showLanding(existingProjects) {
       remoteCards.appendChild(card)
     }
 
-    // SSH config hosts that don't have a project yet
+    // SSH config hosts without an existing project
     const usedHosts = new Set(remoteProjects.map((p) => p.ssh_host))
     for (const host of sshHosts) {
       if (usedHosts.has(host.hostname)) continue
@@ -80,7 +79,7 @@ export async function showLanding(existingProjects) {
       const card = makeProjectCard(label, subtitle, null)
       card.querySelector('.landing-card-icon').textContent = '\u{1F5A5}'
       card.classList.add('landing-card-preset')
-      card.addEventListener('click', () => connectSshHost(host, overlay))
+      card.addEventListener('click', () => connectSshHost(host))
       remoteCards.appendChild(card)
     }
 
@@ -107,12 +106,19 @@ export async function showLanding(existingProjects) {
   })
 }
 
-let _resolve = null
-
-function resolve(projectId, projects) {
+/** Hide the landing overlay without resolving (used by router). */
+export function hideLanding() {
   const overlay = document.getElementById('landing-overlay')
   if (overlay) overlay.hidden = true
-  if (_resolve) _resolve({ projectId, projects })
+}
+
+function resolve(projectId, projects) {
+  hideLanding()
+  if (_resolve) {
+    const cb = _resolve
+    _resolve = null
+    cb({ projectId, projects })
+  }
 }
 
 function el(tag, className, text) {
@@ -134,8 +140,7 @@ function makeProjectCard(title, subtitle, detail) {
   return card
 }
 
-async function connectSshHost(host, overlay) {
-  // Prompt for remote directory
+async function connectSshHost(host) {
   const dir = prompt(`Remote directory on ${host.hostname}:`, `/home/${host.user || 'root'}`)
   if (!dir) return
 
