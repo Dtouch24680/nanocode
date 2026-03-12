@@ -376,7 +376,9 @@ export function createTerminalRoutes(store) {
   }
 
   const IS_WIN = platform() === 'win32'
-  const SHELL = IS_WIN ? 'powershell.exe' : 'bash'
+  const SHELL = IS_WIN
+    ? (process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe')
+    : 'bash'
 
   /** Build SSH args for a remote project. */
   function buildSshArgs(project, remoteCmd) {
@@ -435,7 +437,7 @@ export function createTerminalRoutes(store) {
           cwd = home
         } else {
           command = SHELL
-          args = IS_WIN ? ['-NoLogo'] : ['--login']
+          args = IS_WIN ? [] : ['--login']
           cwd = project.cwd
         }
       } else {
@@ -451,7 +453,7 @@ export function createTerminalRoutes(store) {
           cwd = home
         } else if (IS_WIN) {
           command = SHELL
-          args = ['-NoLogo', '-Command', cliCmd]
+          args = ['/c', cliCmd]
           cwd = project.cwd
         } else {
           command = 'bash'
