@@ -46,9 +46,9 @@ export function initSidebar(onProjectSwitch) {
 
   cancelBtn?.addEventListener('click', () => {
     dialog.close()
-    // If landing was showing, navigate back to it
+    // If no active project, return to landing
     if (!state.activeProjectId) {
-      location.hash = '#/'
+      location.hash = '#/local'
     }
   })
   selectFolderBtn?.addEventListener('click', selectCurrentFolder)

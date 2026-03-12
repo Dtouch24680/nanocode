@@ -1603,10 +1603,37 @@ body {
   color: var(--fg);
 }
 
-.landing-subtitle {
-  font-size: 14px;
+.landing-header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+}
+
+.landing-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.landing-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--glass-1);
   color: var(--fg-3);
-  margin-top: -12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--t-fast) ease, background var(--t-fast) ease;
+}
+
+.landing-back:hover {
+  background: var(--glass-3);
+  color: var(--fg);
 }
 
 .landing-grid {
@@ -1735,20 +1762,6 @@ body {
   text-overflow: ellipsis;
 }
 
-.landing-skip {
-  background: none;
-  border: none;
-  color: var(--fg-3);
-  font-size: 13px;
-  cursor: pointer;
-  padding: var(--s-2) var(--s-4);
-  border-radius: var(--r-sm);
-  transition: color var(--t-fast) ease;
-}
-
-.landing-skip:hover {
-  color: var(--fg-2);
-}
 
 /* =================================================================
    Mobile Layout — max-width: 768px

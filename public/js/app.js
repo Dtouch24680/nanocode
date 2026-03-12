@@ -1,9 +1,10 @@
 /**
  * Application entry point.
  *
- * Uses hash-based routing:
- *   #/            — landing screen (workspace picker)
- *   #/project/ID  — workspace for a specific project
+ * Two-layer hash routing:
+ *   #/                          — host picker (local + SSH hosts)
+ *   #/<host>                    — project picker for that host
+ *   #/<host>/<project>          — workspace
  *
  * Architecture: public/docs/state-management.md#initial-load
  */
@@ -19,9 +20,18 @@ import {
   isInitialized,
 } from './terminal-view.js'
 import { loadSettings } from './settings.js'
-import { showLanding, hideLanding } from './landing.js'
+import { showHosts, showProjects, hideLanding } from './landing.js'
+import { slugify, hostSlug, projectSlug, projectPath, navigateTo } from './router.js'
 
 let workspaceReady = false
+
+/** Find a project by host + project slug. */
+function resolveProject(host, proj) {
+  const candidates = state.projects.filter((p) => hostSlug(p) === host)
+  return candidates.find((p) => projectSlug(p, state.projects) === proj)
+    || candidates.find((p) => slugify(p.name) === proj)
+    || null
+}
 
 async function init() {
   try {
@@ -37,64 +47,59 @@ async function init() {
   try {
     const settings = await fetchSettings()
     if (settings.cli_provider) state.cliProvider = settings.cli_provider
-  } catch {
-    // non-critical
-  }
+  } catch {}
 
-  // Wire up back-to-menu button
   const backBtn = document.getElementById('back-to-menu')
   if (backBtn) {
-    backBtn.addEventListener('click', () => navigateTo('/'))
+    backBtn.addEventListener('click', () => {
+      const route = parseHash()
+      if (route.view === 'workspace') {
+        navigateTo(`/${route.host}`)
+      } else {
+        navigateTo('/')
+      }
+    })
   }
 
-  // Handle initial route
   window.addEventListener('hashchange', onHashChange)
   await onHashChange()
 }
 
-/** Parse the current hash into a route. */
 function parseHash() {
-  const hash = location.hash.replace(/^#/, '') || '/'
-  const projectMatch = hash.match(/^\/project\/(.+)$/)
-  if (projectMatch) return { view: 'project', projectId: projectMatch[1] }
-  return { view: 'landing' }
+  const hash = (location.hash.replace(/^#/, '') || '/').replace(/\/+$/, '') || '/'
+  if (hash === '/') return { view: 'hosts' }
+  const parts = hash.replace(/^\//, '').split('/')
+  if (parts.length === 1) return { view: 'projects', host: parts[0] }
+  return { view: 'workspace', host: parts[0], project: parts.slice(1).join('/') }
 }
 
-/** Navigate to a hash route. */
-export function navigateTo(path) {
-  location.hash = '#' + path
-}
-
-/** React to hash changes. */
 async function onHashChange() {
   const route = parseHash()
 
-  if (route.view === 'project') {
-    const project = state.projects.find((p) => p.id === route.projectId)
+  if (route.view === 'workspace') {
+    const project = resolveProject(route.host, route.project)
     if (!project) {
-      // Unknown project — go to landing
-      navigateTo('/')
+      navigateTo(`/${route.host}`)
       return
     }
-    await enterWorkspace(route.projectId)
+    await enterWorkspace(project.id)
+  } else if (route.view === 'projects') {
+    await enterProjectPicker(route.host)
   } else {
-    await enterLanding()
+    await enterHostPicker()
   }
 }
 
-async function enterLanding() {
-  // Refresh project list
-  try {
-    state.projects = await fetchProjects()
-  } catch {}
-
+async function enterHostPicker() {
+  try { state.projects = await fetchProjects() } catch {}
   document.body.classList.remove('workspace-active')
-  const { projectId, projects } = await showLanding(state.projects)
-  state.projects = projects || state.projects
+  await showHosts(state.projects, navigateTo)
+}
 
-  if (projectId) {
-    navigateTo(`/project/${projectId}`)
-  }
+async function enterProjectPicker(host) {
+  try { state.projects = await fetchProjects() } catch {}
+  document.body.classList.remove('workspace-active')
+  await showProjects(host, state.projects, navigateTo)
 }
 
 async function enterWorkspace(projectId) {
@@ -113,16 +118,11 @@ async function enterWorkspace(projectId) {
   }
 }
 
-/**
- * Called when the user switches projects in the sidebar.
- */
 async function onProjectSwitch(projectId) {
-  navigateTo(`/project/${projectId}`)
+  const project = state.projects.find((p) => p.id === projectId)
+  if (project) navigateTo(projectPath(project, state.projects))
 }
 
-/**
- * Called when the user switches tabs.
- */
 function onTabSwitch(tab) {
   if (tab === 'terminal') {
     if (!isInitialized()) {
@@ -132,7 +132,6 @@ function onTabSwitch(tab) {
     }
     return
   }
-
   if (tab === 'settings') {
     loadSettings()
   }
