@@ -4,8 +4,7 @@
  * Created lazily on first terminal tab visit.
  */
 
-import { TerminalPane } from './terminal-pane.js'
-import { initSplitPane } from './split-pane.js'
+import { TerminalPane, initSplitPane } from './terminal-pane.js'
 import {
   fetchDiskSessions,
   fetchRunningSessions,

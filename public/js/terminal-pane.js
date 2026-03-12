@@ -83,7 +83,6 @@ export class TerminalPane {
       allowProposedApi: true,
     })
 
-    // Addons — fit + web-links only (WebGL loaded lazily below)
     this.fitAddon = new FitAddon()
     this.term.loadAddon(this.fitAddon)
     this.term.loadAddon(new WebLinksAddon())
@@ -95,10 +94,6 @@ export class TerminalPane {
 
     // Open in container
     this.term.open(container)
-
-    // Lazy-load WebGL renderer — not on the critical path.
-    // Terminal is usable immediately with canvas; WebGL loads in background.
-    this._loadWebGL()
 
     // Mobile: fix touch scrolling — xterm.js sets inline touch-action:none on
     // .xterm-screen which blocks all touch gestures. Override it and add manual
@@ -155,21 +150,6 @@ export class TerminalPane {
 
     // Connect
     this._connect()
-  }
-
-  /** Lazy-load WebGL addon — saves ~100KB from the critical render path */
-  async _loadWebGL() {
-    // Skip WebGL on mobile — canvas rendering is fine and saves resources
-    if (window.matchMedia('(max-width: 768px)').matches) return
-    try {
-      // WebglAddon may already be on window from a sync script tag,
-      // but if we removed it from HTML for lazy loading, fetch it.
-      if (window.WebglAddon) {
-        this.term.loadAddon(new window.WebglAddon.WebglAddon())
-      }
-    } catch {
-      // canvas fallback is fine
-    }
   }
 
   /**
@@ -491,4 +471,37 @@ export class TerminalPane {
     }
     this.term.dispose()
   }
+}
+
+/** Drag-to-resize divider between two panes. Sets --split CSS custom property. */
+export function initSplitPane(container, divider, onResize) {
+  if (!divider) return
+  let dragging = false
+
+  divider.addEventListener('mousedown', (e) => {
+    e.preventDefault()
+    dragging = true
+    divider.classList.add('active')
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  })
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return
+    const rect = container.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const pct = (x / rect.width) * 100
+    const clamped = Math.min(80, Math.max(20, pct))
+    container.style.setProperty('--split', `${clamped}%`)
+    if (onResize) onResize()
+  })
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return
+    dragging = false
+    divider.classList.remove('active')
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    if (onResize) onResize()
+  })
 }

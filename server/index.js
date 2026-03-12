@@ -1,12 +1,3 @@
-/**
- * Unified server entry point.
- *
- * Serves the terminal-focused frontend, project/session REST APIs, app
- * settings, and the `/ws/terminal` transport.
- *
- * Architecture: docs/architecture.md#server-architecture
- */
-
 import express from 'express'
 import { createServer } from 'http'
 import { fileURLToPath } from 'url'
@@ -27,7 +18,6 @@ const vendorOpts = { maxAge: '365d', immutable: true }
 const vendorMap = {
   '/vendor/xterm': path.join(root, 'node_modules/@xterm/xterm'),
   '/vendor/xterm-addon-fit': path.join(root, 'node_modules/@xterm/addon-fit'),
-  '/vendor/xterm-addon-webgl': path.join(root, 'node_modules/@xterm/addon-webgl'),
   '/vendor/xterm-addon-web-links': path.join(root, 'node_modules/@xterm/addon-web-links'),
 }
 for (const [route, dir] of Object.entries(vendorMap)) {

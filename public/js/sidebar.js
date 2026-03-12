@@ -1,8 +1,4 @@
-/**
- * Sidebar — project list with add/delete, active project indicator.
- *
- * Architecture: docs/architecture.md#frontend-architecture
- */
+/** Sidebar — project list with add/delete, active project indicator. */
 
 import { state } from './state.js'
 import { fetchProjects, createProject, deleteProject, fetchDir, testSsh } from './api.js'
@@ -12,8 +8,6 @@ let browsePath = ''
 
 /**
  * Initialize the sidebar.
- *
- * Architecture: docs/architecture.md#frontend-architecture
  */
 export function initSidebar(onProjectSwitch) {
   _onProjectSwitch = onProjectSwitch
@@ -101,8 +95,6 @@ export function initSidebar(onProjectSwitch) {
 
 /**
  * Render the list of available projects.
- *
- * Architecture: docs/architecture.md#frontend-architecture
  */
 export function renderSidebar() {
   const container = document.getElementById('sidebar-projects')

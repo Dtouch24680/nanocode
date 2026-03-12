@@ -1,9 +1,4 @@
-/**
- * Terminal routes — Express Router + WebSocket handler.
- * Mounted by the main application server.
- *
- * Architecture: docs/architecture.md#rest-api
- */
+/** Terminal routes — Express Router + WebSocket handler. */
 
 import { Router } from 'express'
 import { execFileSync, execFile } from 'node:child_process'
@@ -23,8 +18,6 @@ import * as sessions from './sessions.js'
 
 /**
  * Create terminal routes backed by the given store.
- *
- * Architecture: docs/architecture.md#server-architecture
  */
 export function createTerminalRoutes(store) {
   const router = Router()

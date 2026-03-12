@@ -1,8 +1,4 @@
-/**
- * REST API helpers.
- *
- * Architecture: docs/architecture.md#rest-api
- */
+/** REST API helpers. */
 
 const BASE = '/api'
 

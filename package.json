@@ -2,23 +2,15 @@
   "name": "nanocode",
   "version": "0.1.0",
   "type": "module",
-  "description": "Minimal terminal workspace with per-project sessions and settings",
+  "description": "Minimal terminal workspace for managing projects and AI coding assistants",
   "scripts": {
     "dev": "node --watch server/index.js",
     "start": "node server/index.js",
-    "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop ecosystem.config.cjs",
-    "pm2:restart": "pm2 restart ecosystem.config.cjs",
-    "pm2:logs": "pm2 logs",
-    "pm2:status": "pm2 status",
-    "test": "node --test server/tests/*.test.js",
-    "test:terminal-e2e": "PORT=40500 node server/index.js & SERVER_PID=$!; trap 'kill $SERVER_PID' EXIT; node --test terminal/tests/e2e.test.js",
-    "check": "npm run test"
+    "test": "node --test server/tests/*.test.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
-    "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
     "express": "^4.21.0",
     "node-pty": "^1.1.0-beta34",

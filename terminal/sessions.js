@@ -1,8 +1,4 @@
-/**
- * Persistent PTY sessions with scrollback. Sessions survive client disconnect.
- *
- * Architecture: docs/architecture.md#websocket-protocol
- */
+/** Persistent PTY sessions with scrollback. Sessions survive client disconnect. */
 
 import pty from 'node-pty'
 import { existsSync } from 'node:fs'

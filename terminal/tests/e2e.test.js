@@ -3,8 +3,6 @@
  * disconnect/reconnect with scrollback history, and multi-project switching.
  *
  * Run from repo root: npm run test:terminal-e2e
- *
- * Architecture: docs/architecture.md#websocket-protocol
  */
 
 import { homedir } from 'node:os'
