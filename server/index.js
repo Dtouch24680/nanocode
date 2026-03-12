@@ -8,7 +8,6 @@
  */
 
 import express from 'express'
-import compression from 'compression'
 import { createServer } from 'http'
 import { fileURLToPath } from 'url'
 import path from 'path'
@@ -21,7 +20,6 @@ const root = path.join(__dirname, '..')
 const PORT = process.env.PORT || 3000
 
 const app = express()
-app.use(compression({ threshold: 0 }))
 app.use(express.json())
 app.use(express.static(path.join(root, 'public')))
 

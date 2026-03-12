@@ -6,7 +6,7 @@
 
 import Database from 'better-sqlite3'
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'fs'
-import { ulid } from 'ulid'
+import { randomUUID } from 'crypto'
 
 /**
  * Create a store instance backed by the given SQLite database path.
@@ -115,7 +115,7 @@ export function createStore(dbPath = ':memory:') {
 
   /** Architecture: docs/architecture.md#projects */
   function createProject(name, cwd, existingId = null, ssh = {}) {
-    const id = existingId || ulid()
+    const id = existingId || randomUUID()
     insertProject.run({
       id,
       name,

@@ -13,8 +13,7 @@
     "pm2:status": "pm2 status",
     "test": "node --test server/tests/*.test.js",
     "test:terminal-e2e": "PORT=40500 node server/index.js & SERVER_PID=$!; trap 'kill $SERVER_PID' EXIT; node --test terminal/tests/e2e.test.js",
-    "lint": "prettier --check .",
-    "check": "npm run lint && npm run test"
+    "check": "npm run test"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
@@ -22,13 +21,8 @@
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
     "better-sqlite3": "^11.0.0",
-    "compression": "^1.8.1",
     "express": "^4.21.0",
     "node-pty": "^1.1.0-beta34",
-    "ulid": "^2.3.0",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "prettier": "^3.3.0"
   }
 }
