@@ -87,8 +87,20 @@ export async function showProjects(host, projects, navigate) {
   const isLocal = host === 'local'
   const hostProjects = projects.filter((p) => hostSlug(p) === host)
 
+  // Resolve real hostname — from existing projects or SSH config
+  let realHostname = hostProjects[0]?.ssh_host || null
+  let sshMeta = null
+  if (!isLocal && !realHostname) {
+    try {
+      const sshHosts = await fetchSshHosts()
+      sshMeta = sshHosts.find((h) => slugify(h.hostname) === host)
+      if (sshMeta) realHostname = sshMeta.hostname
+    } catch {}
+  }
+  if (!realHostname && !isLocal) realHostname = host
+
   // Header with back breadcrumb
-  const hostLabel = isLocal ? 'Local' : (hostProjects[0]?.ssh_host || host)
+  const hostLabel = isLocal ? 'Local' : realHostname
   setLandingHeader(overlay, hostLabel, () => navigate('/'))
 
   const cards = el('div', 'landing-cards')
@@ -110,7 +122,7 @@ export async function showProjects(host, projects, navigate) {
       overlay.hidden = true
       document.getElementById('project-add')?.click()
     } else {
-      addRemoteProject(host, hostProjects, projects, navigate)
+      addRemoteProject(realHostname, hostProjects, projects, navigate, sshMeta)
     }
   })
   cards.appendChild(newCard)
@@ -177,13 +189,12 @@ function makeProjectCard(title, subtitle) {
   return card
 }
 
-async function addRemoteProject(host, hostProjects, allProjects, navigate) {
-  // Get SSH details from an existing project on this host, or from config
+async function addRemoteProject(hostname, hostProjects, allProjects, navigate, sshMeta) {
+  // Get SSH details from an existing project on this host, or from SSH config
   const existing = hostProjects[0]
-  const hostname = existing?.ssh_host || host
-  const user = existing?.ssh_user || 'root'
-  const port = existing?.ssh_port || null
-  const key = existing?.ssh_key || null
+  const user = existing?.ssh_user || sshMeta?.user || 'root'
+  const port = existing?.ssh_port || sshMeta?.port || null
+  const key = existing?.ssh_key || sshMeta?.identityFile || null
 
   const dir = prompt(`Remote directory on ${hostname}:`, `/home/${user}`)
   if (!dir) return
