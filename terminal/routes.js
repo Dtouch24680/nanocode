@@ -391,7 +391,8 @@ export function createTerminalRoutes(store) {
     ]
     if (project.ssh_key) args.push('-i', project.ssh_key)
     args.push(`${project.ssh_user || 'root'}@${project.ssh_host}`)
-    args.push(remoteCmd)
+    // Wrap in bash -lc so the user's PATH (nvm, etc.) is available
+    args.push(`bash -lc ${sq(remoteCmd)}`)
     return args
   }
 
