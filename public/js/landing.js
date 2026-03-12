@@ -122,7 +122,7 @@ export async function showProjects(host, projects, navigate) {
       overlay.hidden = true
       document.getElementById('project-add')?.click()
     } else {
-      addRemoteProject(realHostname, hostProjects, projects, navigate, sshMeta)
+      showNewProjectForm(grid, realHostname, hostProjects, projects, navigate, sshMeta)
     }
   })
   cards.appendChild(newCard)
@@ -189,31 +189,79 @@ function makeProjectCard(title, subtitle) {
   return card
 }
 
-async function addRemoteProject(hostname, hostProjects, allProjects, navigate, sshMeta) {
-  // Get SSH details from an existing project on this host, or from SSH config
+function showNewProjectForm(grid, hostname, hostProjects, allProjects, navigate, sshMeta) {
+  // Remove any existing form
+  grid.querySelector('.landing-new-form')?.remove()
+
   const existing = hostProjects[0]
   const user = existing?.ssh_user || sshMeta?.user || 'root'
   const port = existing?.ssh_port || sshMeta?.port || null
   const key = existing?.ssh_key || sshMeta?.identityFile || null
 
-  const dir = prompt(`Remote directory on ${hostname}:`, `/home/${user}`)
-  if (!dir) return
+  const form = el('div', 'landing-new-form')
+  form.innerHTML = `
+    <h3 class="landing-form-title">New project on ${hostname}</h3>
+    <label class="landing-form-label">Remote directory
+      <input class="landing-form-input" id="lf-dir" type="text" autocomplete="off"
+             placeholder="/home/${user}/project" value="/home/${user}/" />
+    </label>
+    <label class="landing-form-label">Project name
+      <input class="landing-form-input" id="lf-name" type="text" autocomplete="off"
+             placeholder="my-project" />
+    </label>
+    <div class="landing-form-actions">
+      <button type="button" class="btn-secondary" id="lf-cancel">Cancel</button>
+      <button type="button" class="btn-primary" id="lf-create">Create</button>
+    </div>
+  `
 
-  const name = prompt('Project name:', dir.split('/').filter(Boolean).pop() || 'project')
-  if (!name) return
+  grid.appendChild(form)
 
-  try {
-    const project = await createProject({
-      name,
-      cwd: dir,
-      ssh_host: hostname,
-      ssh_user: user || undefined,
-      ssh_port: port || undefined,
-      ssh_key: key || undefined,
-    })
-    const projects = await fetchProjects()
-    navigate(projectPath(project, projects))
-  } catch (err) {
-    alert('Failed to create project: ' + err.message)
-  }
+  const dirInput = form.querySelector('#lf-dir')
+  const nameInput = form.querySelector('#lf-name')
+  dirInput.focus()
+
+  // Auto-fill name from directory
+  dirInput.addEventListener('input', () => {
+    const parts = dirInput.value.split('/').filter(Boolean)
+    const last = parts[parts.length - 1] || ''
+    if (!nameInput.dataset.manual) nameInput.value = last
+  })
+  nameInput.addEventListener('input', () => {
+    nameInput.dataset.manual = '1'
+  })
+
+  form.querySelector('#lf-cancel').addEventListener('click', () => form.remove())
+
+  form.querySelector('#lf-create').addEventListener('click', async () => {
+    const dir = dirInput.value.trim()
+    const name = nameInput.value.trim()
+    if (!dir || !name) return
+
+    const btn = form.querySelector('#lf-create')
+    btn.disabled = true
+    btn.textContent = 'Creating...'
+
+    try {
+      const project = await createProject({
+        name,
+        cwd: dir,
+        ssh_host: hostname,
+        ssh_user: user || undefined,
+        ssh_port: port || undefined,
+        ssh_key: key || undefined,
+      })
+      const projects = await fetchProjects()
+      navigate(projectPath(project, projects))
+    } catch (err) {
+      btn.disabled = false
+      btn.textContent = 'Create'
+      const errEl = form.querySelector('.landing-form-error')
+      if (errEl) errEl.textContent = err.message
+      else {
+        const e = el('p', 'landing-form-error', err.message)
+        form.appendChild(e)
+      }
+    }
+  })
 }

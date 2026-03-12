@@ -1762,6 +1762,61 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Landing — inline new-project form */
+.landing-new-form {
+  margin-top: 16px;
+  padding: 16px 20px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.landing-form-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+.landing-form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.landing-form-input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font-size: 13px;
+  font-family: var(--mono);
+  outline: none;
+}
+
+.landing-form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.landing-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.landing-form-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error, #ef4444);
+}
+
 
 /* =================================================================
    Mobile Layout — max-width: 768px
