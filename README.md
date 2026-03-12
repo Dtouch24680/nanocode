@@ -32,8 +32,6 @@ Then run the install script, which handles Node.js, build tools, and dependencie
 .\install.ps1
 ```
 
-The script works whether run from inside the repo or from a parent directory. It detects existing installs and updates them.
-
 Open `http://localhost:3000`.
 
 ## Usage

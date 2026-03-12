@@ -1,7 +1,12 @@
 $ErrorActionPreference = "Stop"
 
-$Repo = "https://github.com/victoriacity/nanocode.git"
 $Port = if ($env:PORT) { $env:PORT } else { "3000" }
+
+# Ensure we're in the repo root
+if (-not (Test-Path "package.json") -or -not (Select-String -Path "package.json" -Pattern '"nanocode"' -Quiet)) {
+    Write-Host "Error: Run this script from the nanocode repo root." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "=== Nanocode Installer ===" -ForegroundColor Green
 Write-Host ""
@@ -81,30 +86,6 @@ if (-not $hasVS) {
     }
 }
 
-# --- Determine project root ---
-$InRepo = $false
-if ((Test-Path "package.json") -and (Select-String -Path "package.json" -Pattern '"nanocode"' -Quiet)) {
-    # Already inside the repo
-    $ProjectDir = (Get-Location).Path
-    $InRepo = $true
-    Write-Host "Detected existing repo at $ProjectDir"
-    git pull --ff-only 2>$null
-} elseif ((Test-Path "nanocode\package.json")) {
-    # Subdirectory exists
-    Push-Location nanocode
-    $ProjectDir = (Get-Location).Path
-    $InRepo = $true
-    Write-Host "Updating existing install..."
-    git pull --ff-only 2>$null
-} else {
-    # Fresh clone
-    Write-Host "Cloning repository..."
-    git clone $Repo nanocode
-    Push-Location nanocode
-    $ProjectDir = (Get-Location).Path
-    $InRepo = $true
-}
-
 # --- Install dependencies ---
 Write-Host "Installing dependencies..."
 npm install
@@ -114,13 +95,11 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  1. Install Visual Studio Build Tools with C++ workload" -ForegroundColor Yellow
     Write-Host "  2. Run: npm config set msvs_version 2022" -ForegroundColor Yellow
     Write-Host "  3. Restart terminal and re-run this script" -ForegroundColor Yellow
-    if ($InRepo) { Pop-Location }
     exit 1
 }
 
 Write-Host ""
 Write-Host "=== Ready ===" -ForegroundColor Green
-Write-Host "Directory: $ProjectDir"
 Write-Host "Run:  npm run dev"
 Write-Host "Open: http://localhost:$Port"
 Write-Host ""
@@ -129,5 +108,3 @@ $answer = Read-Host "Start now? [Y/n]"
 if ($answer -eq "" -or $answer -match "^[Yy]") {
     npm run dev
 }
-
-if ($InRepo) { Pop-Location }

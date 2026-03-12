@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-REPO="https://github.com/victoriacity/nanocode.git"
 PORT="${PORT:-3000}"
+
+# Ensure we're in the repo root
+if [ ! -f "package.json" ] || ! grep -q '"nanocode"' package.json 2>/dev/null; then
+  echo "Error: Run this script from the nanocode repo root."
+  exit 1
+fi
 
 echo "=== Nanocode Installer ==="
 echo
@@ -81,33 +86,12 @@ elif [ "$PLATFORM" = "windows" ]; then
   fi
 fi
 
-# Determine project root — either we're inside the repo or we need to clone it
-if [ -f "package.json" ] && grep -q '"nanocode"' package.json 2>/dev/null; then
-  # Already inside the repo
-  PROJECT_DIR="$(pwd)"
-  echo "Detected existing repo at $PROJECT_DIR"
-  git pull --ff-only 2>/dev/null || true
-elif [ -d "nanocode" ] && [ -f "nanocode/package.json" ]; then
-  # Subdirectory exists
-  PROJECT_DIR="$(cd nanocode && pwd)"
-  echo "Updating existing install..."
-  cd nanocode
-  git pull --ff-only 2>/dev/null || true
-else
-  # Fresh clone
-  echo "Cloning repository..."
-  git clone "$REPO" nanocode
-  PROJECT_DIR="$(cd nanocode && pwd)"
-  cd nanocode
-fi
-
 # Install dependencies
 echo "Installing dependencies..."
 npm install
 
 echo
 echo "=== Ready ==="
-echo "Directory: $PROJECT_DIR"
 echo "Run:  npm run dev"
 echo "Open: http://localhost:$PORT"
 echo
