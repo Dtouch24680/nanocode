@@ -2,7 +2,6 @@
 set -e
 
 REPO="https://github.com/victoriacity/nanocode.git"
-DIR="nanocode"
 PORT="${PORT:-3000}"
 
 echo "=== Nanocode Installer ==="
@@ -26,7 +25,7 @@ if ! command -v node &>/dev/null; then
     echo "Then restart Git Bash and re-run this script."
     exit 1
   fi
-  echo "Node.js not found. Installing via NodeSource..."
+  echo "Node.js not found. Installing..."
   if [ "$PLATFORM" = "mac" ]; then
     if command -v brew &>/dev/null; then
       brew install node@20
@@ -59,7 +58,6 @@ if [ "$PLATFORM" = "linux" ] && ! command -v make &>/dev/null; then
   echo "Installing build tools..."
   sudo apt-get install -y build-essential
 elif [ "$PLATFORM" = "windows" ]; then
-  # Check for Visual Studio Build Tools (cl.exe)
   if ! command -v cl &>/dev/null 2>&1; then
     VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
     HAS_VS=false
@@ -75,10 +73,6 @@ elif [ "$PLATFORM" = "windows" ]; then
       echo "Install from PowerShell (admin):"
       echo "  winget install Microsoft.VisualStudio.2022.BuildTools --override \"--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended\""
       echo ""
-      echo "Or download manually:"
-      echo "  https://visualstudio.microsoft.com/visual-cpp-build-tools/"
-      echo "  Select 'Desktop development with C++'"
-      echo ""
       read -rp "Continue anyway? [y/N] " cont
       if [[ ! "$cont" =~ ^[Yy] ]]; then
         exit 1
@@ -87,15 +81,24 @@ elif [ "$PLATFORM" = "windows" ]; then
   fi
 fi
 
-# Clone or update
-if [ -d "$DIR" ]; then
+# Determine project root — either we're inside the repo or we need to clone it
+if [ -f "package.json" ] && grep -q '"nanocode"' package.json 2>/dev/null; then
+  # Already inside the repo
+  PROJECT_DIR="$(pwd)"
+  echo "Detected existing repo at $PROJECT_DIR"
+  git pull --ff-only 2>/dev/null || true
+elif [ -d "nanocode" ] && [ -f "nanocode/package.json" ]; then
+  # Subdirectory exists
+  PROJECT_DIR="$(cd nanocode && pwd)"
   echo "Updating existing install..."
-  cd "$DIR"
-  git pull --ff-only
+  cd nanocode
+  git pull --ff-only 2>/dev/null || true
 else
+  # Fresh clone
   echo "Cloning repository..."
-  git clone "$REPO" "$DIR"
-  cd "$DIR"
+  git clone "$REPO" nanocode
+  PROJECT_DIR="$(cd nanocode && pwd)"
+  cd nanocode
 fi
 
 # Install dependencies
@@ -104,7 +107,8 @@ npm install
 
 echo
 echo "=== Ready ==="
-echo "Run:  cd $DIR && npm run dev"
+echo "Directory: $PROJECT_DIR"
+echo "Run:  npm run dev"
 echo "Open: http://localhost:$PORT"
 echo
 read -rp "Start now? [Y/n] " answer

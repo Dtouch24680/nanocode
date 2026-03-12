@@ -1,7 +1,6 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "https://github.com/victoriacity/nanocode.git"
-$Dir = "nanocode"
 $Port = if ($env:PORT) { $env:PORT } else { "3000" }
 
 Write-Host "=== Nanocode Installer ===" -ForegroundColor Green
@@ -41,9 +40,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
 # --- Python (needed by node-gyp) ---
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pythonCmd) {
-    $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue
-}
+if (-not $pythonCmd) { $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue }
 if (-not $pythonCmd) {
     Write-Host "Python not found. Installing via winget..."
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
@@ -52,12 +49,10 @@ if (-not $pythonCmd) {
         $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
     } else {
         Write-Host "Warning: Python not found. Native modules may fail to build." -ForegroundColor Yellow
-        Write-Host "Install Python 3 from https://python.org" -ForegroundColor Yellow
     }
 }
 
-# --- Visual Studio Build Tools (needed by node-pty, better-sqlite3) ---
-# Check if cl.exe is reachable or VS Build Tools is installed
+# --- Visual Studio Build Tools ---
 $hasVS = $false
 $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (Test-Path $vsWhere) {
@@ -70,7 +65,6 @@ if (-not $hasVS) {
     Write-Host "Visual Studio Build Tools not found." -ForegroundColor Yellow
     Write-Host "Native modules (node-pty, better-sqlite3) require C++ build tools." -ForegroundColor Yellow
     Write-Host ""
-
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
     if ($wingetCmd) {
         $installVS = Read-Host "Install Visual Studio Build Tools via winget? [Y/n]"
@@ -78,28 +72,37 @@ if (-not $hasVS) {
             Write-Host "Installing Visual Studio Build Tools (this may take a few minutes)..."
             winget install Microsoft.VisualStudio.2022.BuildTools --accept-source-agreements --accept-package-agreements --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
             Write-Host "Build Tools installed." -ForegroundColor Green
-        } else {
-            Write-Host "Skipping. npm install may fail for native modules." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "Install Visual Studio Build Tools manually:" -ForegroundColor Yellow
-        Write-Host "  https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Yellow
-        Write-Host "  Select 'Desktop development with C++' workload" -ForegroundColor Yellow
-        Write-Host ""
+        Write-Host "Install manually: https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Yellow
+        Write-Host "Select 'Desktop development with C++' workload" -ForegroundColor Yellow
         $cont = Read-Host "Continue anyway? [y/N]"
         if ($cont -notmatch "^[Yy]") { exit 1 }
     }
 }
 
-# --- Clone or update ---
-if (Test-Path $Dir) {
+# --- Determine project root ---
+$InRepo = $false
+if ((Test-Path "package.json") -and (Select-String -Path "package.json" -Pattern '"nanocode"' -Quiet)) {
+    # Already inside the repo
+    $ProjectDir = (Get-Location).Path
+    $InRepo = $true
+    Write-Host "Detected existing repo at $ProjectDir"
+    git pull --ff-only 2>$null
+} elseif ((Test-Path "nanocode\package.json")) {
+    # Subdirectory exists
+    Push-Location nanocode
+    $ProjectDir = (Get-Location).Path
+    $InRepo = $true
     Write-Host "Updating existing install..."
-    Push-Location $Dir
-    git pull --ff-only
+    git pull --ff-only 2>$null
 } else {
+    # Fresh clone
     Write-Host "Cloning repository..."
-    git clone $Repo $Dir
-    Push-Location $Dir
+    git clone $Repo nanocode
+    Push-Location nanocode
+    $ProjectDir = (Get-Location).Path
+    $InRepo = $true
 }
 
 # --- Install dependencies ---
@@ -111,13 +114,14 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  1. Install Visual Studio Build Tools with C++ workload" -ForegroundColor Yellow
     Write-Host "  2. Run: npm config set msvs_version 2022" -ForegroundColor Yellow
     Write-Host "  3. Restart terminal and re-run this script" -ForegroundColor Yellow
-    Pop-Location
+    if ($InRepo) { Pop-Location }
     exit 1
 }
 
 Write-Host ""
 Write-Host "=== Ready ===" -ForegroundColor Green
-Write-Host "Run:  cd $Dir; npm run dev"
+Write-Host "Directory: $ProjectDir"
+Write-Host "Run:  npm run dev"
 Write-Host "Open: http://localhost:$Port"
 Write-Host ""
 
@@ -126,4 +130,4 @@ if ($answer -eq "" -or $answer -match "^[Yy]") {
     npm run dev
 }
 
-Pop-Location
+if ($InRepo) { Pop-Location }
