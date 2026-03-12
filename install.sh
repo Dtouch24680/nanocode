@@ -8,18 +8,43 @@ PORT="${PORT:-3000}"
 echo "=== Nanocode Installer ==="
 echo
 
+# Detect platform
+OS="$(uname -s)"
+case "$OS" in
+  Linux*)   PLATFORM="linux" ;;
+  Darwin*)  PLATFORM="mac" ;;
+  MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
+  *)        PLATFORM="unknown" ;;
+esac
+echo "Platform: $PLATFORM"
+
 # Check for Node.js
 if ! command -v node &>/dev/null; then
-  echo "Node.js not found. Installing via NodeSource..."
-  if command -v curl &>/dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-  elif command -v wget &>/dev/null; then
-    wget -qO- https://deb.nodesource.com/setup_20.x | sudo -E bash -
-  else
-    echo "Error: curl or wget required. Install Node.js 20+ manually and re-run."
+  if [ "$PLATFORM" = "windows" ]; then
+    echo "Node.js not found."
+    echo "Install from https://nodejs.org or run:  winget install OpenJS.NodeJS.LTS"
+    echo "Then restart Git Bash and re-run this script."
     exit 1
   fi
-  sudo apt-get install -y nodejs
+  echo "Node.js not found. Installing via NodeSource..."
+  if [ "$PLATFORM" = "mac" ]; then
+    if command -v brew &>/dev/null; then
+      brew install node@20
+    else
+      echo "Error: Install Homebrew (https://brew.sh) or Node.js 20+ manually and re-run."
+      exit 1
+    fi
+  else
+    if command -v curl &>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    elif command -v wget &>/dev/null; then
+      wget -qO- https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    else
+      echo "Error: curl or wget required. Install Node.js 20+ manually and re-run."
+      exit 1
+    fi
+    sudo apt-get install -y nodejs
+  fi
 fi
 
 NODE_VER=$(node -v | sed 's/v//' | cut -d. -f1)
@@ -29,8 +54,8 @@ if [ "$NODE_VER" -lt 18 ]; then
 fi
 echo "Node.js $(node -v) OK"
 
-# Ensure build tools for native modules
-if ! command -v make &>/dev/null; then
+# Ensure build tools for native modules (Linux only)
+if [ "$PLATFORM" = "linux" ] && ! command -v make &>/dev/null; then
   echo "Installing build tools..."
   sudo apt-get install -y build-essential
 fi
