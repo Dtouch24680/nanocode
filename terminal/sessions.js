@@ -67,7 +67,13 @@ class Session {
       console.warn(`[pty] cwd does not exist: ${cwd}, falling back to home`)
       cwd = homedir()
     }
-    this._proc = pty.spawn(this._command, this._args, {
+    // Validate command exists
+    let command = this._command
+    if (!existsSync(command)) {
+      console.warn(`[pty] command not found: ${command}`)
+    }
+    console.log(`[pty] spawn: command=${command} args=${JSON.stringify(this._args)} cwd=${cwd}`)
+    this._proc = pty.spawn(command, this._args, {
       name: 'xterm-256color',
       cols: Math.max(1, cols || 80),
       rows: Math.max(1, rows || 24),
