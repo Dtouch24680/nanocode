@@ -5,6 +5,8 @@
  */
 
 import pty from 'node-pty'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 
 const OUTPUT_FLUSH_MS = 12
 const SCROLLBACK_SIZE = 100 * 1024 // 100KB
@@ -59,16 +61,22 @@ class Session {
   }
 
   _spawn(cols, rows) {
+    // Validate cwd exists — node-pty throws "File not found" on Windows if it doesn't
+    let cwd = this._cwd
+    if (!cwd || !existsSync(cwd)) {
+      console.warn(`[pty] cwd does not exist: ${cwd}, falling back to home`)
+      cwd = homedir()
+    }
     this._proc = pty.spawn(this._command, this._args, {
       name: 'xterm-256color',
       cols: Math.max(1, cols || 80),
       rows: Math.max(1, rows || 24),
-      cwd: this._cwd,
+      cwd,
       env: {
         ...process.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
-        FORCE_COLOR: '3', // override inherited FORCE_COLOR=0 — PTY supports full 24-bit color
+        FORCE_COLOR: '3',
       },
     })
 
