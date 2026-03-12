@@ -1,237 +1,164 @@
 /**
- * SQLite data layer for projects, settings, and terminal session metadata.
- *
- * Architecture: docs/architecture.md#data-model
+ * JSON file data layer for projects, settings, and terminal session metadata.
  */
 
-import Database from 'better-sqlite3'
-import { existsSync, mkdirSync, readFileSync, renameSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs'
 import { randomUUID } from 'crypto'
 
-/**
- * Create a store instance backed by the given SQLite database path.
- *
- * Architecture: docs/architecture.md#data-model
- */
-export function createStore(dbPath = ':memory:') {
-  const db = new Database(dbPath)
+function emptyData() {
+  return { projects: [], settings: {}, archivedSessions: {}, managedSessions: {} }
+}
 
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
+export function createStore(filePath = ':memory:') {
+  const inMemory = filePath === ':memory:'
+  let data = emptyData()
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id         TEXT PRIMARY KEY,
-      name       TEXT NOT NULL,
-      cwd        TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      ssh_host   TEXT,
-      ssh_user   TEXT,
-      ssh_port   INTEGER,
-      ssh_key    TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS settings (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS archived_sessions (
-      project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      session_id  TEXT NOT NULL,
-      archived_at INTEGER NOT NULL,
-      PRIMARY KEY (project_id, session_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS managed_sessions (
-      project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      session_id  TEXT NOT NULL,
-      PRIMARY KEY (project_id, session_id)
-    );
-  `)
-
-  // Migrate existing databases: add SSH columns if missing
-  const cols = db.pragma('table_info(projects)').map((c) => c.name)
-  if (!cols.includes('ssh_host')) {
-    db.exec(`
-      ALTER TABLE projects ADD COLUMN ssh_host TEXT;
-      ALTER TABLE projects ADD COLUMN ssh_user TEXT;
-      ALTER TABLE projects ADD COLUMN ssh_port INTEGER;
-      ALTER TABLE projects ADD COLUMN ssh_key  TEXT;
-    `)
+  if (!inMemory && existsSync(filePath)) {
+    try { data = JSON.parse(readFileSync(filePath, 'utf-8')) } catch { data = emptyData() }
+    // Ensure all keys exist (forward compat)
+    if (!data.projects) data.projects = []
+    if (!data.settings) data.settings = {}
+    if (!data.archivedSessions) data.archivedSessions = {}
+    if (!data.managedSessions) data.managedSessions = {}
   }
 
-  const selectSetting = db.prepare(`SELECT value FROM settings WHERE key = ?`)
-  const upsertSetting = db.prepare(`
-    INSERT INTO settings (key, value) VALUES (@key, @value)
-    ON CONFLICT(key) DO UPDATE SET value = @value
-  `)
-  const selectAllSettings = db.prepare(`SELECT key, value FROM settings ORDER BY key ASC`)
+  function save() {
+    if (inMemory) return
+    writeFileSync(filePath, JSON.stringify(data, null, 2))
+  }
 
-  const insertProject = db.prepare(`
-    INSERT INTO projects (id, name, cwd, created_at, ssh_host, ssh_user, ssh_port, ssh_key)
-    VALUES (@id, @name, @cwd, @createdAt, @sshHost, @sshUser, @sshPort, @sshKey)
-  `)
-  const selectProject = db.prepare(`SELECT * FROM projects WHERE id = ?`)
-  const selectAllProjects = db.prepare(`SELECT * FROM projects ORDER BY created_at ASC`)
-  const deleteProjectStmt = db.prepare(`DELETE FROM projects WHERE id = ?`)
+  // --- Settings ---
 
-  const insertArchive = db.prepare(`
-    INSERT OR IGNORE INTO archived_sessions (project_id, session_id, archived_at)
-    VALUES (@projectId, @sessionId, @archivedAt)
-  `)
-  const deleteArchive = db.prepare(`
-    DELETE FROM archived_sessions WHERE project_id = @projectId AND session_id = @sessionId
-  `)
-  const selectArchives = db.prepare(`
-    SELECT session_id FROM archived_sessions WHERE project_id = ? ORDER BY archived_at DESC
-  `)
-
-  const insertManaged = db.prepare(`
-    INSERT OR IGNORE INTO managed_sessions (project_id, session_id)
-    VALUES (@projectId, @sessionId)
-  `)
-  const selectManaged = db.prepare(`
-    SELECT session_id FROM managed_sessions WHERE project_id = ? ORDER BY session_id ASC
-  `)
-
-  /** Architecture: docs/architecture.md#settings */
   function getSetting(key) {
-    const row = selectSetting.get(key)
-    return row ? row.value : null
+    return data.settings[key] ?? null
   }
 
-  /** Architecture: docs/architecture.md#settings */
   function setSetting(key, value) {
-    upsertSetting.run({ key, value })
+    data.settings[key] = value
+    save()
   }
 
-  /** Architecture: docs/architecture.md#settings */
   function getAllSettings() {
-    const result = {}
-    for (const row of selectAllSettings.all()) result[row.key] = row.value
-    return result
+    return { ...data.settings }
   }
 
-  /** Architecture: docs/architecture.md#projects */
+  // --- Projects ---
+
   function createProject(name, cwd, existingId = null, ssh = {}) {
     const id = existingId || randomUUID()
-    insertProject.run({
+    const project = {
       id,
       name,
       cwd,
-      createdAt: Date.now(),
-      sshHost: ssh.host || null,
-      sshUser: ssh.user || null,
-      sshPort: ssh.port || null,
-      sshKey: ssh.key || null,
-    })
-    return selectProject.get(id)
+      created_at: Date.now(),
+      ssh_host: ssh.host || null,
+      ssh_user: ssh.user || null,
+      ssh_port: ssh.port || null,
+      ssh_key: ssh.key || null,
+    }
+    data.projects.push(project)
+    save()
+    return { ...project }
   }
 
-  /** Architecture: docs/architecture.md#projects */
   function getProject(id) {
-    return selectProject.get(id)
+    const p = data.projects.find((p) => p.id === id)
+    return p ? { ...p } : undefined
   }
 
-  /** Architecture: docs/architecture.md#projects */
   function listProjects() {
-    return selectAllProjects.all()
+    return data.projects.map((p) => ({ ...p }))
   }
 
-  /** Architecture: docs/architecture.md#projects */
   function removeProject(id) {
-    deleteProjectStmt.run(id)
+    data.projects = data.projects.filter((p) => p.id !== id)
+    delete data.archivedSessions[id]
+    delete data.managedSessions[id]
+    save()
   }
 
-  /** Architecture: docs/architecture.md#projects */
   function migrateProjectsJson(jsonPath) {
     if (!existsSync(jsonPath)) return
     try {
       const projects = JSON.parse(readFileSync(jsonPath, 'utf-8'))
-      const existing = selectAllProjects.all()
-      const existingIds = new Set(existing.map((project) => project.id))
-      const existingCwds = new Set(existing.map((project) => project.cwd))
+      const existingIds = new Set(data.projects.map((p) => p.id))
+      const existingCwds = new Set(data.projects.map((p) => p.cwd))
       for (const project of projects) {
         if (!existingIds.has(project.id) && !existingCwds.has(project.cwd)) {
-          insertProject.run({
+          data.projects.push({
             id: project.id,
             name: project.name,
             cwd: project.cwd,
-            createdAt: Date.now(),
+            created_at: Date.now(),
+            ssh_host: null, ssh_user: null, ssh_port: null, ssh_key: null,
           })
         }
       }
+      save()
       renameSync(jsonPath, `${jsonPath}.bak`)
-    } catch {
-      /* ignore migration errors */
-    }
+    } catch { /* ignore migration errors */ }
   }
 
-  /** Architecture: docs/architecture.md#projects */
   function ensureStarterProject() {
-    if (selectAllProjects.all().length > 0) return
+    if (data.projects.length > 0) return
     const cwd = process.cwd()
     const name = cwd.split('/').filter(Boolean).pop() || 'project'
     createProject(name, cwd)
   }
 
-  /** Architecture: docs/architecture.md#session-metadata */
+  // --- Session metadata ---
+
   function archiveSession(projectId, sessionId) {
-    insertArchive.run({ projectId, sessionId, archivedAt: Date.now() })
+    if (!data.archivedSessions[projectId]) data.archivedSessions[projectId] = []
+    const list = data.archivedSessions[projectId]
+    if (!list.some((s) => s.id === sessionId)) {
+      list.push({ id: sessionId, archivedAt: Date.now() })
+      save()
+    }
   }
 
-  /** Architecture: docs/architecture.md#session-metadata */
   function unarchiveSession(projectId, sessionId) {
-    deleteArchive.run({ projectId, sessionId })
+    if (!data.archivedSessions[projectId]) return
+    data.archivedSessions[projectId] = data.archivedSessions[projectId].filter((s) => s.id !== sessionId)
+    save()
   }
 
-  /** Architecture: docs/architecture.md#session-metadata */
   function listArchivedSessions(projectId) {
-    return selectArchives.all(projectId).map((row) => row.session_id)
+    return (data.archivedSessions[projectId] || []).map((s) => s.id)
   }
 
-  /** Architecture: docs/architecture.md#session-metadata */
   function markSessionManaged(projectId, sessionId) {
-    insertManaged.run({ projectId, sessionId })
+    if (!data.managedSessions[projectId]) data.managedSessions[projectId] = []
+    const list = data.managedSessions[projectId]
+    if (!list.includes(sessionId)) {
+      list.push(sessionId)
+      save()
+    }
   }
 
-  /** Architecture: docs/architecture.md#session-metadata */
   function listManagedSessions(projectId) {
-    return selectManaged.all(projectId).map((row) => row.session_id)
+    return [...(data.managedSessions[projectId] || [])]
   }
 
-  function close() {
-    db.close()
-  }
+  function close() { /* no-op for JSON store */ }
 
   return {
-    getSetting,
-    setSetting,
-    getAllSettings,
-    createProject,
-    getProject,
-    listProjects,
-    removeProject,
-    migrateProjectsJson,
-    ensureStarterProject,
-    archiveSession,
-    unarchiveSession,
-    listArchivedSessions,
-    markSessionManaged,
-    listManagedSessions,
+    getSetting, setSetting, getAllSettings,
+    createProject, getProject, listProjects, removeProject,
+    migrateProjectsJson, ensureStarterProject,
+    archiveSession, unarchiveSession, listArchivedSessions,
+    markSessionManaged, listManagedSessions,
     close,
   }
 }
 
 let _instance = null
 
-/** Architecture: docs/architecture.md#server-architecture */
-export function getStore(dbPath = 'data/nanocode.db') {
+export function getStore(filePath = 'data/nanocode.json') {
   if (!_instance) {
-    const dir = dbPath.substring(0, dbPath.lastIndexOf('/'))
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'))
     if (dir) mkdirSync(dir, { recursive: true })
-    _instance = createStore(dbPath)
+    _instance = createStore(filePath)
   }
   return _instance
 }

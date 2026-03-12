@@ -20,7 +20,6 @@
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
-    "better-sqlite3": "^11.0.0",
     "express": "^4.21.0",
     "node-pty": "^1.1.0-beta34",
     "ws": "^8.18.0"

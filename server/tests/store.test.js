@@ -1,7 +1,5 @@
 /**
- * Tests for the SQLite store.
- *
- * Architecture: docs/architecture.md#data-model
+ * Tests for the JSON file store.
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test'

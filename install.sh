@@ -73,7 +73,7 @@ elif [ "$PLATFORM" = "windows" ]; then
     if [ "$HAS_VS" = false ]; then
       echo ""
       echo "WARNING: Visual Studio Build Tools not found."
-      echo "Native modules (node-pty, better-sqlite3) require C++ build tools."
+      echo "Native module node-pty requires C++ build tools."
       echo ""
       echo "Install from PowerShell (admin):"
       echo "  winget install Microsoft.VisualStudio.2022.BuildTools --override \"--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended\""

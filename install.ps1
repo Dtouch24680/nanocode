@@ -68,7 +68,7 @@ if (Test-Path $vsWhere) {
 if (-not $hasVS) {
     Write-Host ""
     Write-Host "Visual Studio Build Tools not found." -ForegroundColor Yellow
-    Write-Host "Native modules (node-pty, better-sqlite3) require C++ build tools." -ForegroundColor Yellow
+    Write-Host "Native module node-pty requires C++ build tools." -ForegroundColor Yellow
     Write-Host ""
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
     if ($wingetCmd) {
