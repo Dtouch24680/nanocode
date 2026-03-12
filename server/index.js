@@ -93,7 +93,7 @@ terminalWss.on('connection', (ws) => {
 })
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Codebuilder running on http://0.0.0.0:${PORT}`)
+  console.log(`Nanocode running on http://0.0.0.0:${PORT}`)
 })
 
 export { app, server, store }

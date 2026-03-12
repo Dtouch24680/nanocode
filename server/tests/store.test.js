@@ -85,4 +85,25 @@ describe('store', () => {
     assert.deepEqual(store.listArchivedSessions(project.id), [])
     assert.deepEqual(store.listManagedSessions(project.id), [])
   })
+
+  it('creates a remote project with SSH fields', () => {
+    const project = store.createProject('Remote', '/home/ubuntu/proj', null, {
+      host: '10.0.1.5',
+      user: 'ubuntu',
+      port: 2222,
+      key: '~/.ssh/id_ed25519',
+    })
+    assert.equal(project.ssh_host, '10.0.1.5')
+    assert.equal(project.ssh_user, 'ubuntu')
+    assert.equal(project.ssh_port, 2222)
+    assert.equal(project.ssh_key, '~/.ssh/id_ed25519')
+  })
+
+  it('creates a local project with null SSH fields', () => {
+    const project = store.createProject('Local', '/tmp/local')
+    assert.equal(project.ssh_host, null)
+    assert.equal(project.ssh_user, null)
+    assert.equal(project.ssh_port, null)
+    assert.equal(project.ssh_key, null)
+  })
 })

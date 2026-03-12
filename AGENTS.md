@@ -10,7 +10,7 @@
 ## Project Structure
 
 ```
-codebuilder/
+nanocode/
 ├── AGENTS.md
 ├── docs/
 │   ├── architecture.md

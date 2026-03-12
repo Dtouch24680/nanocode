@@ -1,6 +1,6 @@
-# Codebuilder Architecture
+# Nanocode Architecture
 
-Codebuilder is a small project-based terminal workspace. It keeps a project sidebar, a split terminal, resumable assistant sessions, and a minimal settings screen for choosing the CLI provider.
+Nanocode is a small project-based terminal workspace. It keeps a project sidebar, a split terminal, resumable assistant sessions, and a minimal settings screen for choosing the CLI provider.
 
 ## Server Architecture
 
@@ -35,7 +35,7 @@ Settings are simple key/value rows. The current app stores `cli_provider` there.
 The app persists two lightweight session lists per project:
 
 - `archived_sessions` for hidden historical sessions
-- `managed_sessions` for sessions explicitly touched by Codebuilder
+- `managed_sessions` for sessions explicitly touched by Nanocode
 
 ```sql
 CREATE TABLE projects (

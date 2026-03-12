@@ -24,7 +24,11 @@ export function createStore(dbPath = ':memory:') {
       id         TEXT PRIMARY KEY,
       name       TEXT NOT NULL,
       cwd        TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      ssh_host   TEXT,
+      ssh_user   TEXT,
+      ssh_port   INTEGER,
+      ssh_key    TEXT
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -46,6 +50,17 @@ export function createStore(dbPath = ':memory:') {
     );
   `)
 
+  // Migrate existing databases: add SSH columns if missing
+  const cols = db.pragma('table_info(projects)').map((c) => c.name)
+  if (!cols.includes('ssh_host')) {
+    db.exec(`
+      ALTER TABLE projects ADD COLUMN ssh_host TEXT;
+      ALTER TABLE projects ADD COLUMN ssh_user TEXT;
+      ALTER TABLE projects ADD COLUMN ssh_port INTEGER;
+      ALTER TABLE projects ADD COLUMN ssh_key  TEXT;
+    `)
+  }
+
   const selectSetting = db.prepare(`SELECT value FROM settings WHERE key = ?`)
   const upsertSetting = db.prepare(`
     INSERT INTO settings (key, value) VALUES (@key, @value)
@@ -54,8 +69,8 @@ export function createStore(dbPath = ':memory:') {
   const selectAllSettings = db.prepare(`SELECT key, value FROM settings ORDER BY key ASC`)
 
   const insertProject = db.prepare(`
-    INSERT INTO projects (id, name, cwd, created_at)
-    VALUES (@id, @name, @cwd, @createdAt)
+    INSERT INTO projects (id, name, cwd, created_at, ssh_host, ssh_user, ssh_port, ssh_key)
+    VALUES (@id, @name, @cwd, @createdAt, @sshHost, @sshUser, @sshPort, @sshKey)
   `)
   const selectProject = db.prepare(`SELECT * FROM projects WHERE id = ?`)
   const selectAllProjects = db.prepare(`SELECT * FROM projects ORDER BY created_at ASC`)
@@ -99,9 +114,18 @@ export function createStore(dbPath = ':memory:') {
   }
 
   /** Architecture: docs/architecture.md#projects */
-  function createProject(name, cwd, existingId = null) {
+  function createProject(name, cwd, existingId = null, ssh = {}) {
     const id = existingId || ulid()
-    insertProject.run({ id, name, cwd, createdAt: Date.now() })
+    insertProject.run({
+      id,
+      name,
+      cwd,
+      createdAt: Date.now(),
+      sshHost: ssh.host || null,
+      sshUser: ssh.user || null,
+      sshPort: ssh.port || null,
+      sshKey: ssh.key || null,
+    })
     return selectProject.get(id)
   }
 
@@ -203,7 +227,7 @@ export function createStore(dbPath = ':memory:') {
 let _instance = null
 
 /** Architecture: docs/architecture.md#server-architecture */
-export function getStore(dbPath = 'data/codebuilder.db') {
+export function getStore(dbPath = 'data/nanocode.db') {
   if (!_instance) {
     const dir = dbPath.substring(0, dbPath.lastIndexOf('/'))
     if (dir) mkdirSync(dir, { recursive: true })

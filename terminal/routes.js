@@ -6,7 +6,7 @@
  */
 
 import { Router } from 'express'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, execFile } from 'node:child_process'
 import {
   readdirSync,
   readFileSync,
@@ -161,11 +161,12 @@ export function createTerminalRoutes(store) {
   })
 
   router.post('/api/projects', (req, res) => {
-    const { name, cwd } = req.body || {}
+    const { name, cwd, ssh_host, ssh_user, ssh_port, ssh_key } = req.body || {}
     if (!name || !cwd) {
       return res.status(400).json({ error: 'name and cwd required' })
     }
-    const project = store.createProject(name, cwd)
+    const ssh = ssh_host ? { host: ssh_host, user: ssh_user, port: ssh_port, key: ssh_key } : {}
+    const project = store.createProject(name, cwd, null, ssh)
     res.status(201).json(project)
   })
 
@@ -177,6 +178,29 @@ export function createTerminalRoutes(store) {
     sessions.destroySessions(req.params.id)
     store.removeProject(req.params.id)
     res.status(204).send()
+  })
+
+  router.post('/api/projects/:id/test-ssh', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) {
+      return res.status(404).json({ error: 'project not found' })
+    }
+    if (!project.ssh_host) {
+      return res.status(400).json({ error: 'project is not remote' })
+    }
+    const args = [
+      '-o', 'ConnectTimeout=5',
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '-p', String(project.ssh_port || 22),
+    ]
+    if (project.ssh_key) args.push('-i', project.ssh_key)
+    args.push(`${project.ssh_user || 'root'}@${project.ssh_host}`, 'echo ok')
+    execFile('ssh', args, { timeout: 10000 }, (err, stdout) => {
+      if (err) {
+        return res.json({ ok: false, error: err.message })
+      }
+      res.json({ ok: stdout.trim() === 'ok' })
+    })
   })
 
   router.get('/api/projects/:id/sessions', (req, res) => {
@@ -311,6 +335,25 @@ export function createTerminalRoutes(store) {
     },
   }
 
+  /** Build SSH args for a remote project. */
+  function buildSshArgs(project, remoteCmd) {
+    const args = [
+      '-tt',
+      '-o', 'ServerAliveInterval=15',
+      '-o', 'ServerAliveCountMax=3',
+      '-p', String(project.ssh_port || 22),
+    ]
+    if (project.ssh_key) args.push('-i', project.ssh_key)
+    args.push(`${project.ssh_user || 'root'}@${project.ssh_host}`)
+    args.push(remoteCmd)
+    return args
+  }
+
+  /** Shell-escape a string for use inside single quotes. */
+  function sq(s) {
+    return "'" + s.replace(/'/g, "'\\''") + "'"
+  }
+
   function handleTerminalWs(ws) {
     const once = (raw) => {
       let msg
@@ -337,20 +380,37 @@ export function createTerminalRoutes(store) {
       let sessionKey
       let command
       let args
+      let cwd
+
+      const isRemote = !!project.ssh_host
 
       if (sessionType === 'bash') {
         sessionKey = `${projectId}:bash`
-        command = 'bash'
-        args = ['--login']
+        if (isRemote) {
+          command = 'ssh'
+          args = buildSshArgs(project, `cd ${sq(project.cwd)} && exec bash -l`)
+          cwd = home
+        } else {
+          command = 'bash'
+          args = ['--login']
+          cwd = project.cwd
+        }
       } else {
         const cli = CLI_PROVIDERS[cliProvider]
         const isNew = !claudeSessionId || claudeSessionId.startsWith('new-')
         sessionKey = `${projectId}:${cliProvider}:${claudeSessionId || 'new-' + newSessionCounter++}`
-        command = 'bash'
         const cliCmd = isNew
           ? `${cli.bin}${cli.newArgs ? ' ' + cli.newArgs : ''}`
           : `${cli.bin}${cli.resumeArgs(claudeSessionId) ? ' ' + cli.resumeArgs(claudeSessionId) : ''}`
-        args = ['-lc', cliCmd]
+        if (isRemote) {
+          command = 'ssh'
+          args = buildSshArgs(project, `cd ${sq(project.cwd)} && ${cliCmd}`)
+          cwd = home
+        } else {
+          command = 'bash'
+          args = ['-lc', cliCmd]
+          cwd = project.cwd
+        }
         if (!isNew) {
           try {
             store.markSessionManaged(projectId, claudeSessionId)
@@ -366,7 +426,7 @@ export function createTerminalRoutes(store) {
         args,
         Math.max(1, cols || 80),
         Math.max(1, rows || 24),
-        project.cwd
+        cwd
       )
       session.attach(ws, Math.max(1, cols || 80), Math.max(1, rows || 24))
     }

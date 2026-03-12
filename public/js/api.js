@@ -85,6 +85,10 @@ export function fetchManagedDiskSessions(projectId, provider = 'claude') {
   ).catch(() => [])
 }
 
+export function testSsh(projectId) {
+  return request(`/projects/${projectId}/test-ssh`, { method: 'POST' })
+}
+
 export function fetchDir(path) {
   const url = path ? `/fs?path=${encodeURIComponent(path)}` : '/fs'
   return request(url)

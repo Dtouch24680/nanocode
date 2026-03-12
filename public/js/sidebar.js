@@ -5,7 +5,7 @@
  */
 
 import { state } from './state.js'
-import { fetchProjects, createProject, deleteProject, fetchDir } from './api.js'
+import { fetchProjects, createProject, deleteProject, fetchDir, testSsh } from './api.js'
 
 let _onProjectSwitch = null
 let browsePath = ''
@@ -47,14 +47,42 @@ export function initSidebar(onProjectSwitch) {
   cancelBtn?.addEventListener('click', () => dialog.close())
   selectFolderBtn?.addEventListener('click', selectCurrentFolder)
 
+  const remoteToggle = document.getElementById('proj-remote-toggle')
+  const localFields = document.getElementById('proj-local-fields')
+  const remoteFields = document.getElementById('proj-remote-fields')
+
+  if (remoteToggle) {
+    remoteToggle.addEventListener('change', () => {
+      const remote = remoteToggle.checked
+      if (localFields) localFields.hidden = remote
+      if (remoteFields) remoteFields.hidden = !remote
+      document.getElementById('proj-cwd').value = ''
+      document.getElementById('proj-cwd-hint').textContent =
+        remote ? '' : 'Click "Select this folder" to set the project path.'
+    })
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
     const name = document.getElementById('proj-name').value.trim()
-    const cwd = document.getElementById('proj-cwd').value.trim()
+    const isRemote = remoteToggle?.checked
+    const cwd = isRemote
+      ? document.getElementById('proj-remote-dir').value.trim()
+      : document.getElementById('proj-cwd').value.trim()
     if (!name || !cwd) return
 
+    const body = { name, cwd }
+    if (isRemote) {
+      body.ssh_host = document.getElementById('proj-ssh-host').value.trim()
+      body.ssh_user = document.getElementById('proj-ssh-user').value.trim() || undefined
+      const port = parseInt(document.getElementById('proj-ssh-port').value, 10)
+      if (port) body.ssh_port = port
+      body.ssh_key = document.getElementById('proj-ssh-key').value.trim() || undefined
+      if (!body.ssh_host) return
+    }
+
     try {
-      const project = await createProject({ name, cwd })
+      const project = await createProject(body)
       state.projects = await fetchProjects()
       renderSidebar()
       switchProject(project.id)
@@ -86,6 +114,14 @@ export function renderSidebar() {
     name.className = 'sidebar-project-name'
     name.textContent = project.name
     item.appendChild(name)
+
+    if (project.ssh_host) {
+      const badge = document.createElement('span')
+      badge.className = 'sidebar-project-ssh'
+      badge.textContent = 'SSH'
+      badge.title = `${project.ssh_user || 'root'}@${project.ssh_host}`
+      item.appendChild(badge)
+    }
 
     item.addEventListener('click', () => switchProject(project.id))
 
@@ -132,6 +168,16 @@ function openAddDialog() {
   document.getElementById('proj-cwd').value = ''
   document.getElementById('proj-cwd-hint').textContent =
     'Click "Select this folder" to set the project path.'
+  const toggle = document.getElementById('proj-remote-toggle')
+  if (toggle) toggle.checked = false
+  const local = document.getElementById('proj-local-fields')
+  const remote = document.getElementById('proj-remote-fields')
+  if (local) local.hidden = false
+  if (remote) remote.hidden = true
+  for (const id of ['proj-ssh-host', 'proj-ssh-user', 'proj-ssh-port', 'proj-ssh-key', 'proj-remote-dir']) {
+    const el = document.getElementById(id)
+    if (el) el.value = ''
+  }
   browsePath = ''
   loadFolder('')
   document.getElementById('add-project-dialog').showModal()

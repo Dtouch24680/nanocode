@@ -1,4 +1,4 @@
-# Codebuilder — Project Design
+# Nanocode — Project Design
 
 How the reduced terminal-first app stays small, explicit, and easy for agents to modify.
 
@@ -7,7 +7,7 @@ How the reduced terminal-first app stays small, explicit, and easy for agents to
 ## Project Structure
 
 ```
-codebuilder/
+nanocode/
 ├── AGENTS.md
 ├── docs/
 │   ├── architecture.md

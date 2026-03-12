@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Codebuilder</title>
+    <title>Nanocode</title>
 
     <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
     <link rel="stylesheet" href="/style.css" />
@@ -30,7 +30,7 @@
           <line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
-      <h1 class="app-title">Codebuilder</h1>
+      <h1 class="app-title">Nanocode</h1>
       <div class="header-pills">
         <span class="connection-status" id="status-bash">Bash: disconnected</span>
         <span class="connection-status" id="status-claude">Claude: disconnected</span>
@@ -283,19 +283,44 @@
             autocomplete="off"
             placeholder="Project name"
         /></label>
-        <div class="dialog-label">Folder (select from home directory)</div>
-        <div class="folder-browser">
-          <div class="folder-breadcrumb" id="folder-breadcrumb"></div>
-          <div class="folder-list" id="folder-list"></div>
-          <div class="folder-current" id="folder-current"></div>
-          <button type="button" id="folder-select-btn" class="btn-primary">
-            Select this folder
-          </button>
+        <label class="dialog-toggle">
+          <input type="checkbox" id="proj-remote-toggle" />
+          Remote (SSH)
+        </label>
+        <div id="proj-local-fields">
+          <div class="dialog-label">Folder (select from home directory)</div>
+          <div class="folder-browser">
+            <div class="folder-breadcrumb" id="folder-breadcrumb"></div>
+            <div class="folder-list" id="folder-list"></div>
+            <div class="folder-current" id="folder-current"></div>
+            <button type="button" id="folder-select-btn" class="btn-primary">
+              Select this folder
+            </button>
+          </div>
+          <input type="hidden" id="proj-cwd" />
+          <p class="dialog-hint" id="proj-cwd-hint">
+            Click "Select this folder" to set the project path.
+          </p>
         </div>
-        <input type="hidden" id="proj-cwd" />
-        <p class="dialog-hint" id="proj-cwd-hint">
-          Click "Select this folder" to set the project path.
-        </p>
+        <div id="proj-remote-fields" class="ssh-fields" hidden>
+          <label class="dialog-label">Host
+            <input id="proj-ssh-host" type="text" autocomplete="off" placeholder="10.0.1.5 or hostname" />
+          </label>
+          <label class="dialog-label">User
+            <input id="proj-ssh-user" type="text" autocomplete="off" placeholder="ubuntu" />
+          </label>
+          <div class="ssh-row">
+            <label class="dialog-label ssh-half">Port
+              <input id="proj-ssh-port" type="number" autocomplete="off" placeholder="22" />
+            </label>
+            <label class="dialog-label ssh-half">Key (optional)
+              <input id="proj-ssh-key" type="text" autocomplete="off" placeholder="~/.ssh/id_ed25519" />
+            </label>
+          </div>
+          <label class="dialog-label">Remote directory
+            <input id="proj-remote-dir" type="text" autocomplete="off" placeholder="/home/ubuntu/project" />
+          </label>
+        </div>
         <div class="dialog-actions">
           <button type="button" id="proj-cancel" class="btn-secondary">Cancel</button>
           <button type="submit" class="btn-primary">Add</button>

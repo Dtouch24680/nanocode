@@ -1,12 +1,12 @@
 /**
- * PM2 ecosystem config for Codebuilder.
+ * PM2 ecosystem config for Nanocode.
  *
  * Usage:
  *   pm2 start ecosystem.config.cjs
- *   pm2 logs codebuilder
- *   pm2 restart codebuilder
- *   pm2 stop codebuilder
- *   pm2 delete codebuilder
+ *   pm2 logs nanocode
+ *   pm2 restart nanocode
+ *   pm2 stop nanocode
+ *   pm2 delete nanocode
  *
  * Architecture: docs/architecture.md#server-architecture
  */
@@ -14,7 +14,7 @@
 module.exports = {
   apps: [
     {
-      name: 'codebuilder',
+      name: 'nanocode',
       script: 'server/index.js',
       node_args: '--experimental-vm-modules',
       watch: false,

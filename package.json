@@ -1,5 +1,5 @@
 {
-  "name": "codebuilder",
+  "name": "nanocode",
   "version": "0.1.0",
   "type": "module",
   "description": "Minimal terminal workspace with per-project sessions and settings",

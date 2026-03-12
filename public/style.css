@@ -1,5 +1,5 @@
 /* =================================================================
-   Codebuilder — Unified Liquid Glass Design System
+   Nanocode — Unified Liquid Glass Design System
    Minimalist, layered transparency, soft depth, Apple visionOS-inspired
    ================================================================= */
 
@@ -1237,6 +1237,47 @@ body {
   font-size: 11px;
   color: var(--fg-3);
   margin: 0;
+}
+
+.dialog-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: 12px;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+
+.dialog-toggle input[type='checkbox'] {
+  accent-color: var(--primary);
+}
+
+.ssh-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.ssh-row {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.ssh-half {
+  flex: 1;
+}
+
+.sidebar-project-ssh {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  background: rgba(140, 198, 63, 0.1);
+  border: 1px solid rgba(140, 198, 63, 0.2);
+  border-radius: var(--r-full);
+  padding: 1px 6px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .dialog-actions {
