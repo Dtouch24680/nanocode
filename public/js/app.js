@@ -1,8 +1,8 @@
 /**
  * Application entry point.
  *
- * Loads projects, restores the active workspace, and wires up the
- * terminal and settings views.
+ * Shows a landing screen for workspace selection, then loads projects,
+ * restores the active workspace, and wires up the terminal and settings views.
  *
  * Architecture: public/docs/state-management.md#initial-load
  */
@@ -18,6 +18,7 @@ import {
   isInitialized,
 } from './terminal-view.js'
 import { loadSettings } from './settings.js'
+import { showLanding } from './landing.js'
 
 async function init() {
   try {
@@ -27,11 +28,15 @@ async function init() {
     state.projects = []
   }
 
+  // Show landing screen
+  const { projectId, projects } = await showLanding(state.projects)
+  state.projects = projects || state.projects
+
+  // Determine active project
   const lastId = localStorage.getItem('activeProjectId')
-  state.activeProjectId =
-    lastId && state.projects.some((project) => project.id === lastId)
-      ? lastId
-      : (state.projects[0]?.id ?? null)
+  state.activeProjectId = projectId
+    || (lastId && state.projects.some((p) => p.id === lastId) ? lastId : null)
+    || (state.projects[0]?.id ?? null)
 
   initSidebar(onProjectSwitch)
   renderSidebar()

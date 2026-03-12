@@ -31,6 +31,33 @@ export function createTerminalRoutes(store) {
   let newSessionCounter = 0
   const VALID_CLI_PROVIDERS = new Set(['claude', 'agent', 'opencode'])
 
+  /** Parse ~/.ssh/config into an array of host objects. */
+  function parseSshConfig(content) {
+    const hosts = []
+    let current = null
+    for (const raw of content.split('\n')) {
+      const line = raw.trim()
+      if (!line || line.startsWith('#')) continue
+      const match = line.match(/^(\S+)\s+(.+)$/)
+      if (!match) continue
+      const [, key, value] = match
+      const k = key.toLowerCase()
+      if (k === 'host') {
+        // Skip wildcard-only entries
+        if (value.includes('*')) { current = null; continue }
+        current = { name: value, hostname: null, user: null, port: null, identityFile: null }
+        hosts.push(current)
+      } else if (current) {
+        if (k === 'hostname') current.hostname = value
+        else if (k === 'user') current.user = value
+        else if (k === 'port') current.port = parseInt(value, 10) || null
+        else if (k === 'identityfile') current.identityFile = value
+      }
+    }
+    // Only return hosts that resolve to a real server (have HostName or aren't github, etc.)
+    return hosts.filter((h) => h.hostname && h.hostname !== 'github.com')
+  }
+
   function getCliProvider(rawProvider) {
     return VALID_CLI_PROVIDERS.has(rawProvider) ? rawProvider : undefined
   }
@@ -156,6 +183,18 @@ export function createTerminalRoutes(store) {
     if (provider === 'claude') return listClaudeSessions(projectId, cwd)
     return []
   }
+
+  router.get('/api/ssh-hosts', (_req, res) => {
+    const configPath = join(home, '.ssh', 'config')
+    if (!existsSync(configPath)) return res.json([])
+    try {
+      const content = readFileSync(configPath, 'utf-8')
+      const hosts = parseSshConfig(content)
+      res.json(hosts)
+    } catch {
+      res.json([])
+    }
+  })
 
   router.get('/api/projects', (_req, res) => {
     res.json(store.listProjects())

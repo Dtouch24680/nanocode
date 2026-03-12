@@ -44,7 +44,12 @@ export function initSidebar(onProjectSwitch) {
   const cancelBtn = document.getElementById('proj-cancel')
   const selectFolderBtn = document.getElementById('folder-select-btn')
 
-  cancelBtn?.addEventListener('click', () => dialog.close())
+  cancelBtn?.addEventListener('click', () => {
+    dialog.close()
+    // If landing overlay was hidden to open this dialog, re-show it
+    const landing = document.getElementById('landing-overlay')
+    if (landing && !state.activeProjectId) landing.hidden = false
+  })
   selectFolderBtn?.addEventListener('click', selectCurrentFolder)
 
   const remoteToggle = document.getElementById('proj-remote-toggle')
