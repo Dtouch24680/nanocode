@@ -7,6 +7,7 @@
 
 import { Router } from 'express'
 import { execFileSync, execFile } from 'node:child_process'
+import { platform } from 'node:os'
 import {
   readdirSync,
   readFileSync,
@@ -335,6 +336,9 @@ export function createTerminalRoutes(store) {
     },
   }
 
+  const IS_WIN = platform() === 'win32'
+  const SHELL = IS_WIN ? 'powershell.exe' : 'bash'
+
   /** Build SSH args for a remote project. */
   function buildSshArgs(project, remoteCmd) {
     const args = [
@@ -391,8 +395,8 @@ export function createTerminalRoutes(store) {
           args = buildSshArgs(project, `cd ${sq(project.cwd)} && exec bash -l`)
           cwd = home
         } else {
-          command = 'bash'
-          args = ['--login']
+          command = SHELL
+          args = IS_WIN ? ['-NoLogo'] : ['--login']
           cwd = project.cwd
         }
       } else {
@@ -406,6 +410,10 @@ export function createTerminalRoutes(store) {
           command = 'ssh'
           args = buildSshArgs(project, `cd ${sq(project.cwd)} && ${cliCmd}`)
           cwd = home
+        } else if (IS_WIN) {
+          command = SHELL
+          args = ['-NoLogo', '-Command', cliCmd]
+          cwd = project.cwd
         } else {
           command = 'bash'
           args = ['-lc', cliCmd]
