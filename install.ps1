@@ -7,14 +7,13 @@ $Port = if ($env:PORT) { $env:PORT } else { "3000" }
 Write-Host "=== Nanocode Installer ===" -ForegroundColor Green
 Write-Host ""
 
-# Check for Node.js
+# --- Node.js ---
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
 if (-not $nodeCmd) {
     Write-Host "Node.js not found. Installing via winget..."
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
     if ($wingetCmd) {
         winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
-        # Refresh PATH
         $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
         $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
         if (-not $nodeCmd) {
@@ -34,13 +33,65 @@ if ([int]$nodeVer -lt 18) {
 }
 Write-Host "Node.js $(node -v) OK"
 
-# Check for Git
+# --- Git ---
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "Error: git is required. Install from https://git-scm.com and re-run." -ForegroundColor Red
     exit 1
 }
 
-# Clone or update
+# --- Python (needed by node-gyp) ---
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pythonCmd) {
+    $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue
+}
+if (-not $pythonCmd) {
+    Write-Host "Python not found. Installing via winget..."
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($wingetCmd) {
+        winget install Python.Python.3.12 --accept-source-agreements --accept-package-agreements
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    } else {
+        Write-Host "Warning: Python not found. Native modules may fail to build." -ForegroundColor Yellow
+        Write-Host "Install Python 3 from https://python.org" -ForegroundColor Yellow
+    }
+}
+
+# --- Visual Studio Build Tools (needed by node-pty, better-sqlite3) ---
+# Check if cl.exe is reachable or VS Build Tools is installed
+$hasVS = $false
+$vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path $vsWhere) {
+    $vsPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+    if ($vsPath) { $hasVS = $true }
+}
+
+if (-not $hasVS) {
+    Write-Host ""
+    Write-Host "Visual Studio Build Tools not found." -ForegroundColor Yellow
+    Write-Host "Native modules (node-pty, better-sqlite3) require C++ build tools." -ForegroundColor Yellow
+    Write-Host ""
+
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($wingetCmd) {
+        $installVS = Read-Host "Install Visual Studio Build Tools via winget? [Y/n]"
+        if ($installVS -eq "" -or $installVS -match "^[Yy]") {
+            Write-Host "Installing Visual Studio Build Tools (this may take a few minutes)..."
+            winget install Microsoft.VisualStudio.2022.BuildTools --accept-source-agreements --accept-package-agreements --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+            Write-Host "Build Tools installed." -ForegroundColor Green
+        } else {
+            Write-Host "Skipping. npm install may fail for native modules." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "Install Visual Studio Build Tools manually:" -ForegroundColor Yellow
+        Write-Host "  https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Yellow
+        Write-Host "  Select 'Desktop development with C++' workload" -ForegroundColor Yellow
+        Write-Host ""
+        $cont = Read-Host "Continue anyway? [y/N]"
+        if ($cont -notmatch "^[Yy]") { exit 1 }
+    }
+}
+
+# --- Clone or update ---
 if (Test-Path $Dir) {
     Write-Host "Updating existing install..."
     Push-Location $Dir
@@ -51,9 +102,18 @@ if (Test-Path $Dir) {
     Push-Location $Dir
 }
 
-# Install dependencies
+# --- Install dependencies ---
 Write-Host "Installing dependencies..."
 npm install
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "npm install failed. Common fixes:" -ForegroundColor Red
+    Write-Host "  1. Install Visual Studio Build Tools with C++ workload" -ForegroundColor Yellow
+    Write-Host "  2. Run: npm config set msvs_version 2022" -ForegroundColor Yellow
+    Write-Host "  3. Restart terminal and re-run this script" -ForegroundColor Yellow
+    Pop-Location
+    exit 1
+}
 
 Write-Host ""
 Write-Host "=== Ready ===" -ForegroundColor Green

@@ -54,10 +54,37 @@ if [ "$NODE_VER" -lt 18 ]; then
 fi
 echo "Node.js $(node -v) OK"
 
-# Ensure build tools for native modules (Linux only)
+# Ensure build tools for native modules
 if [ "$PLATFORM" = "linux" ] && ! command -v make &>/dev/null; then
   echo "Installing build tools..."
   sudo apt-get install -y build-essential
+elif [ "$PLATFORM" = "windows" ]; then
+  # Check for Visual Studio Build Tools (cl.exe)
+  if ! command -v cl &>/dev/null 2>&1; then
+    VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+    HAS_VS=false
+    if [ -f "$VSWHERE" ]; then
+      VS_PATH=$("$VSWHERE" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>/dev/null || true)
+      [ -n "$VS_PATH" ] && HAS_VS=true
+    fi
+    if [ "$HAS_VS" = false ]; then
+      echo ""
+      echo "WARNING: Visual Studio Build Tools not found."
+      echo "Native modules (node-pty, better-sqlite3) require C++ build tools."
+      echo ""
+      echo "Install from PowerShell (admin):"
+      echo "  winget install Microsoft.VisualStudio.2022.BuildTools --override \"--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended\""
+      echo ""
+      echo "Or download manually:"
+      echo "  https://visualstudio.microsoft.com/visual-cpp-build-tools/"
+      echo "  Select 'Desktop development with C++'"
+      echo ""
+      read -rp "Continue anyway? [y/N] " cont
+      if [[ ! "$cont" =~ ^[Yy] ]]; then
+        exit 1
+      fi
+    fi
+  fi
 fi
 
 # Clone or update
