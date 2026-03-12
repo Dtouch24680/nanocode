@@ -11,9 +11,25 @@ A minimal terminal workspace for managing projects and AI coding assistants.
 - Supports Claude Code, Cursor Agent, and OpenCode as CLI providers
 - No build step — vanilla JS served as static files
 
-## Setup
+## Quick Install
+
+**Linux / macOS:**
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/victoriacity/nanocode/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/victoriacity/nanocode/main/install.ps1 | iex
+```
+
+## Manual Setup
+
+```bash
+git clone https://github.com/victoriacity/nanocode.git
+cd nanocode
 npm install
 npm run dev
 ```
