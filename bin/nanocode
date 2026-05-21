@@ -1,0 +1,131 @@
+#!/bin/sh
+#
+# nanocode — user-facing CLI.
+#
+# Subcommands:
+#   nanocode login    — start/refresh a worker; print the claim code
+#   nanocode logout   — stop this user's worker
+#   nanocode status   — show worker state
+#
+# This script is NEVER setuid. It runs as the invoking user, sets up
+# the worker's runtime env (sock paths), then execs the setuid helper
+# which drops to the user's UID and execs the worker. The kernel
+# guarantees the helper's setuid bit is honored only on the compiled
+# binary, never on this script.
+
+set -eu
+
+PREFIX="${NANOCODE_PREFIX:-/usr/lib/nanocode}"
+HELPER="${NANOCODE_HELPER:-$PREFIX/nanocode-spawn}"
+RUNTIME_DIR="${NANOCODE_RUNTIME_DIR:-/run/nanocode}"
+CLAIM_TIMEOUT_S=10
+
+usage() {
+    cat <<EOF
+Usage: nanocode <subcommand>
+
+  login    Start or refresh your nanocode worker, print a one-time login code.
+  logout   Stop your worker (closing all open browser sessions).
+  status   Show your worker's state.
+
+EOF
+}
+
+user_name="$(id -un)"
+user_uid="$(id -u)"
+worker_sock="$RUNTIME_DIR/u-$user_name.sock"
+router_sock="$RUNTIME_DIR/router.sock"
+claim_path="$HOME/.nanocode/run/last-claim"
+
+cmd_login() {
+    mkdir -p "$HOME/.nanocode/run"
+    rm -f "$claim_path"
+
+    if [ -S "$worker_sock" ]; then
+        # Worker already running — ask it (via the control socket) for a
+        # fresh claim code by triggering a re-mint. The router's
+        # /__test__/mint-claim endpoint isn't appropriate for production;
+        # instead, ask the worker to send another claim:request frame.
+        # Simplest: send a SIGUSR1 to the worker, which it interprets as
+        # "mint a new claim code".
+        worker_pid="$(fuser "$worker_sock" 2>/dev/null | awk '{print $1}')" || true
+        if [ -n "${worker_pid:-}" ]; then
+            kill -USR1 "$worker_pid" 2>/dev/null || true
+        fi
+    else
+        # Spawn a fresh worker via the setuid helper.
+        # The helper drops privs to our UID and execs the worker, which
+        # connects to the router and mints the initial claim code.
+        if [ ! -x "$HELPER" ]; then
+            echo "nanocode: helper not found at $HELPER (is nanocode installed?)" >&2
+            exit 1
+        fi
+        # Set worker env via a side channel: the worker reads sock paths
+        # from $HOME/.nanocode/run/env which we write here.
+        cat > "$HOME/.nanocode/run/env" <<EOF
+NANOCODE_WORKER_SOCK=$worker_sock
+NANOCODE_ROUTER_SOCK=$router_sock
+EOF
+        # The helper inherits our HOME (via passwd lookup); the worker
+        # reads $HOME/.nanocode/run/env at boot.
+        nohup "$HELPER" >/dev/null 2>&1 &
+        disown 2>/dev/null || true
+    fi
+
+    # Wait for the claim file to appear (or timeout).
+    waited=0
+    while [ $waited -lt "$CLAIM_TIMEOUT_S" ]; do
+        if [ -s "$claim_path" ]; then
+            code="$(cat "$claim_path")"
+            echo
+            echo "Enter this code in the nanocode login page:"
+            echo
+            echo "    $code"
+            echo
+            echo "(valid for ~60 seconds)"
+            exit 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "nanocode: timed out waiting for the worker to mint a claim code." >&2
+    echo "  Check the router is running and the worker socket is reachable: $worker_sock" >&2
+    exit 1
+}
+
+cmd_logout() {
+    if [ ! -S "$worker_sock" ]; then
+        echo "nanocode: no worker running."
+        return 0
+    fi
+    worker_pid="$(fuser "$worker_sock" 2>/dev/null | awk '{print $1}')" || true
+    if [ -z "${worker_pid:-}" ]; then
+        echo "nanocode: worker socket present but no owning process found."
+        return 1
+    fi
+    kill -TERM "$worker_pid"
+    echo "nanocode: stopped worker (pid $worker_pid)."
+}
+
+cmd_status() {
+    if [ -S "$worker_sock" ]; then
+        echo "worker:  running ($worker_sock)"
+    else
+        echo "worker:  not running"
+    fi
+    if [ -S "$router_sock" ]; then
+        echo "router:  reachable ($router_sock)"
+    else
+        echo "router:  unreachable ($router_sock missing)"
+    fi
+    echo "user:    $user_name (uid=$user_uid)"
+    echo "home:    $HOME"
+}
+
+case "${1:-}" in
+    login)  shift; cmd_login "$@" ;;
+    logout) shift; cmd_logout "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    -h|--help|help|"") usage ;;
+    *) echo "nanocode: unknown subcommand: $1" >&2; usage; exit 1 ;;
+esac

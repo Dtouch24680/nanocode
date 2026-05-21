@@ -22,7 +22,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { tryImport, skip } from './fixtures/test-helpers.js'
 
-const mod = await tryImport('../../ipc/protocol.js')
+const mod = await tryImport(new URL('../../ipc/protocol.js', import.meta.url))
 
 describe('IPC protocol', () => {
   it('encodeFrame produces newline-terminated UTF-8 JSON', (t) => {
@@ -103,7 +103,7 @@ describe('IPC protocol', () => {
     const got = []
     f.feed('{"type":"pi', (frame) => got.push(frame))
     f.reset()
-    f.feed('ng"}\n', (frame) => got.push(frame))
+    f.feed('{"type":"ng"}\n', (frame) => got.push(frame))
     assert.deepEqual(got, [{ type: 'ng' }], 'partial was discarded')
   })
 })

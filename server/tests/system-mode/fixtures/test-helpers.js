@@ -11,13 +11,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * Try to import a module path. Returns the module or `null` if the file
- * doesn't exist yet (so suites can `t.skip()` cleanly until the
- * implementation lands).
+ * Try to import a module by absolute URL. Returns the module or `null`
+ * if the file doesn't exist yet (so suites can `t.skip()` cleanly until
+ * the implementation lands).
+ *
+ * IMPORTANT: pass an absolute URL — `new URL('../foo.js', import.meta.url)`.
+ * Dynamic `import()` of a relative path resolves against THIS file's
+ * directory (not the caller's), which is rarely what you want.
  */
-export async function tryImport(modulePath) {
+export async function tryImport(moduleUrl) {
   try {
-    return await import(modulePath)
+    return await import(moduleUrl)
   } catch (err) {
     if (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND') return null
     throw err

@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
 
-const ROUTER_PATH = resolve(import.meta.dirname, '../../../../router.js')
+const ROUTER_PATH = resolve(import.meta.dirname, '../../../../server/index.js')
 
 export async function withRouter() {
   if (!existsSync(ROUTER_PATH)) {

@@ -21,8 +21,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { tryImport, skip } from './fixtures/test-helpers.js'
 
-const mod = await tryImport('../../middleware/auth.js')
-const sessionMod = await tryImport('../../auth/session.js')
+const mod = await tryImport(new URL('../../middleware/auth.js', import.meta.url))
+const sessionMod = await tryImport(new URL('../../auth/session.js', import.meta.url))
 
 function fakeReq(opts = {}) {
   return {

@@ -28,8 +28,8 @@ describe('system-mode tab-broadcast scoping', () => {
     }
     try {
       router = await withRouter()
-      aliceWorker = await withWorker({ uid: 1001, username: 'alice' })
-      bobWorker = await withWorker({ uid: 1002, username: 'bob' })
+      aliceWorker = await withWorker({ uid: 1001, username: 'alice', router })
+      bobWorker = await withWorker({ uid: 1002, username: 'bob', router })
       const aliceSid = await router.sessionTokenForUid({
         uid: 1001, username: 'alice', workerSock: aliceWorker.sock,
       })
@@ -90,6 +90,11 @@ describe('system-mode tab-broadcast scoping', () => {
     bobWs.send(JSON.stringify({ type: 'subscribe', projectId: aliceProjectId }))
     await new Promise((r) => setTimeout(r, 150))
 
+    // Bob's own worker sends an empty-tabs snapshot for the unknown
+    // projectId; that's expected. The invariant is that no NEW update
+    // reaches bob after alice mutates her own project's tabs.
+    const before = msgs.filter((m) => m.type === 'tabs:update' && m.projectId === aliceProjectId).length
+
     await fetch(`${router.url}/api/projects/${aliceProjectId}/tabs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', cookie: aliceCookie },
@@ -97,8 +102,8 @@ describe('system-mode tab-broadcast scoping', () => {
     })
     await new Promise((r) => setTimeout(r, 250))
 
-    const got = msgs.filter((m) => m.type === 'tabs:update' && m.projectId === aliceProjectId)
-    assert.equal(got.length, 0)
+    const after = msgs.filter((m) => m.type === 'tabs:update' && m.projectId === aliceProjectId).length
+    assert.equal(after, before, 'bob received no further updates from alice')
     bobWs.close()
   })
 

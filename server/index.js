@@ -9,8 +9,21 @@ import { createFileRoutes } from '../terminal/files.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
-const PORT = process.env.PORT || 3000
+const PORT = Number(process.env.PORT) || 3000
 const HOST = process.env.HOST || '0.0.0.0'
+
+// System mode: this process becomes the router. Workers are spawned
+// per-user by `nanocode login` (via the setuid helper) and reach us via
+// the control socket. See docs/system-mode-design.md.
+if (process.env.NANOCODE_SYSTEM === '1') {
+  const { startRouterMode } = await import('./router-mode.js')
+  startRouterMode({ host: HOST, port: PORT })
+  // Skip single-user setup below — the import above defines its own server.
+} else {
+  await startSingleUserMode()
+}
+
+async function startSingleUserMode() {
 
 const app = express()
 app.use(express.json())
@@ -74,5 +87,4 @@ tabsWss.on('connection', (ws) => handleTabsWs(ws))
 server.listen(PORT, HOST, () => {
   console.log(`Nanocode running on http://${HOST}:${PORT}`)
 })
-
-export { app, server, store }
+} // end startSingleUserMode

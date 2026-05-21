@@ -16,7 +16,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { tryImport, skip } from './fixtures/test-helpers.js'
 
-const mod = await tryImport('../../auth/claim.js')
+const mod = await tryImport(new URL('../../auth/claim.js', import.meta.url))
 
 describe('ClaimStore', () => {
   it('mints a XXXX-XXXX code from a base32 alphabet', (t) => {

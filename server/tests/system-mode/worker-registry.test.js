@@ -18,7 +18,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { tryImport, skip } from './fixtures/test-helpers.js'
 
-const mod = await tryImport('../../auth/worker-registry.js')
+const mod = await tryImport(new URL('../../auth/worker-registry.js', import.meta.url))
 
 describe('WorkerRegistry', () => {
   it('rejects registration when peerCredUid does not match claimed uid', (t) => {

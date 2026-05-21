@@ -24,7 +24,7 @@ import { existsSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'no
 import { join } from 'node:path'
 import { tryImport, skip, makeTmpDir } from './fixtures/test-helpers.js'
 
-const mod = await tryImport('../../../worker/data-store.js')
+const mod = await tryImport(new URL('../../../worker/data-store.js', import.meta.url))
 
 describe('worker DataStore', () => {
   it('initializes a fresh file with empty schema if missing', (t) => {

@@ -1,0 +1,65 @@
+# /etc/systemd/system/nanocode.service
+#
+# System-mode router. Workers are spawned per-user by `nanocode login`
+# (via the setuid helper) and are NOT children of this unit.
+#
+# Pre-install requirements (handled by scripts/install.sh):
+#   - group `nanocode` exists
+#   - user `nanocode` exists, GID=nanocode, /usr/sbin/nologin
+#   - /usr/lib/nanocode/ contains server/, worker/, public/, vendor/,
+#     and nanocode-spawn (mode 4750 root:nanocode)
+#   - /usr/local/bin/nanocode is the CLI (mode 0755, NOT setuid)
+#   - all interactive users (uid >= 1000) are members of the nanocode
+#     group (so they can write to /run/nanocode/)
+
+[Unit]
+Description=Nanocode multi-user dispatcher
+Documentation=file:///usr/share/doc/nanocode/system-mode-design.md
+After=network.target
+
+[Service]
+Type=simple
+User=nanocode
+Group=nanocode
+RuntimeDirectory=nanocode
+RuntimeDirectoryMode=0775
+
+ExecStart=/usr/bin/node /usr/lib/nanocode/server/index.js
+Environment=NANOCODE_SYSTEM=1
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+WorkingDirectory=/usr/lib/nanocode
+
+Restart=on-failure
+RestartSec=2s
+
+# --- Hardening ---
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# The router publishes /run/nanocode/router.sock; workers create their
+# own sockets at /run/nanocode/u-<user>.sock. The RuntimeDirectoryMode
+# above (0775) lets nanocode-group members create files there.
+
+[Install]
+WantedBy=multi-user.target

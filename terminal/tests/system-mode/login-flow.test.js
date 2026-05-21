@@ -30,7 +30,7 @@ describe('system-mode login flow', () => {
     }
     try {
       router = await withRouter()
-      worker = await withWorker({ uid: 1001, username: 'alice' })
+      worker = await withWorker({ uid: 1001, username: 'alice', router })
     } catch (err) {
       bootstrapErr = err
     }
@@ -108,7 +108,8 @@ describe('system-mode login flow', () => {
   it('claim code is single-use: second consume returns 401', async (t) => {
     if (bootstrapErr) return t.skip(bootstrapErr.message)
 
-    const { code } = await fetch(`${router.url}/__test__/last-claim?uid=1001`).then((r) => r.json())
+    // Mint a fresh code so earlier tests' consumption doesn't interfere.
+    const { code } = await fetch(`${router.url}/__test__/mint-claim?uid=1001`, { method: 'POST' }).then((r) => r.json())
     const first = await fetch(`${router.url}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

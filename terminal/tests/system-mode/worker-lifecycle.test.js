@@ -30,7 +30,7 @@ describe('system-mode worker lifecycle', () => {
       // Force a very short idle eviction so we can observe it
       process.env.NANOCODE_TEST_IDLE_EVICT_MS = '500'
       router = await withRouter()
-      worker = await withWorker({ uid: 1001, username: 'alice' })
+      worker = await withWorker({ uid: 1001, username: 'alice', router })
     } catch (err) {
       bootstrapErr = err
     }
@@ -94,10 +94,17 @@ describe('system-mode worker lifecycle', () => {
 
   it('second `nanocode login` while worker is alive re-uses the existing worker', async (t) => {
     if (bootstrapErr) return t.skip(bootstrapErr.message)
-    // The fixture worker is already up. Simulate a second login: it should
-    // ask the worker to mint a new claim code (single-use) without spawning
-    // a second worker.
-    const codeRes1 = await fetch(`${router.url}/__test__/last-claim?uid=1001`).then((r) => r.json())
+    // The previous reap-after-idle test may have evicted the worker; respawn
+    // and re-register before asserting the "re-use" behavior.
+    const reg0 = await fetch(`${router.url}/__test__/registry`).then((r) => r.json())
+    if (!reg0.some((e) => e.uid === 1001)) {
+      await fetch(`${router.url}/__test__/force-register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claimedUid: 1001, peerCredUid: 1001, sock: worker.sock }),
+      })
+    }
+    const codeRes1 = await fetch(`${router.url}/__test__/mint-claim?uid=1001`, { method: 'POST' }).then((r) => r.json())
     const codeRes2 = await fetch(`${router.url}/__test__/mint-claim?uid=1001`, { method: 'POST' }).then((r) => r.json())
     assert.notEqual(codeRes1.code, codeRes2.code, 'fresh claim code minted')
 

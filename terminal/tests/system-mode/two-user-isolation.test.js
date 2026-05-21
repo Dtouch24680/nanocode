@@ -32,8 +32,8 @@ describe('system-mode two-user isolation', () => {
     }
     try {
       router = await withRouter()
-      aliceWorker = await withWorker({ uid: 1001, username: 'alice' })
-      bobWorker = await withWorker({ uid: 1002, username: 'bob' })
+      aliceWorker = await withWorker({ uid: 1001, username: 'alice', router })
+      bobWorker = await withWorker({ uid: 1002, username: 'bob', router })
       const aliceSid = await router.sessionTokenForUid({
         uid: 1001, username: 'alice', workerSock: aliceWorker.sock,
       })
@@ -110,6 +110,10 @@ describe('system-mode two-user isolation', () => {
     bobWs.send(JSON.stringify({ type: 'subscribe', projectId: aliceProj.id }))
     await new Promise((r) => setTimeout(r, 200))
 
+    // Snapshot bob's pre-create updates (he gets an empty-tabs snapshot from
+    // his own worker — alice's projectId doesn't exist in bob's data).
+    const before = bobMsgs.filter((m) => m.type === 'tabs:update' && m.projectId === aliceProj.id).length
+
     // Alice creates a tab on her project
     await fetch(`${router.url}/api/projects/${aliceProj.id}/tabs`, {
       method: 'POST',
@@ -118,9 +122,10 @@ describe('system-mode two-user isolation', () => {
     })
     await new Promise((r) => setTimeout(r, 200))
 
-    // Bob should NOT have received an update for alice's project
-    const got = bobMsgs.filter((m) => m.type === 'tabs:update' && m.projectId === aliceProj.id)
-    assert.equal(got.length, 0, 'bob received tab update for alice\'s project')
+    // No NEW updates should have reached bob — alice's worker's broadcast
+    // is scoped to alice's worker, not bob's.
+    const after = bobMsgs.filter((m) => m.type === 'tabs:update' && m.projectId === aliceProj.id).length
+    assert.equal(after, before, 'bob received tab update for alice\'s project')
     bobWs.close()
   })
 
