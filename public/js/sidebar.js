@@ -6,6 +6,17 @@ import { fetchProjects, createProject, deleteProject, fetchDir, testSsh } from '
 let _onProjectSwitch = null
 let browsePath = ''
 
+const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
+
+function applySidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed)
+  try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0') } catch {}
+}
+
+function loadSidebarCollapsed() {
+  try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1' } catch { return false }
+}
+
 /**
  * Initialize the sidebar.
  */
@@ -21,9 +32,20 @@ export function initSidebar(onProjectSwitch) {
       backdrop.className = 'sidebar-backdrop'
       sidebar.parentNode.insertBefore(backdrop, sidebar.nextSibling)
     }
+
+    // Restore desktop collapsed state on load
+    applySidebarCollapsed(loadSidebarCollapsed())
+
+    const mql = window.matchMedia('(max-width: 768px)')
     toggleBtn.addEventListener('click', () => {
-      const open = sidebar.classList.toggle('open')
-      backdrop.classList.toggle('open', open)
+      if (mql.matches) {
+        // Mobile: slide-in overlay
+        const open = sidebar.classList.toggle('open')
+        backdrop.classList.toggle('open', open)
+      } else {
+        // Desktop: collapse to zero-width
+        applySidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'))
+      }
     })
     backdrop.addEventListener('click', () => {
       sidebar.classList.remove('open')
@@ -126,7 +148,8 @@ export function renderSidebar() {
     if (state.projects.length > 1) {
       const del = document.createElement('span')
       del.className = 'sidebar-project-del'
-      del.textContent = 'x'
+      del.textContent = '×'
+      del.title = 'Delete project'
       del.addEventListener('click', async (event) => {
         event.stopPropagation()
         if (!confirm('Delete this project? Terminal sessions will end.')) return

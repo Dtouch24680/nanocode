@@ -38,50 +38,24 @@ describe('store', () => {
   })
 
   it('upserts settings and returns the full settings map', () => {
-    assert.equal(store.getSetting('cli_provider'), null)
+    assert.equal(store.getSetting('theme'), null)
 
-    store.setSetting('cli_provider', 'claude')
-    store.setSetting('theme', 'glass')
-    store.setSetting('cli_provider', 'opencode')
+    store.setSetting('theme', 'light')
+    store.setSetting('font_size', 14)
+    store.setSetting('theme', 'dark')
 
-    assert.equal(store.getSetting('cli_provider'), 'opencode')
+    assert.equal(store.getSetting('theme'), 'dark')
     assert.deepEqual(store.getAllSettings(), {
-      cli_provider: 'opencode',
-      theme: 'glass',
+      theme: 'dark',
+      font_size: 14,
     })
   })
 
-  it('archives and unarchives sessions per project', () => {
+  it('removes a project cleanly', () => {
     const project = store.createProject('Alpha', '/tmp/alpha')
-
-    store.archiveSession(project.id, 'session-a')
-    store.archiveSession(project.id, 'session-b')
-    assert.deepEqual(store.listArchivedSessions(project.id), ['session-a', 'session-b'])
-
-    store.unarchiveSession(project.id, 'session-a')
-    assert.deepEqual(store.listArchivedSessions(project.id), ['session-b'])
-  })
-
-  it('tracks managed sessions without duplicates', () => {
-    const project = store.createProject('Alpha', '/tmp/alpha')
-
-    store.markSessionManaged(project.id, 'session-a')
-    store.markSessionManaged(project.id, 'session-a')
-    store.markSessionManaged(project.id, 'session-b')
-
-    assert.deepEqual(store.listManagedSessions(project.id), ['session-a', 'session-b'])
-  })
-
-  it('removes related session metadata when a project is deleted', () => {
-    const project = store.createProject('Alpha', '/tmp/alpha')
-    store.archiveSession(project.id, 'session-a')
-    store.markSessionManaged(project.id, 'session-b')
-
     store.removeProject(project.id)
-
     assert.equal(store.getProject(project.id), undefined)
-    assert.deepEqual(store.listArchivedSessions(project.id), [])
-    assert.deepEqual(store.listManagedSessions(project.id), [])
+    assert.deepEqual(store.listProjects(), [])
   })
 
   it('creates a remote project with SSH fields', () => {

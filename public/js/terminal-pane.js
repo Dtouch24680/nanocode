@@ -9,29 +9,31 @@ const { Terminal } = window
 const { FitAddon } = window.FitAddon
 const { WebLinksAddon } = window.WebLinksAddon
 
+// Light theme tuned for the warm-sand bg + Shore turquoise accents.
+// ANSI palette derived from solarized-light for AA contrast on light bg.
 const THEME = {
-  background: '#0a0b0c',
-  foreground: '#f0f0f0',
-  cursor: '#8cc63f',
-  cursorAccent: '#0a0b0c',
-  selectionBackground: 'rgba(140, 198, 63, 0.2)',
-  selectionForeground: '#f0f0f0',
-  black: '#1a1b1e',
-  red: '#ff6b6b',
-  green: '#8cc63f',
-  yellow: '#fbbf24',
-  blue: '#60a5fa',
-  magenta: '#c4b5fd',
-  cyan: '#67e8f9',
-  white: '#f0f0f0',
-  brightBlack: '#555555',
-  brightRed: '#ff8a8a',
-  brightGreen: '#a3d856',
-  brightYellow: '#fcd34d',
-  brightBlue: '#93c5fd',
-  brightMagenta: '#ddd6fe',
-  brightCyan: '#a5f3fc',
-  brightWhite: '#ffffff',
+  background: '#fbf6ec',
+  foreground: '#2D2824',
+  cursor: '#0C7E94',
+  cursorAccent: '#fbf6ec',
+  selectionBackground: 'rgba(45, 191, 211, 0.30)',
+  selectionForeground: '#2D2824',
+  black: '#2D2824',
+  red: '#c4433b',
+  green: '#3d9a5a',
+  yellow: '#b88a3a',
+  blue: '#0C7E94',
+  magenta: '#9a4eb0',
+  cyan: '#13A1B8',
+  white: '#5C5550',
+  brightBlack: '#7D776F',
+  brightRed: '#e26159',
+  brightGreen: '#5fb87a',
+  brightYellow: '#d3a45a',
+  brightBlue: '#2DBFD3',
+  brightMagenta: '#b870c8',
+  brightCyan: '#5DDCE9',
+  brightWhite: '#2D2824',
 }
 
 // Reconnect backoff: 500ms → 1s → 2s → 4s → 8s → 10s cap
@@ -54,14 +56,12 @@ const WS_PATH = '/ws/terminal'
 export class TerminalPane {
   /**
    * @param {HTMLElement} container — the .pane-terminal element
-   * @param {{ projectId: string, sessionType: 'bash'|'claude', claudeSessionId?: string, onStatusChange?: (connected: boolean) => void }} opts
+   * @param {{ projectId: string, tabId: string, onStatusChange?: (connected: boolean) => void }} opts
    */
   constructor(container, opts = {}) {
     this.container = container
     this.projectId = opts.projectId
-    this.sessionType = opts.sessionType
-    this.claudeSessionId = opts.claudeSessionId ?? ''
-    this.cliProvider = opts.cliProvider || 'claude'
+    this.tabId = opts.tabId
     this.onStatusChange = opts.onStatusChange || (() => {})
 
     this._ws = null
@@ -234,19 +234,13 @@ export class TerminalPane {
       this._send({
         type: 'attach',
         projectId: this.projectId,
-        sessionType: this.sessionType,
-        claudeSessionId: this.claudeSessionId,
-        cliProvider: this.cliProvider,
+        sessionType: 'bash',
+        tabId: this.tabId,
         cols,
         rows,
       })
       this._startPing()
-      // Enable local echo for bash sessions only. Claude Code runs a full-screen
-      // TUI — the backspace-erase sequences from _clearPredictions() corrupt its
-      // cursor-positioned ANSI rendering and break colors.
-      if (this.sessionType === 'bash') {
-        this.localEcho.enabled = true
-      }
+      this.localEcho.enabled = true
     }
 
     this._ws.onmessage = (e) => {
@@ -317,28 +311,18 @@ export class TerminalPane {
    * @param {string} text — the command text (without trailing \r)
    */
   sendInputWithEcho(text) {
-    // Local echo prediction for bash sessions only. Claude Code runs a
-    // full-screen TUI — the backspace-erase sequences that _clearPredictions()
-    // emits to undo local echo corrupt the TUI layout and break ANSI colors.
-    if (this.localEcho.enabled && this.sessionType === 'bash') {
+    if (this.localEcho.enabled) {
       for (let i = 0; i < text.length; i++) {
         const echo = this.localEcho.predict(text[i])
         if (echo) this.term.write(echo)
       }
     }
-    if (this.sessionType === 'claude') {
-      // Claude Code's TUI processes raw input. When text + \r arrive as a
-      // single chunk, the TUI populates the input but doesn't treat the
-      // trailing \r as a distinct Enter keypress. Send them separately so
-      // Claude receives the text first, then Enter as its own event.
-      this._send({ type: 'input', data: text })
-      setTimeout(() => this._send({ type: 'input', data: '\r' }), 50)
-    } else {
-      // Send full text + Enter to PTY. The \r is intentionally NOT predicted —
-      // the server will respond with newline + output, which the reconciler
-      // passes through after consuming the matching predicted characters.
-      this._send({ type: 'input', data: text + '\r' })
-    }
+    // Split text and Enter into two writes with a small gap. Plain bash treats
+    // them identically to a single write, but full-screen TUIs (Claude Code,
+    // opencode, htop, etc.) need the \r as its own input event — when text+\r
+    // arrives in one chunk they populate their input box but don't submit.
+    this._send({ type: 'input', data: text })
+    setTimeout(() => this._send({ type: 'input', data: '\r' }), 50)
   }
 
   /**
@@ -354,37 +338,12 @@ export class TerminalPane {
   /**
    * Switch to another project; reconnects to that project's session (with history).
    * @param {string} projectId
+   * @param {string} [tabId] — new tab ID (defaults to existing tabId)
    */
-  switchProject(projectId) {
-    if (projectId === this.projectId) return
+  switchProject(projectId, tabId) {
+    if (projectId === this.projectId && (!tabId || tabId === this.tabId)) return
     this.projectId = projectId
-    this.claudeSessionId = ''
-    clearTimeout(this._reconnectTimer)
-    this._stopPing()
-    if (this._ws) {
-      this._ws.onclose = null
-      this._ws.close()
-      this._ws = null
-    }
-    this.term.clear()
-    this._connect()
-  }
-
-  /**
-   * Switch to another claude session ID; reconnects to that session (with history).
-   * @param {string} claudeSessionId — UUID for resume, or 'new-N' for fresh
-   */
-  switchSession(claudeSessionId) {
-    if (claudeSessionId === this.claudeSessionId) return
-    this.claudeSessionId = claudeSessionId
-    this._reconnectNow()
-  }
-
-  /**
-   * Force reconnect (e.g. after provider change). Tears down current
-   * WebSocket and creates a fresh connection using current settings.
-   */
-  reconnect() {
+    if (tabId) this.tabId = tabId
     this._reconnectNow()
   }
 
@@ -429,9 +388,6 @@ export class TerminalPane {
     } else {
       this._rttEwma = RTT_EWMA_ALPHA * rtt + (1 - RTT_EWMA_ALPHA) * this._rttEwma
     }
-    // Local echo only for bash — Claude Code's TUI is ANSI-positioned and
-    // the backspace cleanup from _clearPredictions() corrupts its display.
-    if (this.sessionType !== 'bash') return
     if (this._rttEwma > LOCAL_ECHO_ENABLE_RTT_MS) {
       this.localEcho.enabled = true
     } else if (this._rttEwma < LOCAL_ECHO_DISABLE_RTT_MS) {

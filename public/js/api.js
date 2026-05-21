@@ -33,52 +33,28 @@ export function deleteProject(id) {
   return fetch(`${BASE}/projects/${id}`, { method: 'DELETE' })
 }
 
-export function fetchDiskSessions(projectId, provider = 'claude') {
-  return request(
-    `/projects/${projectId}/claude-sessions?provider=${encodeURIComponent(provider)}`
-  ).catch(() => [])
+// --- Tabs (server-side, per-project) ---
+
+export function fetchTabs(projectId) {
+  return request(`/projects/${projectId}/tabs`)
 }
 
-export function fetchRunningSessions(projectId, provider = 'claude') {
-  return request(
-    `/projects/${projectId}/sessions?provider=${encodeURIComponent(provider)}`
-  ).catch(() => [])
-}
-
-export function deleteClaudeSession(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}`, {
-    method: 'DELETE',
-  })
-}
-
-export function archiveSession(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/archive`, {
+export function createTab(projectId, label) {
+  return request(`/projects/${projectId}/tabs`, {
     method: 'POST',
+    body: JSON.stringify(label ? { label } : {}),
   })
 }
 
-export function unarchiveSession(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/archive`, {
-    method: 'DELETE',
+export function deleteTab(projectId, tabId) {
+  return fetch(`${BASE}/projects/${projectId}/tabs/${tabId}`, { method: 'DELETE' })
+}
+
+export function patchTab(projectId, tabId, label) {
+  return request(`/projects/${projectId}/tabs/${tabId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ label }),
   })
-}
-
-export function fetchArchivedSessions(projectId, provider = 'claude') {
-  return request(
-    `/projects/${projectId}/archived-sessions?provider=${encodeURIComponent(provider)}`
-  ).catch(() => [])
-}
-
-export function markSessionManaged(projectId, sessionId) {
-  return fetch(`${BASE}/projects/${projectId}/sessions/${sessionId}/managed`, {
-    method: 'POST',
-  })
-}
-
-export function fetchManagedDiskSessions(projectId, provider = 'claude') {
-  return request(
-    `/projects/${projectId}/claude-sessions?managed=1&provider=${encodeURIComponent(provider)}`
-  ).catch(() => [])
 }
 
 export function fetchSshHosts() {
@@ -94,13 +70,9 @@ export function fetchDir(path) {
   return request(url)
 }
 
-export function fetchSettings() {
-  return request('/settings')
-}
-
-export function updateSetting(key, value) {
-  return request('/settings', {
-    method: 'PUT',
-    body: JSON.stringify({ key, value }),
+export function renameFsPath(projectId, from, to) {
+  return request(`/projects/${projectId}/files/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ from, to }),
   })
 }

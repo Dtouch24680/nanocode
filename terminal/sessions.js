@@ -237,34 +237,19 @@ export function get(sessionKey) {
   return sessions.get(sessionKey) ?? null
 }
 
-const CLI_PROVIDERS = ['claude', 'agent', 'opencode']
-
 /**
- * List active CLI session IDs for a project.
- * Scans the sessions Map for keys matching `projectId:<provider>:*`.
+ * List active bash tab IDs for a project. Session keys are shaped
+ * `${projectId}:bash:${tabId}`.
  * @param {string} projectId
- * @param {string} [provider] — if omitted, lists sessions for all CLI providers
- * @returns {string[]} array of session ID strings
+ * @returns {string[]} array of tab ID strings
  */
-export function listCliSessions(projectId, provider) {
-  const prefixes = provider
-    ? [`${projectId}:${provider}:`]
-    : CLI_PROVIDERS.map((p) => `${projectId}:${p}:`)
+export function listProjectSessions(projectId) {
+  const prefix = `${projectId}:bash:`
   const ids = []
   for (const key of sessions.keys()) {
-    for (const prefix of prefixes) {
-      if (key.startsWith(prefix)) {
-        ids.push(key.slice(prefix.length))
-        break
-      }
-    }
+    if (key.startsWith(prefix)) ids.push(key.slice(prefix.length))
   }
   return ids
-}
-
-/** @deprecated Use listCliSessions instead */
-export function listClaudeSessions(projectId) {
-  return listCliSessions(projectId)
 }
 
 /**
@@ -283,22 +268,15 @@ export function destroySession(sessionKey) {
 }
 
 /**
- * Destroy all sessions for a project (bash + all CLI provider sessions).
+ * Destroy all bash sessions for a project.
  * @param {string} projectId
  */
 export function destroySessions(projectId) {
+  const prefix = `${projectId}:bash:`
+  const legacyKey = `${projectId}:bash`
   const toDelete = []
   for (const key of sessions.keys()) {
-    if (key === `${projectId}:bash`) {
-      toDelete.push(key)
-      continue
-    }
-    for (const p of CLI_PROVIDERS) {
-      if (key.startsWith(`${projectId}:${p}:`)) {
-        toDelete.push(key)
-        break
-      }
-    }
+    if (key === legacyKey || key.startsWith(prefix)) toDelete.push(key)
   }
   for (const key of toDelete) {
     const session = sessions.get(key)

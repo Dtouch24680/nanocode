@@ -1,82 +1,33 @@
 /**
- * Terminal view — manages bash + claude panes, sessions, unified input.
+ * Terminal view — multi-tab bash on the left, chat input bar at the bottom.
  *
- * Created lazily on first terminal tab visit.
+ * Tab key in the composer cycles tabs (forward; Shift+Tab cycles backward).
+ * Ctrl+T creates a new tab; Ctrl+W closes the active one; Ctrl+1..9 jumps.
  */
 
-import { TerminalPane, initSplitPane } from './terminal-pane.js'
-import {
-  fetchDiskSessions,
-  fetchRunningSessions,
-  deleteClaudeSession as apiDeleteSession,
-  archiveSession as apiArchiveSession,
-  unarchiveSession as apiUnarchiveSession,
-  fetchArchivedSessions,
-  markSessionManaged,
-  fetchManagedDiskSessions,
-} from './api.js'
-import { state } from './state.js'
+import { initSplitPane } from './terminal-pane.js'
+import { TabManager } from './tab-manager.js'
+import { createExplorer } from './explorer.js'
 
 const mobileQuery = window.matchMedia('(max-width: 768px)')
 const isMobile = () => mobileQuery.matches
 
 let initialized = false
-let bashPane = null
-let claudePane = null
-let diskSessions = []
-let runningSessions = []
-let activeSessionId = null
-let newSessionCounter = 0
+let tabManager = null
+let activePane = null
+let explorer = null
 let currentProjectId = null
 
-// Group dropdown state
-let expandedGroupKey = null
-let segmentDropdownEl = null
-
-// Mode toggle state
-let activeMode = 'bash'
-
-// Managed-only filter state (persisted in localStorage)
-let managedOnly = false
-try {
-  managedOnly = localStorage.getItem('sessionManagedOnly') === '1'
-} catch {}
-
 const statusBash = document.getElementById('status-bash')
-const statusClaude = document.getElementById('status-claude')
 
-const PROVIDER_META = {
-  claude: {
-    paneLabel: 'Claude Code',
-    shortLabel: 'Claude',
-    statusLabel: 'Claude',
-  },
-  agent: {
-    paneLabel: 'Cursor Agent',
-    shortLabel: 'Agent',
-    statusLabel: 'Agent',
-  },
-  opencode: {
-    paneLabel: 'OpenCode',
-    shortLabel: 'OpenCode',
-    statusLabel: 'OpenCode',
-  },
-}
-
-function getProviderMeta(provider = state.cliProvider) {
-  return PROVIDER_META[provider] || PROVIDER_META.claude
-}
-
-function setStatus(el, label, connected) {
-  if (!el) return
-  el.textContent = `${label}: ${connected ? 'connected' : 'disconnected'}`
-  el.classList.toggle('connected', connected)
+function setStatus(connected) {
+  if (!statusBash) return
+  statusBash.textContent = `Bash: ${connected ? 'connected' : 'disconnected'}`
+  statusBash.classList.toggle('connected', connected)
 }
 
 /**
  * Initialize the terminal view for a given project.
- * Called on first terminal tab visit, or when project changes.
- *
  * @param {string} projectId
  */
 export async function initTerminalView(projectId) {
@@ -86,18 +37,15 @@ export async function initTerminalView(projectId) {
   if (!initialized) {
     initialized = true
     setupSplitPane()
-    setupModeToggle()
-    setupSessionButtons()
+    setupTabs(projectId)
+    setupExplorer(projectId)
+    setupChatInput()
+    setupKeyboardShortcuts()
     setupMobile()
+  } else {
+    if (tabManager) tabManager.switchProject(projectId)
+    if (explorer) explorer.switchProject(projectId)
   }
-
-  // Fetch disk sessions to know which session to start with
-  diskSessions = await fetchDiskSessions(projectId, state.cliProvider).catch(() => [])
-  activeSessionId = diskSessions.length ? diskSessions[0].sessionId : null
-
-  createPanes(projectId)
-  updateProviderLabels()
-  fetchAndRenderSessions(projectId)
 }
 
 /**
@@ -106,566 +54,21 @@ export async function initTerminalView(projectId) {
  */
 export function switchTerminalProject(projectId) {
   if (!projectId || !initialized) return
+  if (projectId === currentProjectId) return
   currentProjectId = projectId
-  activeSessionId = null
-
-  if (bashPane) bashPane.switchProject(projectId)
-  if (claudePane) claudePane.switchProject(projectId)
-  fetchAndRenderSessions(projectId)
+  if (tabManager) tabManager.switchProject(projectId)
+  if (explorer) explorer.switchProject(projectId)
 }
 
-/**
- * Re-fit terminal panes (call when terminal tab becomes visible).
- */
 export function fitTerminals() {
-  if (bashPane) requestAnimationFrame(() => bashPane.fitAddon.fit())
-  if (claudePane) requestAnimationFrame(() => claudePane.fitAddon.fit())
+  if (tabManager) tabManager.fit()
 }
 
-/**
- * Whether the terminal view has been initialized.
- */
 export function isInitialized() {
   return initialized
 }
 
-/**
- * Update pane header label and mode toggle button text based on current cliProvider.
- * Called when settings change via WebSocket.
- */
-export function updateProviderLabels() {
-  const meta = getProviderMeta()
-
-  // Update pane header label
-  const headerLabel = document.querySelector('.pane-right .pane-header-label')
-  if (headerLabel) headerLabel.textContent = meta.paneLabel
-  setStatus(
-    statusClaude,
-    meta.statusLabel,
-    !!claudePane?._ws && claudePane._ws.readyState === WebSocket.OPEN
-  )
-
-  // Update mode toggle button text (preserve the SVG icon)
-  const modeClaudeBtn = document.getElementById('mode-claude')
-  if (modeClaudeBtn) {
-    const shortLabel = meta.shortLabel
-    const textNodes = Array.from(modeClaudeBtn.childNodes).filter(
-      (n) => n.nodeType === Node.TEXT_NODE
-    )
-    const lastText = textNodes[textNodes.length - 1]
-    if (lastText)
-      lastText.textContent = '\n                ' + shortLabel + '\n              '
-  }
-}
-
-/**
- * Switch the CLI provider on the active pane. Reconnects the Claude
- * pane with the new provider and refreshes the session list.
- * Called when the cli_provider setting changes via WebSocket.
- */
-export function switchProvider() {
-  if (!initialized || !currentProjectId) return
-  const provider = state.cliProvider
-
-  if (claudePane) {
-    claudePane.cliProvider = provider
-    // Reset to a fresh session with the new provider
-    activeSessionId = null
-    claudePane.claudeSessionId = ''
-    claudePane.reconnect()
-  }
-
-  // Re-fetch sessions — running sessions are keyed by provider
-  fetchAndRenderSessions(currentProjectId)
-}
-
-/**
- * Open a Claude session in the terminal view.
- * If claudeSessionId is provided, resumes that session; otherwise creates a fresh one.
- *
- * @param {string} [claudeSessionId] — optional SDK session UUID to resume
- */
-export function openNewClaudeSession(claudeSessionId) {
-  if (!initialized) return
-  const newId = claudeSessionId || 'new-' + newSessionCounter++
-  activeSessionId = newId
-  if (claudePane) claudePane.switchSession(newId)
-  if (currentProjectId) {
-    fetchRunningSessions(currentProjectId, state.cliProvider)
-      .then((running) => {
-        runningSessions = running
-        renderSessionTabs()
-      })
-      .catch(() => {})
-  }
-}
-
-// --- Internal functions ---
-
-function createPanes(projectId) {
-  const bashContainer = document.getElementById('terminal-bash')
-  const claudeContainer = document.getElementById('terminal-claude')
-  if (!bashContainer || !claudeContainer) return
-
-  if (bashPane) bashPane.dispose()
-  if (claudePane) claudePane.dispose()
-
-  bashPane = new TerminalPane(bashContainer, {
-    projectId,
-    sessionType: 'bash',
-    onStatusChange: (c) => setStatus(statusBash, 'Bash', c),
-  })
-  claudePane = new TerminalPane(claudeContainer, {
-    projectId,
-    sessionType: 'claude',
-    claudeSessionId: activeSessionId || '',
-    cliProvider: state.cliProvider,
-    onStatusChange: (c) => setStatus(statusClaude, getProviderMeta().statusLabel, c),
-  })
-}
-
-// --- Session management ---
-
-async function fetchAndRenderSessions(projectId) {
-  const provider = state.cliProvider
-  const fetchDisk = managedOnly ? fetchManagedDiskSessions : fetchDiskSessions
-  const [disk, running] = await Promise.all([
-    fetchDisk(projectId, provider).catch(() => []),
-    fetchRunningSessions(projectId, provider).catch(() => []),
-  ])
-  diskSessions = disk
-  runningSessions = running
-
-  if (!activeSessionId && diskSessions.length) {
-    activeSessionId = diskSessions[0].sessionId
-    if (claudePane) claudePane.switchSession(activeSessionId)
-  } else if (!activeSessionId && runningSessions.length) {
-    activeSessionId = runningSessions[0]
-    if (claudePane) claudePane.switchSession(activeSessionId)
-  }
-
-  renderSessionTabs()
-}
-
-function updateScrollButtons() {
-  const tabsEl = document.getElementById('session-tabs')
-  const scrollLeft = document.getElementById('session-scroll-left')
-  const scrollRight = document.getElementById('session-scroll-right')
-  if (!tabsEl || !scrollLeft || !scrollRight) return
-  const overflows = tabsEl.scrollWidth > tabsEl.clientWidth + 1
-  scrollLeft.hidden = !overflows || tabsEl.scrollLeft <= 0
-  scrollRight.hidden =
-    !overflows || tabsEl.scrollLeft >= tabsEl.scrollWidth - tabsEl.clientWidth - 1
-}
-
-function truncate(text, maxLen = 24) {
-  if (!text) return ''
-  return text.length > maxLen ? text.slice(0, maxLen) + '...' : text
-}
-
-/**
- * Group disk sessions by slug for UI tab consolidation.
- * Returns array of group objects sorted by most recent activity.
- */
-function groupSessionsBySlug(disk, running) {
-  const runningSet = new Set(running)
-  const slugMap = new Map()
-  const ungrouped = []
-
-  // Collect new-* running sessions that aren't on disk
-  const diskIds = new Set(disk.map((s) => s.sessionId))
-  for (const id of running) {
-    if (!diskIds.has(id) && id.startsWith('new-')) {
-      ungrouped.push({
-        groupKey: id,
-        label: 'New session',
-        isGroup: false,
-        segments: [
-          { sessionId: id, slug: null, preview: null, lastActivity: Date.now() },
-        ],
-        activeSegmentId: id,
-        isRunning: true,
-        lastActivity: Date.now(),
-      })
-    }
-  }
-
-  // Group disk sessions by slug
-  for (const s of disk) {
-    const key = s.slug || null
-    if (!key) {
-      ungrouped.push({
-        groupKey: s.sessionId,
-        label: truncate(s.preview) || s.sessionId.slice(0, 8),
-        isGroup: false,
-        segments: [s],
-        activeSegmentId: s.sessionId,
-        isRunning: runningSet.has(s.sessionId),
-        lastActivity: s.lastActivity || 0,
-      })
-      continue
-    }
-    if (!slugMap.has(key)) slugMap.set(key, [])
-    slugMap.get(key).push(s)
-  }
-
-  const groups = []
-
-  for (const [slug, segments] of slugMap) {
-    // Sort newest-first by lastActivity
-    segments.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
-    const anyRunning = segments.some((s) => runningSet.has(s.sessionId))
-    const maxActivity = Math.max(...segments.map((s) => s.lastActivity || 0))
-    groups.push({
-      groupKey: slug,
-      label: slug,
-      isGroup: segments.length > 1,
-      segments,
-      activeSegmentId: segments[0].sessionId,
-      isRunning: anyRunning,
-      lastActivity: maxActivity,
-    })
-  }
-
-  // Sort groups by most recent activity, then prepend ungrouped
-  groups.sort((a, b) => b.lastActivity - a.lastActivity)
-  return [...ungrouped, ...groups]
-}
-
-function renderSessionTabs() {
-  const sessionTabsEl = document.getElementById('session-tabs')
-  if (!sessionTabsEl) return
-  sessionTabsEl.textContent = ''
-
-  const groups = groupSessionsBySlug(diskSessions, runningSessions)
-
-  for (const group of groups) {
-    const isActive = group.segments.some((s) => s.sessionId === activeSessionId)
-    const tab = document.createElement('button')
-    tab.className = 'session-tab' + (isActive ? ' active' : '')
-    tab.type = 'button'
-    tab.dataset.groupKey = group.groupKey
-
-    if (group.isRunning) {
-      const dot = document.createElement('span')
-      dot.className = 'session-tab-dot'
-      tab.appendChild(dot)
-    }
-
-    const label = document.createElement('span')
-    label.className = 'session-tab-label'
-    label.textContent = group.label
-    tab.appendChild(label)
-
-    // Count badge for multi-segment groups
-    if (group.isGroup) {
-      const badge = document.createElement('span')
-      badge.className = 'session-tab-count'
-      badge.textContent = group.segments.length
-      tab.appendChild(badge)
-    }
-
-    tab.addEventListener('click', () => {
-      if (!isActive) {
-        // Switch to most recent segment
-        switchClaudeSession(group.activeSegmentId)
-      } else if (group.isGroup) {
-        // Already active group with multiple segments — toggle dropdown
-        toggleSegmentDropdown(group, tab)
-      }
-    })
-
-    // Archive button (only for real disk sessions, not new- sessions)
-    if (!group.groupKey.startsWith('new-')) {
-      const archiveBtn = document.createElement('span')
-      archiveBtn.className = 'session-tab-archive'
-      archiveBtn.innerHTML = '&#8615;'
-      archiveBtn.title = group.isGroup ? 'Archive all segments' : 'Archive session'
-      archiveBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        if (group.isGroup) {
-          archiveGroup(group)
-        } else {
-          doArchiveSession(group.activeSegmentId)
-        }
-      })
-      tab.appendChild(archiveBtn)
-    }
-
-    if (group.isRunning) {
-      const closeBtn = document.createElement('span')
-      closeBtn.className = 'session-tab-close'
-      closeBtn.textContent = '\u00d7'
-      closeBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        // Kill all running segments in the group
-        const runningSegments = group.segments.filter((s) =>
-          runningSessions.includes(s.sessionId)
-        )
-        for (const s of runningSegments) deleteSession(s.sessionId)
-      })
-      tab.appendChild(closeBtn)
-    }
-
-    sessionTabsEl.appendChild(tab)
-  }
-
-  // Scroll active tab into view and update scroll button visibility
-  requestAnimationFrame(() => {
-    const activeTab = sessionTabsEl.querySelector('.session-tab.active')
-    if (activeTab) activeTab.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    updateScrollButtons()
-  })
-}
-
-function switchClaudeSession(sessionId) {
-  if (sessionId === activeSessionId) return
-  closeSegmentDropdown()
-  activeSessionId = sessionId
-  if (claudePane) claudePane.switchSession(sessionId)
-  // Mark as managed when user explicitly switches to it
-  if (currentProjectId && !sessionId.startsWith('new-')) {
-    markSessionManaged(currentProjectId, sessionId).catch(() => {})
-  }
-  renderSessionTabs()
-}
-
-// --- Segment dropdown ---
-
-function toggleSegmentDropdown(group, anchorTab) {
-  if (expandedGroupKey === group.groupKey) {
-    closeSegmentDropdown()
-    return
-  }
-  closeSegmentDropdown()
-  expandedGroupKey = group.groupKey
-  renderSegmentDropdown(group, anchorTab)
-}
-
-function renderSegmentDropdown(group, anchorTab) {
-  const paneHeader = anchorTab.closest('.pane-header')
-  if (!paneHeader) return
-
-  const dropdown = document.createElement('div')
-  dropdown.className = 'session-segment-dropdown'
-  segmentDropdownEl = dropdown
-
-  // Position below the anchor tab
-  const headerRect = paneHeader.getBoundingClientRect()
-  const tabRect = anchorTab.getBoundingClientRect()
-  dropdown.style.left = tabRect.left - headerRect.left + 'px'
-  dropdown.style.top = paneHeader.offsetHeight + 'px'
-
-  for (const seg of group.segments) {
-    const isSegActive = seg.sessionId === activeSessionId
-    const item = document.createElement('div')
-    item.className = 'session-segment-item' + (isSegActive ? ' active' : '')
-
-    if (runningSessions.includes(seg.sessionId)) {
-      const dot = document.createElement('span')
-      dot.className = 'session-tab-dot'
-      item.appendChild(dot)
-    }
-
-    const segLabel = document.createElement('span')
-    segLabel.className = 'session-segment-label'
-    segLabel.textContent = truncate(seg.preview) || seg.sessionId.slice(0, 8)
-    item.appendChild(segLabel)
-
-    const segTime = document.createElement('span')
-    segTime.className = 'session-segment-time'
-    segTime.textContent = timeAgo(seg.lastActivity)
-    item.appendChild(segTime)
-
-    const segArchive = document.createElement('span')
-    segArchive.className = 'session-segment-archive'
-    segArchive.innerHTML = '&#8615;'
-    segArchive.title = 'Archive this segment'
-    segArchive.addEventListener('click', (e) => {
-      e.stopPropagation()
-      closeSegmentDropdown()
-      doArchiveSession(seg.sessionId)
-    })
-    item.appendChild(segArchive)
-
-    item.addEventListener('click', () => {
-      closeSegmentDropdown()
-      switchClaudeSession(seg.sessionId)
-    })
-
-    dropdown.appendChild(item)
-  }
-
-  paneHeader.appendChild(dropdown)
-
-  // Close on click outside
-  setTimeout(() => {
-    document.addEventListener('click', onClickOutsideDropdown, true)
-  }, 0)
-}
-
-function onClickOutsideDropdown(e) {
-  if (segmentDropdownEl && !segmentDropdownEl.contains(e.target)) {
-    closeSegmentDropdown()
-  }
-}
-
-function closeSegmentDropdown() {
-  expandedGroupKey = null
-  if (segmentDropdownEl) {
-    segmentDropdownEl.remove()
-    segmentDropdownEl = null
-  }
-  document.removeEventListener('click', onClickOutsideDropdown, true)
-}
-
-// --- Group archive ---
-
-async function archiveGroup(group) {
-  if (!currentProjectId) return
-  await Promise.all(
-    group.segments.map((s) => apiArchiveSession(currentProjectId, s.sessionId))
-  )
-
-  // If active session was in this group, switch to next available
-  if (group.segments.some((s) => s.sessionId === activeSessionId)) {
-    const groups = groupSessionsBySlug(diskSessions, runningSessions)
-    const next = groups.find((g) => g.groupKey !== group.groupKey)
-    activeSessionId = next?.activeSegmentId || null
-    if (claudePane && activeSessionId) claudePane.switchSession(activeSessionId)
-  }
-
-  await fetchAndRenderSessions(currentProjectId)
-  const panel = document.getElementById('session-archive-panel')
-  if (panel && !panel.hidden) renderArchivePanel()
-}
-
-async function createClaudeSession() {
-  const newId = 'new-' + newSessionCounter++
-  activeSessionId = newId
-  if (claudePane) claudePane.switchSession(newId)
-  if (currentProjectId) {
-    runningSessions = await fetchRunningSessions(
-      currentProjectId,
-      state.cliProvider
-    ).catch(() => [])
-    renderSessionTabs()
-  }
-}
-
-async function deleteSession(sessionId) {
-  if (!currentProjectId) return
-  await apiDeleteSession(currentProjectId, sessionId)
-
-  if (sessionId === activeSessionId) {
-    const next =
-      diskSessions.find((s) => s.sessionId !== sessionId) ||
-      runningSessions.find((id) => id !== sessionId)
-    activeSessionId = next?.sessionId || next || null
-    if (claudePane && activeSessionId) claudePane.switchSession(activeSessionId)
-  }
-
-  await fetchAndRenderSessions(currentProjectId)
-}
-
-// --- Managed filter ---
-
-function toggleManagedFilter() {
-  managedOnly = !managedOnly
-  try {
-    localStorage.setItem('sessionManagedOnly', managedOnly ? '1' : '0')
-  } catch {}
-  const btn = document.getElementById('session-managed-btn')
-  if (btn) btn.classList.toggle('active', managedOnly)
-  if (currentProjectId) fetchAndRenderSessions(currentProjectId)
-}
-
-// --- Archive management ---
-
-async function doArchiveSession(sessionId) {
-  if (!currentProjectId) return
-  await apiArchiveSession(currentProjectId, sessionId)
-
-  if (sessionId === activeSessionId) {
-    const next =
-      diskSessions.find((s) => s.sessionId !== sessionId) ||
-      runningSessions.find((id) => id !== sessionId)
-    activeSessionId = next?.sessionId || next || null
-    if (claudePane && activeSessionId) claudePane.switchSession(activeSessionId)
-  }
-
-  await fetchAndRenderSessions(currentProjectId)
-  // Refresh archive panel if open
-  const panel = document.getElementById('session-archive-panel')
-  if (panel && !panel.hidden) renderArchivePanel()
-}
-
-async function doUnarchiveSession(sessionId) {
-  if (!currentProjectId) return
-  await apiUnarchiveSession(currentProjectId, sessionId)
-  await fetchAndRenderSessions(currentProjectId)
-  renderArchivePanel()
-}
-
-function toggleArchivePanel() {
-  const panel = document.getElementById('session-archive-panel')
-  if (!panel) return
-  panel.hidden = !panel.hidden
-  if (!panel.hidden) renderArchivePanel()
-}
-
-function timeAgo(ts) {
-  if (!ts) return ''
-  const diff = Date.now() - ts
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
-}
-
-async function renderArchivePanel() {
-  const panel = document.getElementById('session-archive-panel')
-  if (!panel || !currentProjectId) return
-
-  const archived = await fetchArchivedSessions(currentProjectId, state.cliProvider)
-  panel.innerHTML = ''
-
-  if (!archived.length) {
-    const empty = document.createElement('div')
-    empty.className = 'archive-empty'
-    empty.textContent = 'No archived sessions'
-    panel.appendChild(empty)
-    return
-  }
-
-  for (const s of archived) {
-    const item = document.createElement('div')
-    item.className = 'archive-item'
-
-    const label = document.createElement('span')
-    label.className = 'archive-item-label'
-    label.textContent = s.slug || truncate(s.preview) || s.sessionId.slice(0, 8)
-    item.appendChild(label)
-
-    const time = document.createElement('span')
-    time.className = 'archive-item-time'
-    time.textContent = timeAgo(s.lastActivity)
-    item.appendChild(time)
-
-    const restoreBtn = document.createElement('button')
-    restoreBtn.className = 'archive-item-restore'
-    restoreBtn.textContent = 'Unarchive'
-    restoreBtn.addEventListener('click', () => doUnarchiveSession(s.sessionId))
-    item.appendChild(restoreBtn)
-
-    panel.appendChild(item)
-  }
-}
-
-// --- Setup functions (called once) ---
+// --- Internal ---
 
 function setupSplitPane() {
   initSplitPane(
@@ -674,57 +77,36 @@ function setupSplitPane() {
   )
 }
 
-function setupSessionButtons() {
-  const addBtn = document.getElementById('session-add-btn')
-  if (addBtn) addBtn.addEventListener('click', createClaudeSession)
-
-  const archiveBtn = document.getElementById('session-archive-btn')
-  if (archiveBtn) archiveBtn.addEventListener('click', toggleArchivePanel)
-
-  const managedBtn = document.getElementById('session-managed-btn')
-  if (managedBtn) {
-    managedBtn.addEventListener('click', toggleManagedFilter)
-    managedBtn.classList.toggle('active', managedOnly)
-  }
-
-  const drawerBtn = document.getElementById('session-drawer-btn')
-  if (drawerBtn) drawerBtn.addEventListener('click', openSessionDrawer)
-
-  const backdrop = document.getElementById('session-drawer-backdrop')
-  if (backdrop) backdrop.addEventListener('click', closeSessionDrawer)
-
-  // Scroll buttons for tab overflow
-  const tabsEl = document.getElementById('session-tabs')
-  const scrollLeft = document.getElementById('session-scroll-left')
-  const scrollRight = document.getElementById('session-scroll-right')
-  if (tabsEl && scrollLeft && scrollRight) {
-    scrollLeft.addEventListener('click', () => {
-      tabsEl.scrollLeft -= 120
-    })
-    scrollRight.addEventListener('click', () => {
-      tabsEl.scrollLeft += 120
-    })
-    tabsEl.addEventListener('scroll', updateScrollButtons)
-    new ResizeObserver(updateScrollButtons).observe(tabsEl)
-  }
+function setupExplorer(projectId) {
+  const root = document.getElementById('explorer-root')
+  if (!root) return
+  explorer = createExplorer(root, projectId)
 }
 
-function setupModeToggle() {
-  const modeBashBtn = document.getElementById('mode-bash')
-  const modeClaudeBtn = document.getElementById('mode-claude')
-  const modeIndicator = document.getElementById('mode-indicator')
+function setupTabs(projectId) {
+  const stripEl = document.getElementById('terminal-tab-strip')
+  const stackEl = document.getElementById('terminal-stack')
+  if (!stripEl || !stackEl) return
+
+  tabManager = new TabManager({
+    stripEl,
+    stackEl,
+    projectId,
+    onActiveChange: (pane) => {
+      activePane = pane
+    },
+    onStatusChange: setStatus,
+  })
+  tabManager.restore()
+}
+
+function setupChatInput() {
   const chatInput = document.getElementById('chat-input')
   const sendBtn = document.getElementById('send-btn')
   const suggestionsDropdown = document.getElementById('suggestions-dropdown')
 
-  if (!modeBashBtn || !modeClaudeBtn || !modeIndicator || !chatInput || !sendBtn) return
+  if (!chatInput || !sendBtn) return
 
-  const panes = {
-    bash: { pane: () => bashPane, el: document.querySelector('.pane-left') },
-    claude: { pane: () => claudePane, el: document.querySelector('.pane-right') },
-  }
-
-  // Command history
   const HISTORY_KEY = 'cmdHistory'
   const MAX_HISTORY = 200
 
@@ -733,19 +115,15 @@ function setupModeToggle() {
       const raw = localStorage.getItem(HISTORY_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
-        return {
-          bash: Array.isArray(parsed.bash) ? parsed.bash : [],
-          claude: Array.isArray(parsed.claude) ? parsed.claude : [],
-        }
+        if (Array.isArray(parsed)) return parsed
+        if (Array.isArray(parsed.bash)) return parsed.bash
       }
     } catch {}
-    return { bash: [], claude: [] }
+    return []
   }
 
   function saveHistory() {
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
-    } catch {}
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch {}
   }
 
   const history = loadHistory()
@@ -754,10 +132,9 @@ function setupModeToggle() {
   let selectedSuggestion = -1
 
   function pushHistory(text) {
-    const list = history[activeMode]
-    if (list.length && list[list.length - 1] === text) return
-    list.push(text)
-    if (list.length > MAX_HISTORY) list.splice(0, list.length - MAX_HISTORY)
+    if (history.length && history[history.length - 1] === text) return
+    history.push(text)
+    if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY)
     saveHistory()
   }
 
@@ -766,7 +143,6 @@ function setupModeToggle() {
     historyDraft = ''
   }
 
-  // Suggestions
   function showSuggestions(query) {
     if (!suggestionsDropdown || !query.trim()) {
       hideSuggestions()
@@ -775,15 +151,12 @@ function setupModeToggle() {
     const q = query.toLowerCase()
     const seen = new Set()
     const matches = []
-    for (const mode of [activeMode, activeMode === 'bash' ? 'claude' : 'bash']) {
-      const list = history[mode]
-      for (let i = list.length - 1; i >= 0 && matches.length < 12; i--) {
-        const cmd = list[i]
-        if (seen.has(cmd)) continue
-        if (cmd.toLowerCase().includes(q)) {
-          seen.add(cmd)
-          matches.push({ cmd, mode })
-        }
+    for (let i = history.length - 1; i >= 0 && matches.length < 12; i--) {
+      const cmd = history[i]
+      if (seen.has(cmd)) continue
+      if (cmd.toLowerCase().includes(q)) {
+        seen.add(cmd)
+        matches.push(cmd)
       }
     }
     if (!matches.length) {
@@ -793,13 +166,10 @@ function setupModeToggle() {
     selectedSuggestion = -1
     suggestionsDropdown.innerHTML = ''
     for (let i = 0; i < matches.length; i++) {
-      const { cmd, mode } = matches[i]
+      const cmd = matches[i]
       const item = document.createElement('div')
       item.className = 'suggestion-item'
       item.dataset.index = i
-      const modeLabel = document.createElement('span')
-      modeLabel.className = 'suggestion-mode'
-      modeLabel.textContent = mode === 'bash' ? 'term' : 'claude'
       const textEl = document.createElement('span')
       textEl.className = 'suggestion-text'
       const matchIdx = cmd.toLowerCase().indexOf(q)
@@ -813,7 +183,6 @@ function setupModeToggle() {
       } else {
         textEl.textContent = cmd
       }
-      item.appendChild(modeLabel)
       item.appendChild(textEl)
       item.addEventListener('mousedown', (e) => {
         e.preventDefault()
@@ -826,7 +195,7 @@ function setupModeToggle() {
     }
     const hint = document.createElement('div')
     hint.className = 'suggestions-hint'
-    hint.textContent = '\u2191\u2193 navigate \u00b7 Enter accept \u00b7 Esc dismiss'
+    hint.textContent = '↑↓ navigate · Enter accept · Esc dismiss'
     suggestionsDropdown.appendChild(hint)
     suggestionsDropdown.hidden = false
   }
@@ -871,46 +240,10 @@ function setupModeToggle() {
     chatInput.style.overflowY = chatInput.scrollHeight > 120 ? 'auto' : 'hidden'
   }
 
-  function positionIndicator() {
-    const activeBtn = activeMode === 'bash' ? modeBashBtn : modeClaudeBtn
-    const toggle = document.getElementById('mode-toggle')
-    if (!toggle) return
-    const toggleRect = toggle.getBoundingClientRect()
-    const btnRect = activeBtn.getBoundingClientRect()
-    modeIndicator.style.width = `${btnRect.width}px`
-    modeIndicator.style.transform = `translateX(${btnRect.left - toggleRect.left - 2}px)`
-  }
-
-  function setMode(mode) {
-    activeMode = mode
-    modeBashBtn.classList.toggle('active', mode === 'bash')
-    modeClaudeBtn.classList.toggle('active', mode === 'claude')
-    if (panes.bash.el) panes.bash.el.classList.toggle('target-active', mode === 'bash')
-    if (panes.claude.el)
-      panes.claude.el.classList.toggle('target-active', mode === 'claude')
-    chatInput.placeholder = mode === 'bash' ? 'Type a command\u2026' : 'Ask Claude\u2026'
-    positionIndicator()
-    resetHistoryNav()
-    hideSuggestions()
-
-    if (isMobile()) {
-      if (panes.bash.el) panes.bash.el.classList.toggle('mobile-active', mode === 'bash')
-      if (panes.claude.el)
-        panes.claude.el.classList.toggle('mobile-active', mode === 'claude')
-      const dots = document.querySelectorAll('.pane-dot')
-      dots.forEach((dot) => dot.classList.toggle('active', dot.dataset.pane === mode))
-      const target = panes[mode].pane()
-      if (target) requestAnimationFrame(() => target.fitAddon.fit())
-    }
-
-    if (!isMobile()) chatInput.focus()
-  }
-
   function sendInput() {
     const text = chatInput.value
     if (!text) return
-    const target = panes[activeMode].pane()
-    if (target) target.sendInputWithEcho(text)
+    if (activePane) activePane.sendInputWithEcho(text)
     pushHistory(text)
     resetHistoryNav()
     hideSuggestions()
@@ -919,9 +252,6 @@ function setupModeToggle() {
     chatInput.focus()
   }
 
-  // Event listeners
-  modeBashBtn.addEventListener('click', () => setMode('bash'))
-  modeClaudeBtn.addEventListener('click', () => setMode('claude'))
   sendBtn.addEventListener('click', sendInput)
 
   chatInput.addEventListener('input', () => {
@@ -949,9 +279,11 @@ function setupModeToggle() {
     }
 
     if (e.key === 'Tab') {
+      // Tab cycles bash tabs (Shift+Tab cycles backward). Always intercepted
+      // regardless of composer content — explicit user intent per design.
       e.preventDefault()
       hideSuggestions()
-      setMode(activeMode === 'bash' ? 'claude' : 'bash')
+      if (tabManager) tabManager.cycle(e.shiftKey ? -1 : 1)
       return
     }
 
@@ -972,15 +304,14 @@ function setupModeToggle() {
         selectSuggestion(-1)
         return
       }
-      const list = history[activeMode]
-      if (!list.length) return
+      if (!history.length) return
       if (historyIdx === -1) {
         historyDraft = chatInput.value
-        historyIdx = list.length - 1
+        historyIdx = history.length - 1
       } else if (historyIdx > 0) {
         historyIdx--
       }
-      chatInput.value = list[historyIdx]
+      chatInput.value = history[historyIdx]
       autoResize()
       hideSuggestions()
       return
@@ -993,10 +324,9 @@ function setupModeToggle() {
         return
       }
       if (historyIdx === -1) return
-      const list = history[activeMode]
-      if (historyIdx < list.length - 1) {
+      if (historyIdx < history.length - 1) {
         historyIdx++
-        chatInput.value = list[historyIdx]
+        chatInput.value = history[historyIdx]
       } else {
         historyIdx = -1
         chatInput.value = historyDraft
@@ -1008,15 +338,13 @@ function setupModeToggle() {
 
     if (e.ctrlKey && e.key === 'c' && !chatInput.value) {
       e.preventDefault()
-      const target = panes[activeMode].pane()
-      if (target) target.sendRaw('\x03')
+      if (activePane) activePane.sendRaw('\x03')
       return
     }
 
     if (e.ctrlKey && e.key === 'l') {
       e.preventDefault()
-      const target = panes[activeMode].pane()
-      if (target) target.sendRaw('\x0c')
+      if (activePane) activePane.sendRaw('\x0c')
       return
     }
   })
@@ -1025,29 +353,6 @@ function setupModeToggle() {
     setTimeout(hideSuggestions, 150)
   })
 
-  // Global keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === '`') {
-      e.preventDefault()
-      setMode(activeMode === 'bash' ? 'claude' : 'bash')
-    }
-  })
-
-  document.addEventListener('keydown', (e) => {
-    if (
-      e.key === 'Tab' &&
-      document.activeElement !== chatInput &&
-      document.activeElement?.tagName !== 'INPUT' &&
-      document.activeElement?.tagName !== 'TEXTAREA'
-    ) {
-      e.preventDefault()
-      setMode(activeMode === 'bash' ? 'claude' : 'bash')
-      chatInput.focus()
-    }
-  })
-
-  requestAnimationFrame(() => setMode('bash'))
-
   // Touch toolbar
   const touchToolbar = document.getElementById('touch-toolbar')
   if (touchToolbar) {
@@ -1055,103 +360,107 @@ function setupModeToggle() {
       const btn = e.target.closest('.touch-btn')
       if (!btn) return
       const action = btn.dataset.action
-      const target = panes[activeMode].pane()
-      if (!target) return
+      if (!activePane) return
       switch (action) {
         case 'ctrl-c':
-          target.sendRaw('\x03')
-          break
+          activePane.sendRaw('\x03'); break
         case 'ctrl-l':
-          target.sendRaw('\x0c')
-          break
+          activePane.sendRaw('\x0c'); break
         case 'arrow-up': {
-          const list = history[activeMode]
-          if (!list.length) break
+          if (!history.length) break
           if (historyIdx === -1) {
             historyDraft = chatInput.value
-            historyIdx = list.length - 1
+            historyIdx = history.length - 1
           } else if (historyIdx > 0) historyIdx--
-          chatInput.value = list[historyIdx]
-          autoResize()
-          hideSuggestions()
-          break
+          chatInput.value = history[historyIdx]
+          autoResize(); hideSuggestions(); break
         }
         case 'arrow-down': {
           if (historyIdx === -1) break
-          const list = history[activeMode]
-          if (historyIdx < list.length - 1) {
-            historyIdx++
-            chatInput.value = list[historyIdx]
+          if (historyIdx < history.length - 1) {
+            historyIdx++; chatInput.value = history[historyIdx]
           } else {
-            historyIdx = -1
-            chatInput.value = historyDraft
+            historyIdx = -1; chatInput.value = historyDraft
           }
-          autoResize()
-          hideSuggestions()
-          break
+          autoResize(); hideSuggestions(); break
         }
         case 'tab':
-          target.sendRaw('\t')
-          break
+          activePane.sendRaw('\t'); break
         case 'escape':
           if (suggestionsDropdown && !suggestionsDropdown.hidden) hideSuggestions()
-          else {
-            chatInput.value = ''
-            autoResize()
-          }
+          else { chatInput.value = ''; autoResize() }
           break
       }
       if (document.activeElement === chatInput) chatInput.focus()
     })
   }
 
-  // Orientation change handler
-  mobileQuery.addEventListener('change', () => {
-    if (isMobile()) {
-      if (panes.bash.el)
-        panes.bash.el.classList.toggle('mobile-active', activeMode === 'bash')
-      if (panes.claude.el)
-        panes.claude.el.classList.toggle('mobile-active', activeMode === 'claude')
-    } else {
-      if (panes.bash.el) panes.bash.el.classList.remove('mobile-active')
-      if (panes.claude.el) panes.claude.el.classList.remove('mobile-active')
+  mobileQuery.addEventListener('change', () => fitTerminals())
+}
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+T: new tab
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 't' || e.key === 'T')) {
+      e.preventDefault()
+      if (tabManager) tabManager.newTab()
+      return
     }
-    fitTerminals()
+    // Ctrl+W: close active tab
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'w' || e.key === 'W')) {
+      e.preventDefault()
+      if (tabManager && tabManager.activeId) tabManager.closeTab(tabManager.activeId)
+      return
+    }
+    // Ctrl+1..9: jump to tab
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+      e.preventDefault()
+      if (tabManager) tabManager.jumpTo(parseInt(e.key, 10))
+      return
+    }
+    // Tab when focus is not in an input: cycle
+    if (
+      e.key === 'Tab' &&
+      document.activeElement?.tagName !== 'INPUT' &&
+      document.activeElement?.tagName !== 'TEXTAREA'
+    ) {
+      e.preventDefault()
+      if (tabManager) tabManager.cycle(e.shiftKey ? -1 : 1)
+      const chatInput = document.getElementById('chat-input')
+      if (chatInput) chatInput.focus()
+    }
   })
 }
 
 function setupMobile() {
-  if (!isMobile()) return
-
-  // Swipe navigation
-  const container = document.getElementById('split-container')
-  if (container) {
-    let startX = 0
-    let startY = 0
-    container.addEventListener(
-      'touchstart',
-      (e) => {
-        startX = e.touches[0].clientX
-        startY = e.touches[0].clientY
-      },
-      { passive: true }
-    )
-    container.addEventListener(
-      'touchend',
-      (e) => {
-        const dx = e.changedTouches[0].clientX - startX
-        const dy = e.changedTouches[0].clientY - startY
-        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) {
-          const modeBash = document.getElementById('mode-bash')
-          if (dx < 0) modeBash?.nextElementSibling?.click()
-          else modeBash?.click()
-        }
-      },
-      { passive: true }
-    )
+  // Mobile pane switcher — buttons toggle between left (terminal) and right (explorer).
+  const switchEl = document.getElementById('mobile-pane-switch')
+  if (switchEl) {
+    function setMobilePane(pane) {
+      document.body.classList.toggle('mobile-pane-left', pane === 'left')
+      document.body.classList.toggle('mobile-pane-right', pane === 'right')
+      switchEl.querySelectorAll('.mobile-pane-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.pane === pane)
+      })
+      if (pane === 'left') fitTerminals()
+    }
+    switchEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.mobile-pane-btn')
+      if (!btn) return
+      setMobilePane(btn.dataset.pane)
+    })
+    // Default to terminal on mobile load
+    if (isMobile()) setMobilePane('left')
+    mobileQuery.addEventListener('change', () => {
+      if (isMobile()) setMobilePane('left')
+      else {
+        document.body.classList.remove('mobile-pane-left', 'mobile-pane-right')
+      }
+    })
   }
 
-  // iOS keyboard scroll fix
+  if (!isMobile()) return
+
   const chatInput = document.getElementById('chat-input')
   const killScroll = () => {
     window.scrollTo(0, 0)
@@ -1176,135 +485,5 @@ function setupMobile() {
       killScroll()
     })
     window.visualViewport.addEventListener('scroll', killScroll)
-  }
-}
-
-// --- Session drawer (mobile) ---
-
-function openSessionDrawer() {
-  renderMobileSessionDrawer()
-  const drawer = document.getElementById('session-drawer')
-  const backdrop = document.getElementById('session-drawer-backdrop')
-  if (drawer) drawer.classList.add('open')
-  if (backdrop) backdrop.classList.add('open')
-}
-
-function closeSessionDrawer() {
-  const drawer = document.getElementById('session-drawer')
-  const backdrop = document.getElementById('session-drawer-backdrop')
-  if (drawer) drawer.classList.remove('open')
-  if (backdrop) backdrop.classList.remove('open')
-}
-
-function renderMobileSessionDrawer() {
-  const drawer = document.getElementById('session-drawer')
-  if (!drawer) return
-  drawer.innerHTML = ''
-
-  const groups = groupSessionsBySlug(diskSessions, runningSessions)
-
-  for (const group of groups) {
-    const isActive = group.segments.some((s) => s.sessionId === activeSessionId)
-    const item = document.createElement('div')
-    item.className = 'session-drawer-item' + (isActive ? ' active' : '')
-
-    if (group.isRunning) {
-      const dot = document.createElement('span')
-      dot.className = 'session-tab-dot'
-      item.appendChild(dot)
-    }
-
-    const label = document.createElement('span')
-    label.className = 'session-drawer-item-label'
-    label.textContent = group.label
-    item.appendChild(label)
-
-    if (group.isGroup) {
-      const badge = document.createElement('span')
-      badge.className = 'session-tab-count'
-      badge.textContent = group.segments.length
-      item.appendChild(badge)
-    }
-
-    item.addEventListener('click', () => {
-      switchClaudeSession(group.activeSegmentId)
-      closeSessionDrawer()
-    })
-    drawer.appendChild(item)
-
-    // Render indented sub-items for multi-segment groups
-    if (group.isGroup) {
-      for (const seg of group.segments) {
-        const subItem = document.createElement('div')
-        subItem.className =
-          'session-drawer-item session-drawer-segment' +
-          (seg.sessionId === activeSessionId ? ' active' : '')
-
-        if (runningSessions.includes(seg.sessionId)) {
-          const dot = document.createElement('span')
-          dot.className = 'session-tab-dot'
-          subItem.appendChild(dot)
-        }
-
-        const segLabel = document.createElement('span')
-        segLabel.className = 'session-drawer-item-label'
-        segLabel.textContent = truncate(seg.preview) || seg.sessionId.slice(0, 8)
-        subItem.appendChild(segLabel)
-
-        const segTime = document.createElement('span')
-        segTime.className = 'session-segment-time'
-        segTime.textContent = timeAgo(seg.lastActivity)
-        subItem.appendChild(segTime)
-
-        subItem.addEventListener('click', (e) => {
-          e.stopPropagation()
-          switchClaudeSession(seg.sessionId)
-          closeSessionDrawer()
-        })
-        drawer.appendChild(subItem)
-      }
-    }
-  }
-
-  const newBtn = document.createElement('div')
-  newBtn.className = 'session-drawer-new'
-  newBtn.textContent = '+ New session'
-  newBtn.addEventListener('click', () => {
-    createClaudeSession()
-    closeSessionDrawer()
-  })
-  drawer.appendChild(newBtn)
-
-  // Archived section
-  if (currentProjectId) {
-    fetchArchivedSessions(currentProjectId).then((archived) => {
-      if (!archived.length) return
-      const title = document.createElement('div')
-      title.className = 'session-drawer-section-title'
-      title.textContent = 'Archived'
-      drawer.appendChild(title)
-
-      for (const s of archived) {
-        const item = document.createElement('div')
-        item.className = 'session-drawer-item archived'
-
-        const label = document.createElement('span')
-        label.className = 'session-drawer-item-label'
-        label.textContent = s.slug || truncate(s.preview) || s.sessionId.slice(0, 8)
-        item.appendChild(label)
-
-        const restoreBtn = document.createElement('span')
-        restoreBtn.className = 'session-drawer-item-restore'
-        restoreBtn.textContent = 'Unarchive'
-        restoreBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          doUnarchiveSession(s.sessionId)
-          closeSessionDrawer()
-        })
-        item.appendChild(restoreBtn)
-
-        drawer.appendChild(item)
-      }
-    })
   }
 }

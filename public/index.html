@@ -11,6 +11,9 @@
     <script src="/vendor/xterm/lib/xterm.js"></script>
     <script src="/vendor/xterm-addon-fit/lib/addon-fit.js"></script>
     <script src="/vendor/xterm-addon-web-links/lib/addon-web-links.js"></script>
+    <script src="/vendor/marked/marked.umd.js"></script>
+    <script src="/vendor/dompurify/purify.min.js"></script>
+    <script src="/vendor/highlight/highlight.min.js"></script>
   </head>
   <body>
     <header class="app-header">
@@ -37,7 +40,6 @@
       <h1 class="app-title">Nanocode</h1>
       <div class="header-pills">
         <span class="connection-status" id="status-bash">Bash: disconnected</span>
-        <span class="connection-status" id="status-claude">Claude: disconnected</span>
       </div>
     </header>
 
@@ -53,222 +55,63 @@
       </aside>
 
       <div class="main-content">
-        <div class="tab-bar" id="tab-bar">
-          <button class="tab-btn active" data-tab="terminal" id="tab-terminal">
-            Terminal
-          </button>
-          <button class="tab-btn" data-tab="settings" id="tab-settings">Settings</button>
-        </div>
-
-        <div class="tab-content" id="settings-tab" hidden>
-          <div class="settings-container">
-            <h2 class="settings-heading">Settings</h2>
-            <section class="settings-section">
-              <h3 class="settings-section-title">CLI Provider</h3>
-              <p class="settings-desc">
-                Choose which CLI tool to use for interactive assistant sessions in the
-                terminal pane.
-              </p>
-              <div class="settings-radio-group" id="cli-provider-group">
-                <label class="settings-radio-label">
-                  <input type="radio" name="cli-provider" value="claude" checked />
-                  Claude Code
-                  <span class="settings-radio-hint">(default)</span>
-                </label>
-                <label class="settings-radio-label">
-                  <input type="radio" name="cli-provider" value="agent" />
-                  Cursor Agent
-                </label>
-                <label class="settings-radio-label">
-                  <input type="radio" name="cli-provider" value="opencode" />
-                  OpenCode
-                </label>
-              </div>
-              <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="cli-save-btn">
-                  Save
-                </button>
-                <span class="settings-status" id="cli-status"></span>
-              </div>
-            </section>
+        <div class="terminal-layout">
+          <div class="split-container" id="split-container">
+            <div class="pane pane-left">
+              <div class="terminal-tab-strip" id="terminal-tab-strip"></div>
+              <div class="terminal-stack" id="terminal-stack"></div>
+            </div>
+            <div class="split-divider" id="split-divider"></div>
+            <div class="pane pane-right">
+              <div class="explorer-root" id="explorer-root"></div>
+            </div>
           </div>
-        </div>
 
-        <div class="tab-content" id="terminal-tab">
-          <div class="terminal-layout">
-            <div class="split-container" id="split-container">
-              <div class="pane pane-left">
-                <div class="pane-header">Bash</div>
-                <div class="pane-terminal" id="terminal-bash"></div>
-              </div>
-              <div class="split-divider" id="split-divider"></div>
-              <div class="pane pane-right">
-                <div class="pane-header">
-                  <span class="pane-header-label">Claude Code</span>
-                  <div class="session-tabs-wrap" id="session-tabs-wrap">
-                    <button
-                      type="button"
-                      class="session-scroll-btn session-scroll-left"
-                      id="session-scroll-left"
-                      hidden
-                      aria-label="Scroll left"
-                    >
-                      &lsaquo;
-                    </button>
-                    <div class="session-tabs" id="session-tabs"></div>
-                    <button
-                      type="button"
-                      class="session-scroll-btn session-scroll-right"
-                      id="session-scroll-right"
-                      hidden
-                      aria-label="Scroll right"
-                    >
-                      &rsaquo;
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    class="session-add-btn"
-                    id="session-add-btn"
-                    title="New session"
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    class="session-managed-btn"
-                    id="session-managed-btn"
-                    title="Show only sessions from this app"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="session-archive-btn"
-                    id="session-archive-btn"
-                    title="Archived sessions"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <polyline points="21 8 21 21 3 21 3 8" />
-                      <rect x="1" y="3" width="22" height="5" />
-                      <line x1="10" y1="12" x2="14" y2="12" />
-                    </svg>
-                  </button>
-                  <button class="session-drawer-btn" id="session-drawer-btn">
-                    Sessions &#9662;
-                  </button>
-                </div>
+          <div class="mobile-pane-switch" id="mobile-pane-switch">
+            <button type="button" class="mobile-pane-btn active" data-pane="left">Terminal</button>
+            <button type="button" class="mobile-pane-btn" data-pane="right">Explorer</button>
+          </div>
+
+          <div class="chat-input-bar" id="chat-input-bar">
+            <div class="touch-toolbar" id="touch-toolbar">
+              <button class="touch-btn" data-action="ctrl-c">Ctrl+C</button>
+              <button class="touch-btn" data-action="ctrl-l">Clear</button>
+              <button class="touch-btn" data-action="arrow-up">&uarr;</button>
+              <button class="touch-btn" data-action="arrow-down">&darr;</button>
+              <button class="touch-btn" data-action="tab">Tab</button>
+              <button class="touch-btn" data-action="escape">Esc</button>
+            </div>
+            <div class="input-row">
+              <div class="input-wrap">
                 <div
-                  class="session-archive-panel"
-                  id="session-archive-panel"
+                  class="suggestions-dropdown"
+                  id="suggestions-dropdown"
                   hidden
                 ></div>
-                <div class="pane-terminal" id="terminal-claude"></div>
+                <textarea
+                  id="chat-input"
+                  class="chat-textarea"
+                  placeholder="Type a command..."
+                  rows="1"
+                  autocomplete="off"
+                  spellcheck="false"
+                ></textarea>
               </div>
-              <div class="pane-dots" id="pane-dots">
-                <span class="pane-dot active" data-pane="bash"></span>
-                <span class="pane-dot" data-pane="claude"></span>
-              </div>
-            </div>
-
-            <div class="chat-input-bar" id="chat-input-bar">
-              <div class="input-mode-toggle" id="mode-toggle">
-                <button class="mode-btn active" data-mode="bash" id="mode-bash">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <polyline points="4 17 10 11 4 5" />
-                    <line x1="12" y1="19" x2="20" y2="19" />
-                  </svg>
-                  Terminal
-                </button>
-                <button class="mode-btn" data-mode="claude" id="mode-claude">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path
-                      d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"
-                    />
-                    <circle cx="12" cy="15" r="2" />
-                  </svg>
-                  Claude
-                </button>
-                <div class="mode-indicator" id="mode-indicator"></div>
-              </div>
-              <div class="touch-toolbar" id="touch-toolbar">
-                <button class="touch-btn" data-action="ctrl-c">Ctrl+C</button>
-                <button class="touch-btn" data-action="ctrl-l">Clear</button>
-                <button class="touch-btn" data-action="arrow-up">&uarr;</button>
-                <button class="touch-btn" data-action="arrow-down">&darr;</button>
-                <button class="touch-btn" data-action="tab">Tab</button>
-                <button class="touch-btn" data-action="escape">Esc</button>
-              </div>
-              <div class="input-row">
-                <div class="input-wrap">
-                  <div
-                    class="suggestions-dropdown"
-                    id="suggestions-dropdown"
-                    hidden
-                  ></div>
-                  <textarea
-                    id="chat-input"
-                    class="chat-textarea"
-                    placeholder="Type a command..."
-                    rows="1"
-                    autocomplete="off"
-                    spellcheck="false"
-                  ></textarea>
-                </div>
-                <button class="send-btn" id="send-btn" aria-label="Send">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
-              </div>
+              <button class="send-btn" id="send-btn" aria-label="Send">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -331,9 +174,6 @@
         </div>
       </form>
     </dialog>
-
-    <div class="session-drawer-backdrop" id="session-drawer-backdrop"></div>
-    <div class="session-drawer" id="session-drawer"></div>
 
     <div class="landing-overlay" id="landing-overlay" hidden>
       <div class="landing-container">

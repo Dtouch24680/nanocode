@@ -59,13 +59,15 @@ function collectMessages(ws, predicate, timeoutMs = 5000) {
   })
 }
 
-async function openSession(projectId, sessionType = 'bash') {
+async function openSession(projectId, sessionType = 'bash', tabId) {
   const ws = new WebSocket(WS_URL)
   await once(ws, 'open')
   const collector = collectMessages(ws, (msgs) =>
     msgs.some((message) => message.type === 'output' || message.type === 'history')
   )
-  ws.send(JSON.stringify({ type: 'attach', projectId, sessionType, cols: 80, rows: 24 }))
+  const attach = { type: 'attach', projectId, sessionType, cols: 80, rows: 24 }
+  if (tabId) attach.tabId = tabId
+  ws.send(JSON.stringify(attach))
   const messages = await collector
   return { ws, messages }
 }
@@ -202,9 +204,10 @@ describe('terminal e2e', () => {
     const res = await fetch(`${BASE}/api/projects`)
     const list = await res.json()
     const projectId = list[0].id
+    const tabId = `e2e-${Date.now().toString(36)}`
     const marker = `E2E_MARKER_${Date.now()}`
 
-    const { ws: first } = await openSession(projectId, 'bash')
+    const { ws: first } = await openSession(projectId, 'bash', tabId)
     await sendAndExpect(first, `echo ${marker}\r`, marker)
     first.close()
 
@@ -227,6 +230,7 @@ describe('terminal e2e', () => {
         type: 'attach',
         projectId,
         sessionType: 'bash',
+        tabId,
         cols: 80,
         rows: 24,
       })

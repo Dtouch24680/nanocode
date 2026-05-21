@@ -12,7 +12,11 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "busboy": "^1.6.0",
+    "dompurify": "^3.4.5",
     "express": "^4.21.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.12",
     "node-pty": "^1.1.0-beta34",
     "ws": "^8.18.0"
   }

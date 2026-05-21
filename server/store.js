@@ -1,12 +1,12 @@
 /**
- * JSON file data layer for projects, settings, and terminal session metadata.
+ * JSON file data layer for projects and settings.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs'
 import { randomUUID } from 'crypto'
 
 function emptyData() {
-  return { projects: [], settings: {}, archivedSessions: {}, managedSessions: {} }
+  return { projects: [], settings: {}, tabs: {} }
 }
 
 export function createStore(filePath = ':memory:') {
@@ -15,11 +15,12 @@ export function createStore(filePath = ':memory:') {
 
   if (!inMemory && existsSync(filePath)) {
     try { data = JSON.parse(readFileSync(filePath, 'utf-8')) } catch { data = emptyData() }
-    // Ensure all keys exist (forward compat)
     if (!data.projects) data.projects = []
     if (!data.settings) data.settings = {}
-    if (!data.archivedSessions) data.archivedSessions = {}
-    if (!data.managedSessions) data.managedSessions = {}
+    if (!data.tabs || typeof data.tabs !== 'object') data.tabs = {}
+    // Forward-compat: drop deprecated keys silently
+    delete data.archivedSessions
+    delete data.managedSessions
   }
 
   function save() {
@@ -72,9 +73,54 @@ export function createStore(filePath = ':memory:') {
 
   function removeProject(id) {
     data.projects = data.projects.filter((p) => p.id !== id)
-    delete data.archivedSessions[id]
-    delete data.managedSessions[id]
+    delete data.tabs[id]
     save()
+  }
+
+  // --- Tabs (per-project, persisted; PTYs live in-memory keyed by tabId) ---
+
+  function listTabs(projectId) {
+    return (data.tabs[projectId] || []).map((t) => ({ ...t }))
+  }
+
+  function createTab(projectId, opts = {}) {
+    if (!data.tabs[projectId]) data.tabs[projectId] = []
+    const id = opts.id || randomUUID().slice(0, 8)
+    const existing = data.tabs[projectId]
+    const n = existing.length + 1
+    const tab = {
+      id,
+      label: opts.label || `bash ${n}`,
+      createdAt: Date.now(),
+    }
+    existing.push(tab)
+    save()
+    return { ...tab }
+  }
+
+  function removeTab(projectId, tabId) {
+    if (!data.tabs[projectId]) return false
+    const before = data.tabs[projectId].length
+    data.tabs[projectId] = data.tabs[projectId].filter((t) => t.id !== tabId)
+    if (data.tabs[projectId].length < before) {
+      save()
+      return true
+    }
+    return false
+  }
+
+  function renameTab(projectId, tabId, label) {
+    if (!data.tabs[projectId]) return null
+    const tab = data.tabs[projectId].find((t) => t.id === tabId)
+    if (!tab) return null
+    tab.label = label
+    save()
+    return { ...tab }
+  }
+
+  function hasTab(projectId, tabId) {
+    if (!data.tabs[projectId]) return false
+    return data.tabs[projectId].some((t) => t.id === tabId)
   }
 
   function migrateProjectsJson(jsonPath) {
@@ -106,48 +152,13 @@ export function createStore(filePath = ':memory:') {
     createProject(name, cwd)
   }
 
-  // --- Session metadata ---
-
-  function archiveSession(projectId, sessionId) {
-    if (!data.archivedSessions[projectId]) data.archivedSessions[projectId] = []
-    const list = data.archivedSessions[projectId]
-    if (!list.some((s) => s.id === sessionId)) {
-      list.push({ id: sessionId, archivedAt: Date.now() })
-      save()
-    }
-  }
-
-  function unarchiveSession(projectId, sessionId) {
-    if (!data.archivedSessions[projectId]) return
-    data.archivedSessions[projectId] = data.archivedSessions[projectId].filter((s) => s.id !== sessionId)
-    save()
-  }
-
-  function listArchivedSessions(projectId) {
-    return (data.archivedSessions[projectId] || []).map((s) => s.id)
-  }
-
-  function markSessionManaged(projectId, sessionId) {
-    if (!data.managedSessions[projectId]) data.managedSessions[projectId] = []
-    const list = data.managedSessions[projectId]
-    if (!list.includes(sessionId)) {
-      list.push(sessionId)
-      save()
-    }
-  }
-
-  function listManagedSessions(projectId) {
-    return [...(data.managedSessions[projectId] || [])]
-  }
-
   function close() { /* no-op for JSON store */ }
 
   return {
     getSetting, setSetting, getAllSettings,
     createProject, getProject, listProjects, removeProject,
     migrateProjectsJson, ensureStarterProject,
-    archiveSession, unarchiveSession, listArchivedSessions,
-    markSessionManaged, listManagedSessions,
+    listTabs, createTab, removeTab, renameTab, hasTab,
     close,
   }
 }
