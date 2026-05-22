@@ -109,6 +109,16 @@ export class TabManager {
   setActive(id) {
     if (this.activeId === id) return
     if (!this.tabs.some((t) => t.id === id)) return
+    // Compute direction so the composer chip animates left (forward) /
+    // right (back) appropriately. 'jump' for non-adjacent moves.
+    const n = this.tabs.length
+    const oldIdx = this.tabs.findIndex((t) => t.id === this.activeId)
+    const newIdx = this.tabs.findIndex((t) => t.id === id)
+    let direction = 'jump'
+    if (oldIdx >= 0 && newIdx >= 0 && n > 1) {
+      if ((oldIdx + 1) % n === newIdx) direction = 'forward'
+      else if ((newIdx + 1) % n === oldIdx) direction = 'back'
+    }
     this.activeId = id
     saveActiveId(this.projectId, id)
     for (const tab of this.tabs) {
@@ -116,7 +126,7 @@ export class TabManager {
     }
     this._renderStrip()
     const active = this._getActive()
-    this.onActiveChange(active?.pane || null, active ? { id: active.id, label: active.label, type: active.type } : null)
+    this.onActiveChange(active?.pane || null, active ? { id: active.id, label: active.label, type: active.type } : null, direction)
     if (active) {
       this.onStatusChange(!!active.pane._ws && active.pane._ws.readyState === WebSocket.OPEN)
       requestAnimationFrame(() => { try { active.pane.fitAddon.fit() } catch {} })
@@ -137,6 +147,22 @@ export class TabManager {
 
   getActivePane() {
     return this._getActive()?.pane || null
+  }
+
+  /** Return shallow copies of the prev / current / next tabs for the
+   *  composer's 3-segment chip. With 1 tab, prev and next are null;
+   *  with 2 tabs, prev and next both point at the same other tab. */
+  getNeighbors() {
+    const n = this.tabs.length
+    if (n === 0 || !this.activeId) return { prev: null, current: null, next: null }
+    const idx = this.tabs.findIndex((t) => t.id === this.activeId)
+    if (idx < 0) return { prev: null, current: null, next: null }
+    const pick = (t) => t ? { id: t.id, label: t.label, type: t.type } : null
+    return {
+      prev: n > 1 ? pick(this.tabs[(idx - 1 + n) % n]) : null,
+      current: pick(this.tabs[idx]),
+      next: n > 1 ? pick(this.tabs[(idx + 1) % n]) : null,
+    }
   }
 
   count() {

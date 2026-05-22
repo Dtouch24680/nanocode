@@ -92,42 +92,67 @@ function setupTabs(projectId) {
     stripEl,
     stackEl,
     projectId,
-    onActiveChange: (pane, tabMeta) => {
+    onActiveChange: (pane, tabMeta, direction) => {
       activePane = pane
-      updateActiveTabChip(tabMeta)
+      updateActiveTabChip(direction)
     },
     onStatusChange: setStatus,
   })
   tabManager.restore()
+  // Wire prev/next click handlers once
+  const prevBtn = document.getElementById('tab-slot-prev')
+  const nextBtn = document.getElementById('tab-slot-next')
+  if (prevBtn) prevBtn.addEventListener('click', () => tabManager && tabManager.cycle(-1))
+  if (nextBtn) nextBtn.addEventListener('click', () => tabManager && tabManager.cycle(1))
 }
 
-const TAB_LABEL_OVERRIDE = {
-  bash: 'terminal',
-  claude: 'claude',
-  codex: 'codex',
-  agent: 'cursor',
-  opencode: 'opencode',
-}
-
-function updateActiveTabChip(tabMeta) {
+function updateActiveTabChip(direction) {
   const chip = document.getElementById('active-tab-chip')
-  const icon = document.getElementById('active-tab-icon')
-  const label = document.getElementById('active-tab-label')
-  if (!chip || !icon || !label) return
-  if (!tabMeta) {
+  if (!chip || !tabManager) return
+
+  const { prev, current, next } = tabManager.getNeighbors()
+  if (!current) {
     chip.hidden = true
     return
   }
   chip.hidden = false
-  const type = tabMeta.type || 'bash'
-  // Re-add the class for the type-specific accent + (re)play the swap animation
-  chip.className = 'active-tab-chip active-tab-chip-' + type
-  chip.classList.remove('swapping')
-  // Force reflow so the next add restarts the animation
+
+  // --- Current slot ---
+  const curEl = document.getElementById('tab-slot-current')
+  const curIcon = document.getElementById('active-tab-icon')
+  const curLabel = document.getElementById('active-tab-label')
+  const curType = current.type || 'bash'
+  curEl.className = 'tab-slot tab-slot-current type-' + curType
+  curIcon.innerHTML = TYPE_ICON_SVG[curType] || TYPE_ICON_SVG.bash
+  curLabel.textContent = current.label
+
+  // --- Prev slot ---
+  const prevEl = document.getElementById('tab-slot-prev')
+  if (prev) {
+    prevEl.hidden = false
+    document.getElementById('prev-tab-icon').innerHTML = TYPE_ICON_SVG[prev.type || 'bash'] || TYPE_ICON_SVG.bash
+    document.getElementById('prev-tab-label').textContent = prev.label
+  } else {
+    prevEl.hidden = true
+  }
+
+  // --- Next slot ---
+  const nextEl = document.getElementById('tab-slot-next')
+  if (next) {
+    nextEl.hidden = false
+    document.getElementById('next-tab-icon').innerHTML = TYPE_ICON_SVG[next.type || 'bash'] || TYPE_ICON_SVG.bash
+    document.getElementById('next-tab-label').textContent = next.label
+  } else {
+    nextEl.hidden = true
+  }
+
+  // --- Slide animation in the direction of motion ---
+  chip.classList.remove('slide-left', 'slide-right')
+  // Force a reflow so the next class add restarts the animation
   void chip.offsetWidth
-  chip.classList.add('swapping')
-  icon.innerHTML = TYPE_ICON_SVG[type] || TYPE_ICON_SVG.bash
-  label.textContent = tabMeta.label
+  if (direction === 'forward') chip.classList.add('slide-left')
+  else if (direction === 'back') chip.classList.add('slide-right')
+  else chip.classList.add('slide-left')
 }
 
 function setupChatInput() {
