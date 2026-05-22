@@ -1208,12 +1208,16 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 }
 
 .chat-textarea {
+  /* Defensively explicit — older Firefox/WebKit have shipped textareas
+     with a UA-default `box-sizing: content-box` that defeats the
+     universal border-box rule, and a default 2 px margin that pushes
+     the box up. Pinning these ensures the textarea is exactly 38 px
+     tall regardless of UA quirks, so it matches the chip + send button
+     pixel-for-pixel. */
+  box-sizing: border-box;
+  display: block;
+  margin: 0;
   width: 100%;
-  /* Clean integer geometry so the textarea is exactly 38 px tall
-     and its glyph centre lands at y=19 — same as the 38 px send
-     button's centred SVG. 9 (pad) + 1 (border) + 9 (half line-box)
-     = 19. Symmetric on the bottom: total = 9+18+9+2 = 38 px,
-     no subpixel rounding regardless of line-height multiplier. */
   height: 38px;
   min-height: 38px;
   max-height: 120px;
@@ -1223,6 +1227,8 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 13px;
+  /* Integer line-height (not 1.4 × 13 = 18.2) so the line-box height
+     is 18 px exact — 9+1+9+1+18 = 38 with zero subpixel rounding. */
   line-height: 18px;
   border-radius: var(--radius-md);
   resize: none;

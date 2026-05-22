@@ -318,8 +318,19 @@ function setupChatInput() {
   }
 
   function autoResize() {
+    // For empty input, clear the inline height so the CSS rule
+    // (height: 38px) takes over cleanly — guarantees pixel-exact
+    // alignment with the send button on the empty/single-line state.
+    if (!chatInput.value) {
+      chatInput.style.height = ''
+      chatInput.style.overflowY = 'hidden'
+      return
+    }
     chatInput.style.height = 'auto'
-    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
+    // Floor at 38 so even rounding-down scrollHeight values can't
+    // make the textarea shorter than its siblings.
+    const next = Math.max(38, Math.min(chatInput.scrollHeight, 120))
+    chatInput.style.height = next + 'px'
     chatInput.style.overflowY = chatInput.scrollHeight > 120 ? 'auto' : 'hidden'
   }
 
