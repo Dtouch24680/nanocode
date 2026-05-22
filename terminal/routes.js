@@ -248,15 +248,30 @@ export function createTerminalRoutes(store) {
     : 'bash'
   const SSH = IS_WIN ? 'C:\\Windows\\System32\\OpenSSH\\ssh.exe' : 'ssh'
 
-  // Shell-quoted command-line for each tab type. Coding-agent types
-  // launch their binary in the project cwd; when the agent exits the
-  // worker auto-respawns the session as a raw bash so the tab doesn't
-  // get stuck in the "dead" state.
+  // Shell-quoted command-line for each tab type.
+  //
+  // All coding agents launch in their "max permissions / no approvals"
+  // mode — nanocode is intended for single-user-trusted-host workflows
+  // and the per-user uid drop (the worker runs as the invoking user,
+  // never root) is the real authorization boundary, not the agent's
+  // in-process prompt-before-action gate.
+  //
+  // When the agent exits (via /exit, Ctrl+C, etc.) the chained
+  // `exec bash -l` takes over the same PTY so the tab drops into a
+  // raw login shell instead of getting stuck in the dead state the
+  // original nanocode left.
   const TAB_LAUNCHERS = {
     bash: () => 'exec bash -l',
+    // Claude Code: bypass all permission checks.
     claude: () => 'claude --dangerously-skip-permissions; exec bash -l',
-    codex: () => 'codex; exec bash -l',
-    agent: () => 'agent; exec bash -l',
+    // Codex: skip all approvals AND drop the sandbox.
+    codex: () => 'codex --dangerously-bypass-approvals-and-sandbox; exec bash -l',
+    // Cursor Agent: `--force` (alias `--yolo`) runs every command unless
+    // explicitly denied. `--approve-mcps` pre-approves MCP servers.
+    agent: () => 'agent --force --approve-mcps; exec bash -l',
+    // OpenCode has no CLI-level dangerous flag — permissions are
+    // configured in ~/.config/opencode/. We still launch in the
+    // project dir so it picks up any local config.
     opencode: () => 'opencode .; exec bash -l',
   }
   const CODING_AGENT_TYPES = new Set(['claude', 'codex', 'agent', 'opencode'])
