@@ -1,0 +1,22 @@
+# nanocode-update.service — oneshot updater invoked by the timer.
+#
+# Runs /usr/lib/nanocode/nanocode-update.sh which compares the
+# installed version to the latest GitHub release and reinstalls
+# in-place if there's a newer one.
+
+[Unit]
+Description=Nanocode auto-update (checks GitHub releases)
+After=network-online.target
+Wants=network-online.target
+# Don't fight with a manual restart in progress.
+ConditionPathExists=/usr/lib/nanocode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/nanocode/nanocode-update.sh
+# Network/disk-intensive but bounded; cap the runtime so a stuck
+# download can't keep the timer slot busy forever.
+TimeoutStartSec=10min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

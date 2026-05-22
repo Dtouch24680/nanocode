@@ -73,7 +73,19 @@ install -m 0755 "$SRC_DIR/bin/nanocode" "$BIN_DIR/nanocode"
 
 echo "==> Installing systemd unit"
 install -m 0644 "$SRC_DIR/scripts/nanocode.service" "$UNIT_DIR/nanocode.service"
+
+echo "==> Installing auto-update timer"
+install -m 0755 "$SRC_DIR/scripts/nanocode-update.sh" "$PREFIX/nanocode-update.sh"
+install -m 0644 "$SRC_DIR/scripts/nanocode-update.service" "$UNIT_DIR/nanocode-update.service"
+install -m 0644 "$SRC_DIR/scripts/nanocode-update.timer"   "$UNIT_DIR/nanocode-update.timer"
 systemctl daemon-reload
+
+# Enable the daily updater by default. Set NANOCODE_AUTO_UPDATE=0 in the
+# environment to skip enabling — admins can always re-enable later with
+# `sudo systemctl enable --now nanocode-update.timer`.
+if [ "${NANOCODE_AUTO_UPDATE:-1}" != "0" ]; then
+    systemctl enable --now nanocode-update.timer || true
+fi
 
 echo "==> Installing docs"
 install -d -m 0755 "$DOC_DIR"
@@ -84,3 +96,6 @@ echo "    sudo systemctl enable --now nanocode"
 echo
 echo "    Then users can run:  nanocode login"
 echo "    Web access:          http://<host>:2333"
+echo
+echo "    Auto-updates run daily via nanocode-update.timer."
+echo "    Disable with: sudo systemctl disable --now nanocode-update.timer"

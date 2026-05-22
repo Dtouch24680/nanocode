@@ -1,0 +1,20 @@
+# nanocode-update.timer — fire nanocode-update.service once a day.
+#
+# Defaults to 04:00 local time with a 2-hour randomized jitter so
+# many hosts updating from the same release don't stampede GitHub.
+# Persistent=true catches up after the host has been offline.
+#
+# Disable with:  sudo systemctl disable --now nanocode-update.timer
+
+[Unit]
+Description=Daily nanocode auto-update
+Requires=nanocode-update.service
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=2h
+Persistent=true
+Unit=nanocode-update.service
+
+[Install]
+WantedBy=timers.target
