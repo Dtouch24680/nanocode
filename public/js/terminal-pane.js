@@ -9,9 +9,9 @@ const { Terminal } = window
 const { FitAddon } = window.FitAddon
 const { WebLinksAddon } = window.WebLinksAddon
 
-// Light theme tuned for the warm-sand bg + Shore turquoise accents.
-// ANSI palette derived from solarized-light for AA contrast on light bg.
-const THEME = {
+// xterm theme — two palettes, picked by body[data-theme]. Switched
+// dynamically on the 'nanocode:theme' event the theme module dispatches.
+const THEME_LIGHT = {
   background: '#fbf6ec',
   foreground: '#2D2824',
   cursor: '#0C7E94',
@@ -35,6 +35,42 @@ const THEME = {
   brightCyan: '#5DDCE9',
   brightWhite: '#2D2824',
 }
+const THEME_DARK = {
+  background: '#1a1714',
+  foreground: '#ECE6DD',
+  cursor: '#2DBFD3',
+  cursorAccent: '#1a1714',
+  selectionBackground: 'rgba(45, 191, 211, 0.32)',
+  selectionForeground: '#ECE6DD',
+  black: '#1a1714',
+  red: '#e26159',
+  green: '#5fb87a',
+  yellow: '#d3a45a',
+  blue: '#5DDCE9',
+  magenta: '#b870c8',
+  cyan: '#2DBFD3',
+  white: '#B5AEA3',
+  brightBlack: '#847E72',
+  brightRed: '#ff8a82',
+  brightGreen: '#7fd699',
+  brightYellow: '#f0c170',
+  brightBlue: '#98F0F5',
+  brightMagenta: '#d8a0e8',
+  brightCyan: '#98F0F5',
+  brightWhite: '#FFFFFF',
+}
+function currentTheme() {
+  return document.documentElement && document.documentElement.dataset.theme === 'dark' ? THEME_DARK : THEME_LIGHT
+}
+
+// Track all open panes so a theme change can update every xterm instance.
+const PANES = new Set()
+document.addEventListener('nanocode:theme', () => {
+  const theme = currentTheme()
+  for (const pane of PANES) {
+    try { pane.term.options.theme = theme } catch {}
+  }
+})
 
 // Reconnect backoff: 500ms → 1s → 2s → 4s → 8s → 10s cap
 const BACKOFF_BASE = 500
@@ -75,13 +111,14 @@ export class TerminalPane {
     // Create xterm — reduced scrollback saves memory on constrained clients
     const mobile = window.matchMedia('(max-width: 768px)').matches
     this.term = new Terminal({
-      theme: THEME,
+      theme: currentTheme(),
       fontFamily: "'JetBrains Mono', 'SF Mono', ui-monospace, monospace",
       fontSize: mobile ? 13 : 14,
       scrollback: mobile ? 2000 : 4000,
       cursorBlink: true,
       allowProposedApi: true,
     })
+    PANES.add(this)
 
     this.fitAddon = new FitAddon()
     this.term.loadAddon(this.fitAddon)
@@ -425,6 +462,7 @@ export class TerminalPane {
       this._ws.onclose = null
       this._ws.close()
     }
+    PANES.delete(this)
     this.term.dispose()
   }
 }

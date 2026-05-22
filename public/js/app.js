@@ -9,6 +9,7 @@ import {
 } from './terminal-view.js'
 import { showHosts, showProjects, hideLanding } from './landing.js'
 import { slugify, hostSlug, projectSlug, projectPath, navigateTo } from './router.js'
+import { initThemeToggle } from './theme.js'
 
 let workspaceReady = false
 
@@ -77,6 +78,7 @@ async function onProjectSwitch(projectId) {
 // --- Init ---
 
 async function init() {
+  initThemeToggle()
   try { state.projects = await fetchProjects() } catch { state.projects = [] }
   initSidebar(onProjectSwitch)
 

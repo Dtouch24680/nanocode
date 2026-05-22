@@ -106,6 +106,73 @@ a { color: inherit; text-decoration: none; }
   /* Glass */
   --floating-bg: rgba(254, 252, 247, 0.6);
   --floating-blur: 20px;
+
+  /* Backdrop gradient stop colors (light) */
+  --backdrop-warm: oklch(88% 0.04 65 / 0.08);
+  --backdrop-cool: oklch(88% 0.04 200 / 0.06);
+  --backdrop-grid: oklch(80% 0.01 65 / 0.03);
+}
+
+/* ============================================================
+ * Dark mode — token overrides only. Layout + components inherit
+ * via var(--bg), var(--text), etc., so flipping data-theme on
+ * <body> reskins the entire app.
+ *
+ * The palette keeps the warm-neutral hue (hue 80, akari "sand")
+ * but inverts the canvas → deep driftwood. Shore (lagoon)
+ * accents brighten from the mid (#0C7E94) to the lighter
+ * "bright" stop (#2DBFD3) to maintain AA contrast on the dark
+ * background.
+ * ============================================================ */
+[data-theme="dark"] {
+  /* Surfaces — warm-dark, never pure black */
+  --bg: oklch(16% 0.012 80);
+  --bg-secondary: oklch(19% 0.012 80);
+  --bg-tertiary: oklch(23% 0.012 80);
+  --bg-elevated: oklch(21% 0.012 80);
+  --bg-card: oklch(21% 0.012 80);
+  --bg-input: oklch(18% 0.012 80);
+  --bg-hover: rgba(255, 255, 255, 0.05);
+
+  --sidebar-bg: oklch(18% 0.012 80);
+  --sidebar-hover: oklch(22% 0.012 80);
+  --sidebar-active: rgba(45, 191, 211, 0.14);
+
+  /* Text — bleached driftwood */
+  --text: #ECE6DD;
+  --text-secondary: #B5AEA3;
+  --text-tertiary: #847E72;
+  --text-muted: #5D584F;
+
+  /* Borders */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  --border-active: rgba(45, 191, 211, 0.45);
+
+  /* Primary — brighter lagoon for contrast on dark */
+  --primary: #2DBFD3;
+  --primary-hover: #5DDCE9;
+  --primary-light: #5DDCE9;
+  --primary-subtle: rgba(45, 191, 211, 0.10);
+  --primary-glow: rgba(45, 191, 211, 0.30);
+
+  /* Status — brightened slightly for dark contrast */
+  --success: #5fb87a;
+  --success-bg: rgba(95, 184, 122, 0.10);
+  --error: #e26159;
+  --error-bg: rgba(226, 97, 89, 0.10);
+  --warning: #d3a45a;
+  --warning-bg: rgba(211, 164, 90, 0.10);
+  --info: #6aa6dc;
+  --info-bg: rgba(106, 166, 220, 0.10);
+
+  /* Floating glass surfaces */
+  --floating-bg: rgba(30, 28, 24, 0.65);
+
+  /* Backdrop pattern — subtler in dark */
+  --backdrop-warm: oklch(60% 0.06 65 / 0.04);
+  --backdrop-cool: oklch(60% 0.06 200 / 0.03);
+  --backdrop-grid: oklch(40% 0.01 65 / 0.04);
 }
 
 /* -- Body / global ---------------------------------------------- */
@@ -225,6 +292,31 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   background: var(--success-bg);
   border-color: rgba(61, 154, 90, 0.18);
 }
+
+/* Theme toggle — sun/moon icon button in the header. Shows whichever
+   icon represents the *target* theme (i.e., what clicking will switch
+   to), not the current state. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+}
+.theme-toggle:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-hover); }
+.theme-toggle svg { display: block; }
+.theme-icon { display: none; align-items: center; justify-content: center; }
+/* Default (light theme): show the moon icon — clicking switches to dark. */
+.theme-icon-dark { display: inline-flex; }
+/* Dark theme: show the sun icon — clicking switches to light. */
+[data-theme="dark"] .theme-icon-dark { display: none; }
+[data-theme="dark"] .theme-icon-light { display: inline-flex; }
 
 /* -- Layout ----------------------------------------------------- */
 
@@ -1114,7 +1206,12 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   width: 100%;
   min-height: 38px;
   max-height: 120px;
-  padding: 9px 12px;
+  /* Asymmetric padding-y (7 top / 11 bottom) so the first-line baseline
+     of a single-line input aligns with the icon/label baseline in the
+     active-tab chip carousel sitting next to it. Extra space at the
+     bottom is invisible until the user types a second line, where it
+     just reads as comfortable breathing room. */
+  padding: 7px 12px 11px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text);
