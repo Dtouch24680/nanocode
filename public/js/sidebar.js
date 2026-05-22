@@ -233,16 +233,32 @@ function renderBreadcrumb(path) {
   if (!el) return
   el.textContent = ''
 
+  // Two anchors at the start: "/" for absolute root and "Home" for $HOME.
+  // Users can drill into /opt, /srv, /var, etc. by starting at "/" and
+  // clicking through segments.
+  const rootLink = document.createElement('a')
+  rootLink.href = '#'
+  rootLink.textContent = '/'
+  rootLink.title = 'Filesystem root'
+  rootLink.addEventListener('click', (event) => {
+    event.preventDefault()
+    loadFolder('/')
+  })
+  el.appendChild(rootLink)
+
+  el.appendChild(document.createTextNode(' '))
+
   const homeLink = document.createElement('a')
   homeLink.href = '#'
   homeLink.textContent = 'Home'
+  homeLink.title = 'Your home directory'
   homeLink.addEventListener('click', (event) => {
     event.preventDefault()
     loadFolder('')
   })
   el.appendChild(homeLink)
 
-  if (!path) return
+  if (!path || path === '/') return
   const parts = path.replace(/\/$/, '').split('/').filter(Boolean)
   for (let i = 0; i < parts.length; i++) {
     const segPath = '/' + parts.slice(0, i + 1).join('/')
@@ -268,7 +284,9 @@ function renderFolderList(entries, currentPath) {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.textContent = entry.name
-    const nextPath = currentPath ? `${currentPath}/${entry.name}` : entry.name
+    const nextPath = !currentPath ? entry.name
+      : currentPath === '/' ? `/${entry.name}`
+      : `${currentPath}/${entry.name}`
     btn.addEventListener('click', () => loadFolder(nextPath))
     el.appendChild(btn)
   }

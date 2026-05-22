@@ -219,14 +219,17 @@ export function createTerminalRoutes(store) {
     ws.on('error', unsubscribe)
   }
 
-  // Folder browser for the Add-project dialog. Scope is `~`, NOT a project root.
+  // Folder browser for the Add-project dialog.
+  //
+  // Accepts any absolute path the server-side user can read — we
+  // deliberately do NOT sandbox to $HOME because projects often live
+  // under /opt, /srv, /var/www, etc. The filesystem's own permission
+  // checks (readdirSync → EACCES) remain the authorization boundary.
+  // Relative paths or empty path default to $HOME for convenience.
   router.get('/api/fs', (req, res) => {
     const raw = req.query.path
-    const base = raw && String(raw).trim() ? resolve(home, String(raw)) : home
-    const rel = relative(home, base)
-    if (rel.startsWith('..') || isAbsolute(rel)) {
-      return res.status(400).json({ error: 'path must be under home directory' })
-    }
+    const input = raw && String(raw).trim() ? String(raw).trim() : null
+    const base = input ? (isAbsolute(input) ? resolve(input) : resolve(home, input)) : home
 
     try {
       const entries = readdirSync(base, { withFileTypes: true })
@@ -238,6 +241,7 @@ export function createTerminalRoutes(store) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' })
       if (err.code === 'ENOTDIR')
         return res.status(400).json({ error: 'not a directory' })
+      if (err.code === 'EACCES') return res.status(403).json({ error: 'permission denied' })
       res.status(500).json({ error: err.message })
     }
   })
