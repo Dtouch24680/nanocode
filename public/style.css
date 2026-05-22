@@ -11,7 +11,20 @@
 /* -- Reset ------------------------------------------------------ */
 
 *, *::before, *::after { box-sizing: border-box; }
+/* Mobile keyboard handling:
+   1) `interactive-widget=resizes-content` in the viewport meta tag
+      tells Chrome/Edge to shrink the layout viewport when the soft
+      keyboard opens.
+   2) `100dvh` (dynamic viewport height) is the same idea for Safari.
+   3) `--vh` is set by JS from visualViewport.height on browsers where
+      neither (1) nor (2) gives us the post-keyboard height we want.
+   The cascade: var(--vh, 100dvh) overrides the 100% fallback when
+   the JS sets the var or the browser understands `100dvh`. If both
+   fail (very old browser, JS broken), 100% still gives a usable
+   layout. */
 html, body { margin: 0; padding: 0; height: 100%; }
+html, body { height: 100dvh; }
+html, body { height: var(--vh, 100dvh); }
 button { font-family: inherit; }
 input, textarea, select { font-family: inherit; }
 a { color: inherit; text-decoration: none; }

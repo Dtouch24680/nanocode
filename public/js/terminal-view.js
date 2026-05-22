@@ -553,31 +553,64 @@ function setupMobile() {
     })
   }
 
-  if (!isMobile()) return
-
-  const chatInput = document.getElementById('chat-input')
-  const killScroll = () => {
-    window.scrollTo(0, 0)
-    document.documentElement.scrollTop = 0
-    document.body.scrollTop = 0
+  // Keep --vh in sync with the visual viewport (i.e. the visible area
+  // above the soft keyboard). The CSS layer prefers `100dvh` where
+  // supported and `--vh` overrides where set; both paths cooperate.
+  // Runs on desktop too — visualViewport.height tracks the actual
+  // content area whether or not a virtual keyboard is involved, so
+  // there's no need to gate on isMobile() here.
+  const syncViewportHeight = () => {
+    if (!window.visualViewport) return
+    document.documentElement.style.setProperty(
+      '--vh',
+      `${window.visualViewport.height}px`
+    )
   }
-  window.addEventListener('scroll', killScroll)
-  document.addEventListener('scroll', killScroll)
-  if (chatInput) {
-    chatInput.addEventListener('focus', () => {
-      setTimeout(killScroll, 50)
-      setTimeout(killScroll, 150)
-      setTimeout(killScroll, 300)
-    })
-  }
+  syncViewportHeight()
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
-      document.documentElement.style.setProperty(
-        '--vvh',
-        `${window.visualViewport.height}px`
-      )
-      killScroll()
+      syncViewportHeight()
+      // Layout shrunk/grew — xterm needs to recompute cols/rows so the
+      // PTY sees the new geometry. Without this the terminal's
+      // reported size is whatever it was before the keyboard opened.
+      fitTerminals()
     })
-    window.visualViewport.addEventListener('scroll', killScroll)
+  }
+
+  if (!isMobile()) return
+
+  // --- Swipe to switch between terminal tabs ----------------------
+  // Heuristics: single finger, total elapsed < 400 ms, horizontal
+  // delta > 60 px AND > 1.8× the vertical delta. That window is wide
+  // enough that an intentional flick triggers a switch and narrow
+  // enough that long-press + drag (used by mobile browsers for text
+  // selection inside xterm) doesn't accidentally cycle tabs.
+  const SWIPE_MIN_DX = 60
+  const SWIPE_MAX_DT = 400
+  const SWIPE_MAX_DY_RATIO = 0.55 // |dy| / |dx| must be below this
+  const terminalStack = document.getElementById('terminal-stack')
+  if (terminalStack) {
+    let startX = 0, startY = 0, startT = 0, touchCount = 0
+    terminalStack.addEventListener('touchstart', (e) => {
+      touchCount = e.touches.length
+      if (touchCount !== 1) return
+      const t = e.touches[0]
+      startX = t.clientX
+      startY = t.clientY
+      startT = performance.now()
+    }, { passive: true })
+    terminalStack.addEventListener('touchend', (e) => {
+      if (touchCount !== 1) return
+      const t = e.changedTouches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      const dt = performance.now() - startT
+      if (dt > SWIPE_MAX_DT) return
+      if (Math.abs(dx) < SWIPE_MIN_DX) return
+      if (Math.abs(dy) / Math.abs(dx) > SWIPE_MAX_DY_RATIO) return
+      if (!tabManager || tabManager.tabs.length < 2) return
+      // Left swipe (dx<0) advances to next tab; right swipe goes back.
+      tabManager.cycle(dx < 0 ? 1 : -1)
+    }, { passive: true })
   }
 }
