@@ -136,22 +136,45 @@ server.listen(WORKER_SOCK, () => {
 })
 
 let controlConn = null
+let reconnectAttempts = 0
+let reconnectTimer = null
+let initialClaimRequested = false
+
 function connectToRouter() {
+  clearTimeout(reconnectTimer)
   const c = netConnect(ROUTER_SOCK)
   controlConn = c
   const framer = createFramer()
   c.on('error', (err) => {
-    console.error(`[worker ${USERNAME}] router connect error:`, err.message)
-    controlConn = null
+    // Suppress noisy log on routine reconnect attempts.
+    if (reconnectAttempts === 0) {
+      console.error(`[worker ${USERNAME}] router connect error:`, err.message)
+    }
   })
-  c.on('close', () => { controlConn = null })
+  c.on('close', () => {
+    controlConn = null
+    // Auto-reconnect with capped exponential backoff. The worker stays
+    // alive even when the router is down, so PTYs keep running across
+    // `systemctl restart nanocode`.
+    const delay = Math.min(30_000, 500 * 2 ** Math.min(reconnectAttempts, 6))
+    reconnectAttempts++
+    reconnectTimer = setTimeout(connectToRouter, delay)
+  })
   c.on('connect', () => {
+    reconnectAttempts = 0
     c.write(encodeFrame({ type: 'register', uid: UID, username: USERNAME, sock: WORKER_SOCK }))
   })
   c.on('data', (chunk) => {
     framer.feed(chunk, (msg) => {
       if (msg.type === 'register:ok') {
-        c.write(encodeFrame({ type: 'claim:request' }))
+        // Only mint a claim code on the first successful registration —
+        // later reconnects (e.g., after a router restart) should NOT
+        // confuse the user with a fresh code; their existing sessions
+        // are still valid (persisted on the router's disk).
+        if (!initialClaimRequested) {
+          initialClaimRequested = true
+          c.write(encodeFrame({ type: 'claim:request' }))
+        }
       } else if (msg.type === 'register:err') {
         console.error(`[worker ${USERNAME}] router rejected register:`, msg.reason)
       } else if (msg.type === 'claim:code') {

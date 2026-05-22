@@ -32,6 +32,17 @@ RuntimeDirectory=nanocode
 # per-uid subdirs are mode 02750 — only the owner + the nanocode group
 # (the router) can traverse into them.
 RuntimeDirectoryMode=0755
+# Preserve /run/nanocode/ across `systemctl restart` so per-user worker
+# sockets (u<uid>/worker.sock) survive a router restart — the workers
+# stay alive and reattach via auto-reconnect. On full shutdown the
+# directory is cleared as normal.
+RuntimeDirectoryPreserve=restart
+
+# /var/lib/nanocode/ holds persisted session tokens (3-day rolling TTL)
+# so users stay logged in across router restarts. Mode 0700 keeps the
+# file inaccessible to anyone but the router itself.
+StateDirectory=nanocode
+StateDirectoryMode=0700
 
 ExecStart=/usr/bin/node /usr/lib/nanocode/server/index.js
 Environment=NANOCODE_SYSTEM=1

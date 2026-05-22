@@ -39,12 +39,20 @@ export function startRouterMode({
   host = '0.0.0.0',
   port = 2333,
   sessionTtlMs,
-  idleEvictMs,
+  idleEvictMs = 7 * 24 * 60 * 60 * 1000, // workers idle-evict at 7d; sessions are 3d
   controlSockPath = '/run/nanocode/router.sock',
+  // Default persistence path used by the systemd unit (StateDirectory=nanocode).
+  // Set to null to disable persistence (tests + single-user mode).
+  sessionStatePath = process.env.NANOCODE_STATE_DIR
+    ? `${process.env.NANOCODE_STATE_DIR}/sessions.json`
+    : '/var/lib/nanocode/sessions.json',
   testMode = process.env.NANOCODE_TEST_MODE === '1',
   testIdleEvictMs = Number(process.env.NANOCODE_TEST_IDLE_EVICT_MS) || undefined,
 } = {}) {
-  const sessions = new SessionStore({ ttlMs: sessionTtlMs })
+  const sessions = new SessionStore({
+    ttlMs: sessionTtlMs,
+    path: testMode ? null : sessionStatePath,
+  })
   const claims = new ClaimStore()
   const registry = new WorkerRegistry({ idleEvictMs: testIdleEvictMs || idleEvictMs })
 
