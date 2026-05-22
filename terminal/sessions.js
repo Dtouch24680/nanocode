@@ -1,17 +1,56 @@
 /** Persistent PTY sessions with scrollback. Sessions survive client disconnect. */
 
 import pty from 'node-pty'
-import { existsSync } from 'node:fs'
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  mkdirSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
+import { dirname } from 'node:path'
 
 const OUTPUT_FLUSH_MS = 12
 const SCROLLBACK_SIZE = 100 * 1024 // 100KB
+const SCROLLBACK_FLUSH_MS = 5000
 
-/** Circular buffer for raw terminal output; replay on reconnect */
+/**
+ * Circular buffer for raw terminal output; replay on reconnect.
+ * Optionally persisted to disk so the visual state survives a worker
+ * restart (e.g., after a host reboot). The PTY itself is gone, but
+ * scrollback replay shows the last view the user had — including any
+ * full-screen TUIs like Claude Code, which redraw correctly when their
+ * alt-screen ANSI sequences are replayed.
+ */
 class ScrollbackBuffer {
-  constructor(maxSize = SCROLLBACK_SIZE) {
+  constructor({ maxSize = SCROLLBACK_SIZE, path = null } = {}) {
     this._maxSize = maxSize
+    this._path = path
     this._data = ''
+    this._dirty = false
+    this._flushTimer = null
+    if (path && existsSync(path)) {
+      try {
+        this._data = readFileSync(path, 'utf-8')
+        if (this._data.length > this._maxSize) {
+          this._data = this._data.slice(-this._maxSize)
+        }
+      } catch { /* corrupt → start empty */ }
+      if (this._data.length > 0) {
+        // The prior process may have left us in alt-screen mode (e.g.,
+        // Claude Code's TUI). Append a sequence that exits alt-screen
+        // and resets attributes, plus a human-readable marker. xterm.js
+        // will replay this and end up back on the normal screen before
+        // the fresh PTY's first byte arrives.
+        this._data +=
+          '\x1b[?1049l\x1b[m\r\n\r\n' +
+          '\x1b[90m── worker restarted — previous output above is from before ──\x1b[m\r\n\r\n'
+        if (this._data.length > this._maxSize) {
+          this._data = this._data.slice(-this._maxSize)
+        }
+      }
+    }
   }
 
   append(data) {
@@ -19,33 +58,60 @@ class ScrollbackBuffer {
     if (this._data.length > this._maxSize) {
       this._data = this._data.slice(-this._maxSize)
     }
+    if (this._path) {
+      this._dirty = true
+      if (!this._flushTimer) {
+        this._flushTimer = setTimeout(() => this.flush(), SCROLLBACK_FLUSH_MS)
+      }
+    }
   }
 
   getContents() {
     return this._data
   }
 
+  flush() {
+    if (this._flushTimer) {
+      clearTimeout(this._flushTimer)
+      this._flushTimer = null
+    }
+    if (!this._path || !this._dirty) return
+    try {
+      const dir = dirname(this._path)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const tmp = this._path + '.tmp'
+      writeFileSync(tmp, this._data, { mode: 0o600 })
+      renameSync(tmp, this._path)
+      this._dirty = false
+    } catch { /* best-effort */ }
+  }
+
   clear() {
     this._data = ''
+    if (this._path && this._dirty) {
+      this._dirty = false
+    }
+    this.flush()
   }
 }
 
 /** Single persistent session: one PTY + scrollback + set of attached clients */
 class Session {
   /**
-   * @param {string} _key — session key (projectId:sessionType)
+   * @param {string} _key
    * @param {string} command
    * @param {string[]} args
    * @param {number} cols
    * @param {number} rows
    * @param {string} cwd
+   * @param {string} [scrollbackPath] — if provided, scrollback persists here
    */
-  constructor(_key, command, args, cols, rows, cwd) {
+  constructor(_key, command, args, cols, rows, cwd, scrollbackPath) {
     this._key = _key
     this._command = command
     this._args = args
     this._cwd = cwd
-    this._scrollback = new ScrollbackBuffer()
+    this._scrollback = new ScrollbackBuffer({ path: scrollbackPath })
     /** @type {Set<import('ws').WebSocket>} */
     this._clients = new Set()
     this._exited = false
@@ -197,6 +263,7 @@ class Session {
 
   destroy() {
     if (this._flushTimer) clearTimeout(this._flushTimer)
+    this._scrollback.flush()
     if (this._proc) {
       try {
         this._proc.kill()
@@ -220,10 +287,10 @@ const sessions = new Map()
  * @param {string} cwd
  * @returns {Session}
  */
-export function getOrCreate(sessionKey, command, args, cols, rows, cwd) {
+export function getOrCreate(sessionKey, command, args, cols, rows, cwd, scrollbackPath) {
   let session = sessions.get(sessionKey)
   if (!session) {
-    session = new Session(sessionKey, command, args, cols, rows, cwd)
+    session = new Session(sessionKey, command, args, cols, rows, cwd, scrollbackPath)
     sessions.set(sessionKey, session)
   }
   return session

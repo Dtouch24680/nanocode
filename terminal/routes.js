@@ -302,13 +302,24 @@ export function createTerminalRoutes(store) {
         cwd = project.cwd
       }
 
+      // Persist scrollback per tab so a host reboot leaves the visual
+      // state intact — when a new client attaches, the prior buffer
+      // (including any TUI's alt-screen output) replays into xterm.js
+      // and the user sees what was on screen before the reboot.
+      const scrollbackDir = process.env.NANOCODE_SCROLLBACK_DIR
+        || (process.env.HOME ? `${process.env.HOME}/.nanocode/scrollback` : null)
+      const scrollbackPath = scrollbackDir
+        ? `${scrollbackDir}/${projectId}__${tabId}.bin`
+        : undefined
+
       const session = sessions.getOrCreate(
         sessionKey,
         command,
         args,
         Math.max(1, cols || 80),
         Math.max(1, rows || 24),
-        cwd
+        cwd,
+        scrollbackPath
       )
       session.attach(ws, Math.max(1, cols || 80), Math.max(1, rows || 24))
     }
