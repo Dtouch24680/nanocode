@@ -56,7 +56,10 @@ ProtectClock=yes
 ProtectHostname=yes
 ProtectProc=invisible
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
+# MemoryDenyWriteExecute=yes blocks V8's JIT mappings on Node <20 (causes
+# "Fatal javascript OOM" at boot). Re-enable when the deployed node is
+# 20.6+ AND uses PKEY-aware JIT.
+# MemoryDenyWriteExecute=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=yes
