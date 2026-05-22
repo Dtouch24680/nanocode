@@ -1657,6 +1657,14 @@ body.workspace-active .landing-overlay { display: none; }
 
   body.mobile-pane-right .chat-input-bar { display: none; }
 
+  /* On phones the 340 px carousel chip beside the textarea leaves no
+     room for actual typing. The terminal tab strip above the terminal
+     pane already shows which tab is active, so we drop the redundant
+     in-composer chip and reclaim the whole row width for the input. */
+  .active-tab-chip { display: none; }
+
+  .chat-input-bar { padding: var(--s-1) var(--s-2) var(--s-2); }
+
   .sidebar {
     position: fixed;
     top: 48px;
