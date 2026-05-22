@@ -1209,6 +1209,12 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 
 .chat-textarea {
   width: 100%;
+  /* Clean integer geometry so the textarea is exactly 38 px tall
+     and its glyph centre lands at y=19 — same as the 38 px send
+     button's centred SVG. 9 (pad) + 1 (border) + 9 (half line-box)
+     = 19. Symmetric on the bottom: total = 9+18+9+2 = 38 px,
+     no subpixel rounding regardless of line-height multiplier. */
+  height: 38px;
   min-height: 38px;
   max-height: 120px;
   padding: 9px 12px;
@@ -1217,7 +1223,7 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 18px;
   border-radius: var(--radius-md);
   resize: none;
   outline: none;
