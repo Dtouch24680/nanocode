@@ -219,6 +219,19 @@ export function startRouterMode({
   }
 }
 
+// Match the server-side session TTL (3 days). Without Max-Age the
+// cookie is "session-scoped" — browsers (especially mobile ones)
+// discard it on app close or under memory pressure. That makes the
+// login feel transient even though the server-side session is still
+// valid. With Max-Age the cookie persists across browser restarts
+// until the server-side session also expires, and the rolling
+// `touch` keeps extending both in lockstep on every request.
+//
+// Note: not adding `Secure` because nanocode is reached over plain
+// HTTP by default (port 2333). If you front it with TLS, append
+// `Secure` here so the cookie is never sent in clear.
+const COOKIE_MAX_AGE_S = 3 * 24 * 60 * 60
+
 function cookieValue(sid) {
-  return `${COOKIE_NAME}=${sid}; Path=/; HttpOnly; SameSite=Strict`
+  return `${COOKIE_NAME}=${sid}; Path=/; Max-Age=${COOKIE_MAX_AGE_S}; HttpOnly; SameSite=Strict`
 }
