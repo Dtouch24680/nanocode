@@ -153,6 +153,9 @@ export function startRouterMode({
 
   // All remaining traffic proxies to the user's worker.
   app.use((req, res) => {
+    // Treat every proxied request as activity for the worker idle reaper,
+    // so an in-use worker doesn't get evicted on a fixed wall-clock timer.
+    registry.touch(req.user.uid)
     proxyHttp(req, res, req.user.workerSock, req.user)
   })
 
@@ -165,6 +168,7 @@ export function startRouterMode({
       socket.destroy()
       return
     }
+    registry.touch(user.uid)
     proxyWsUpgrade({ req, socket, head, workerSock: user.workerSock, user })
   })
 
