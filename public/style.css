@@ -1078,7 +1078,6 @@ body.workspace-active .back-to-menu { display: inline-flex; }
    instead of getting hard-clipped. */
 .active-tab-chip {
   position: relative;
-  align-self: flex-end;
   height: 38px;
   width: 340px;
   flex-shrink: 0;
@@ -1194,7 +1193,13 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 .input-row {
   display: flex;
   gap: var(--s-2);
-  align-items: flex-end;
+  /* `align-items: flex-end` previously bottom-aligned the boxes but
+     the textarea's first-line text rendered ~3px below the chip's
+     centered icon/label — visual baselines misaligned. Switching to
+     `center` aligns the box-centers; since both the chip and the
+     single-line textarea are 38px tall and both center their content,
+     their visual centers (and thus baselines) line up. */
+  align-items: center;
 }
 
 .input-wrap {
@@ -1206,12 +1211,7 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   width: 100%;
   min-height: 38px;
   max-height: 120px;
-  /* Asymmetric padding-y (7 top / 11 bottom) so the first-line baseline
-     of a single-line input aligns with the icon/label baseline in the
-     active-tab chip carousel sitting next to it. Extra space at the
-     bottom is invisible until the user types a second line, where it
-     just reads as comfortable breathing room. */
-  padding: 7px 12px 11px;
+  padding: 9px 12px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text);
