@@ -83,4 +83,4 @@ echo "==> Done. Enable + start with:"
 echo "    sudo systemctl enable --now nanocode"
 echo
 echo "    Then users can run:  nanocode login"
-echo "    Web access:          http://<host>:3000"
+echo "    Web access:          http://<host>:2333"

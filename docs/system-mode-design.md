@@ -44,7 +44,7 @@ under the same branch.
 
 | Attacker | Power | Defense |
 |---|---|---|
-| Unauthenticated network peer | Reach `:3000` on the LAN/tailnet | Router demands `nano_sid` cookie; missing/invalid → 401/redirect. No content endpoints respond without auth. |
+| Unauthenticated network peer | Reach `:2333` on the LAN/tailnet | Router demands `nano_sid` cookie; missing/invalid → 401/redirect. No content endpoints respond without auth. |
 | Authenticated user A | A valid session for uid=alice | Router resolves the session to alice's worker only. Workers serve only their owner's data. Tab broadcasts scoped to {uid, projectId}. |
 | RCE in the Node router | Arbitrary code as the `nanocode` service account | Router has no setuid, no `cap_dac_override`, cannot read `/home/*` (ProtectHome=yes), cannot exec arbitrary binaries (ProtectSystem=strict). Worker sockets are 0600 owned by the user, so the router can talk to them only because users explicitly registered. Attacker can ride existing alice/bob sessions to read their files (same scope as a webshell on those accounts) but cannot pivot to other users, become root, or persist. |
 | RCE in the setuid C helper | The helper has uid=0 momentarily | The helper is ~150 LOC, no parsing, no I/O — just `getuid → initgroups → setgid → setuid → cap drop → execve`. Audit-by-eye. Caller's real uid is the only target; attacker cannot setuid to anyone else by tampering with arguments. |
@@ -83,7 +83,7 @@ files at all — the kernel says no before our code does.
                 │  Worker registry  {uid → {sock, lastSeen, claimCode}}   │
                 │  Proxies every HTTP/WS request to the user's worker     │
                 │  Hardened systemd unit (ProtectHome, NoNewPrivileges…)  │
-                │  Bind: 0.0.0.0:3000 (plain HTTP, trusted network)       │
+                │  Bind: 0.0.0.0:2333 (plain HTTP, trusted network)       │
                 └──────────┬──────────────────────────┬────────────────────┘
                            │ /run/nanocode/             │
                            │   router.sock              │
@@ -118,7 +118,7 @@ files at all — the kernel says no before our code does.
 ## 5. Auth flow
 
 ```
-1. alice → http://host:3000/
+1. alice → http://host:2333/
    - No cookie → router renders /login
    - /login page: "SSH to <host> and run: nanocode login"
 
@@ -260,7 +260,7 @@ RuntimeDirectoryMode=0750
 ExecStart=/usr/bin/node /usr/lib/nanocode/router.js
 Environment=NANOCODE_SYSTEM=1
 Environment=HOST=0.0.0.0
-Environment=PORT=3000
+Environment=PORT=2333
 Restart=on-failure
 RestartSec=2s
 

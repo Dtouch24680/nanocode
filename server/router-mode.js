@@ -37,7 +37,7 @@ const COOKIE_NAME = 'nano_sid'
 
 export function startRouterMode({
   host = '0.0.0.0',
-  port = 3000,
+  port = 2333,
   sessionTtlMs,
   idleEvictMs,
   controlSockPath = '/run/nanocode/router.sock',

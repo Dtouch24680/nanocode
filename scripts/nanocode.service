@@ -36,7 +36,7 @@ RuntimeDirectoryMode=0755
 ExecStart=/usr/bin/node /usr/lib/nanocode/server/index.js
 Environment=NANOCODE_SYSTEM=1
 Environment=HOST=0.0.0.0
-Environment=PORT=3000
+Environment=PORT=2333
 WorkingDirectory=/usr/lib/nanocode
 
 Restart=on-failure

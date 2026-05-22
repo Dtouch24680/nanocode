@@ -23,18 +23,18 @@ describe('system-mode hardening', () => {
     try {
       // The router exposes a test-mode introspection endpoint that
       // reports its own readable directories.
-      const r = execSync('curl -s http://127.0.0.1:3000/__test__/can-read?path=/etc/shadow').toString()
+      const r = execSync('curl -s http://127.0.0.1:2333/__test__/can-read?path=/etc/shadow').toString()
       assert.match(r, /denied|EACCES|cannot/i)
     } catch (err) {
       // Network errors mean the router isn't up; treat as skip
-      t.skip('router not reachable at :3000 — bring up the hardened unit first')
+      t.skip('router not reachable at :2333 — bring up the hardened unit first')
     }
   })
 
   it('router cannot read /home/<any>/*', (t) => {
     if (!HARDENED) return t.skip('set NANOCODE_E2E_HARDENED=1 to run')
     try {
-      const r = execSync('curl -s http://127.0.0.1:3000/__test__/can-read?path=/home').toString()
+      const r = execSync('curl -s http://127.0.0.1:2333/__test__/can-read?path=/home').toString()
       // ProtectHome=yes makes /home appear empty or denied
       assert.ok(/denied|EACCES|empty/i.test(r), `unexpected: ${r}`)
     } catch (err) {
