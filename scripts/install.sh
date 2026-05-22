@@ -27,7 +27,10 @@ if [ -z "$NODE_BIN" ]; then
     exit 1
 fi
 
-echo "==> Creating nanocode user + group"
+echo "==> Creating nanocode service user + group"
+# The nanocode service account exists so the router runs unprivileged.
+# It is NOT a login group — users do NOT need to be members. The setuid
+# helper takes care of the per-user runtime directory permissions.
 if ! getent group nanocode >/dev/null; then
     groupadd --system nanocode
 fi
@@ -35,13 +38,6 @@ if ! getent passwd nanocode >/dev/null; then
     useradd --system --gid nanocode --no-create-home \
             --home-dir /nonexistent --shell /usr/sbin/nologin nanocode
 fi
-
-echo "==> Adding interactive users (uid >= 1000) to the nanocode group"
-while IFS=: read -r name _ uid _; do
-    if [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ]; then
-        gpasswd -a "$name" nanocode >/dev/null || true
-    fi
-done < /etc/passwd
 
 echo "==> Installing application to $PREFIX"
 install -d -m 0755 "$PREFIX"
@@ -66,7 +62,10 @@ make -C "$SRC_DIR/helper" clean
 make -C "$SRC_DIR/helper" \
     NANOCODE_NODE="$NODE_BIN" \
     NANOCODE_WORKER="$PREFIX/worker/index.js"
-install -m 4750 -o root -g nanocode \
+# 4755 = setuid root, world-executable. Any user can run it; it only
+# ever setuid()s to its caller's own UID, so escalation is impossible
+# by design (see helper/nanocode-spawn.c audit comments).
+install -m 4755 -o root -g root \
     "$SRC_DIR/helper/nanocode-spawn" "$PREFIX/nanocode-spawn"
 
 echo "==> Installing CLI"

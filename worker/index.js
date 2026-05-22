@@ -125,9 +125,13 @@ const sockDir = path.dirname(WORKER_SOCK)
 if (!existsSync(sockDir)) mkdirSync(sockDir, { recursive: true, mode: 0o700 })
 
 server.listen(WORKER_SOCK, () => {
-  try { chmodSync(WORKER_SOCK, 0o600) } catch {}
+  // The setuid helper created the parent dir with the SGID bit so the
+  // socket inherits group `nanocode`. We chmod 0660 (user+group rw) so
+  // the router (running as `nanocode`) can connect. Other users have
+  // no traverse access to the parent dir (mode 02750), so they can't
+  // reach this socket regardless of its own mode.
+  try { chmodSync(WORKER_SOCK, 0o660) } catch {}
   console.log(`[worker ${USERNAME}/${UID}] listening on ${WORKER_SOCK}`)
-  // Optional: register with router and request a claim code
   if (ROUTER_SOCK) connectToRouter()
 })
 

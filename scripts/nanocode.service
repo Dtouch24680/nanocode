@@ -4,13 +4,18 @@
 # (via the setuid helper) and are NOT children of this unit.
 #
 # Pre-install requirements (handled by scripts/install.sh):
-#   - group `nanocode` exists
+#   - group `nanocode` exists (service account only — NOT a login group;
+#     users do NOT need to be members)
 #   - user `nanocode` exists, GID=nanocode, /usr/sbin/nologin
 #   - /usr/lib/nanocode/ contains server/, worker/, public/, vendor/,
-#     and nanocode-spawn (mode 4750 root:nanocode)
+#     and nanocode-spawn (mode 4755 root:root)
 #   - /usr/local/bin/nanocode is the CLI (mode 0755, NOT setuid)
-#   - all interactive users (uid >= 1000) are members of the nanocode
-#     group (so they can write to /run/nanocode/)
+#
+# Per-user runtime directories (/run/nanocode/u<uid>/) are created by
+# the setuid helper at first `nanocode login` invocation. They are
+# user-owned with group=nanocode + SGID, so worker sockets inside
+# inherit the nanocode group automatically — the router can connect
+# without any user needing to be a member of the nanocode group.
 
 [Unit]
 Description=Nanocode multi-user dispatcher
@@ -22,7 +27,11 @@ Type=simple
 User=nanocode
 Group=nanocode
 RuntimeDirectory=nanocode
-RuntimeDirectoryMode=0775
+# 0755 lets any user traverse into /run/nanocode/ to reach their own
+# /run/nanocode/u<uid>/ subdir (created by the setuid helper). The
+# per-uid subdirs are mode 02750 — only the owner + the nanocode group
+# (the router) can traverse into them.
+RuntimeDirectoryMode=0755
 
 ExecStart=/usr/bin/node /usr/lib/nanocode/server/index.js
 Environment=NANOCODE_SYSTEM=1

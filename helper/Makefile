@@ -10,11 +10,15 @@ LDFLAGS ?= -Wl,-z,now -Wl,-z,relro
 NANOCODE_NODE ?= /usr/bin/node
 NANOCODE_WORKER ?= /usr/lib/nanocode/worker/index.js
 NANOCODE_MIN_UID ?= 1000
+NANOCODE_RUNTIME_DIR ?= /run/nanocode
+NANOCODE_SERVICE_GROUP ?= nanocode
 
 CPPFLAGS = \
 	-DNANOCODE_NODE='"$(NANOCODE_NODE)"' \
 	-DNANOCODE_WORKER='"$(NANOCODE_WORKER)"' \
-	-DNANOCODE_MIN_UID=$(NANOCODE_MIN_UID)
+	-DNANOCODE_MIN_UID=$(NANOCODE_MIN_UID) \
+	-DNANOCODE_RUNTIME_DIR='"$(NANOCODE_RUNTIME_DIR)"' \
+	-DNANOCODE_SERVICE_GROUP='"$(NANOCODE_SERVICE_GROUP)"'
 
 PREFIX ?= /usr/lib/nanocode
 
@@ -25,8 +29,8 @@ nanocode-spawn: nanocode-spawn.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ $<
 
 install: nanocode-spawn
-	install -d -m 0750 -o root -g nanocode $(DESTDIR)$(PREFIX)
-	install -m 4750 -o root -g nanocode nanocode-spawn $(DESTDIR)$(PREFIX)/nanocode-spawn
+	install -d -m 0755 -o root -g root $(DESTDIR)$(PREFIX)
+	install -m 4755 -o root -g root nanocode-spawn $(DESTDIR)$(PREFIX)/nanocode-spawn
 
 clean:
 	rm -f nanocode-spawn

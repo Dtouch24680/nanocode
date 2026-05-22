@@ -33,7 +33,11 @@ EOF
 
 user_name="$(id -un)"
 user_uid="$(id -u)"
-worker_sock="$RUNTIME_DIR/u-$user_name.sock"
+# The setuid helper creates /run/nanocode/u<uid>/ (mode 02750) for us.
+# The worker drops its socket inside; the SGID bit makes it group=nanocode
+# so the router can connect.
+user_dir="$RUNTIME_DIR/u$user_uid"
+worker_sock="$user_dir/worker.sock"
 router_sock="$RUNTIME_DIR/router.sock"
 claim_path="$HOME/.nanocode/run/last-claim"
 
