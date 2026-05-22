@@ -432,6 +432,27 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   border-color: var(--border);
   box-shadow: 0 1px 2px rgba(45, 40, 32, 0.04);
 }
+.tab-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.tab-chip.active .tab-chip-icon,
+.tab-chip-claude .tab-chip-icon,
+.tab-chip-codex .tab-chip-icon,
+.tab-chip-agent .tab-chip-icon,
+.tab-chip-opencode .tab-chip-icon { color: var(--shore-iconic); }
+
+/* Type-specific accents on active chip */
+.tab-chip-claude.active   { box-shadow: inset 0 0 0 1px rgba(13, 161, 184, 0.30), 0 1px 2px rgba(45, 40, 32, 0.04); }
+.tab-chip-codex.active    { box-shadow: inset 0 0 0 1px rgba(74, 136, 196, 0.30), 0 1px 2px rgba(45, 40, 32, 0.04); }
+.tab-chip-agent.active    { box-shadow: inset 0 0 0 1px rgba(184, 138, 58, 0.30), 0 1px 2px rgba(45, 40, 32, 0.04); }
+.tab-chip-opencode.active { box-shadow: inset 0 0 0 1px rgba(154, 78, 176, 0.30), 0 1px 2px rgba(45, 40, 32, 0.04); }
+
 .tab-chip-label { line-height: 1; cursor: text; }
 .tab-chip-input {
   border: none;
@@ -956,6 +977,98 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   flex-shrink: 0;
 }
 .touch-btn:active { background: var(--primary-subtle); }
+
+/* Active-tab chip: shows which tab the composer is sending to.
+   The .swapping class is added on every active-tab change to replay
+   the slide-in animation (the chip "appears" from the right by a few
+   pixels with a brief fade). */
+.active-tab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  height: 38px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+  align-self: flex-end;
+  flex-shrink: 0;
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+}
+.active-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--shore-mid);
+  flex-shrink: 0;
+}
+.active-tab-label { line-height: 1; }
+.active-tab-chip[hidden] { display: none; }
+
+/* Type-specific accent rings */
+.active-tab-chip-bash    { border-color: rgba(45, 40, 32, 0.16); }
+.active-tab-chip-claude  { border-color: rgba(13, 161, 184, 0.40); background: rgba(13, 161, 184, 0.06); }
+.active-tab-chip-codex   { border-color: rgba(74, 136, 196, 0.40); background: rgba(74, 136, 196, 0.06); }
+.active-tab-chip-agent   { border-color: rgba(184, 138, 58, 0.40); background: rgba(184, 138, 58, 0.06); }
+.active-tab-chip-opencode { border-color: rgba(154, 78, 176, 0.40); background: rgba(154, 78, 176, 0.06); }
+.active-tab-chip-claude  .active-tab-icon { color: #13A1B8; }
+.active-tab-chip-codex   .active-tab-icon { color: #4a88c4; }
+.active-tab-chip-agent   .active-tab-icon { color: #b88a3a; }
+.active-tab-chip-opencode .active-tab-icon { color: #9a4eb0; }
+
+@keyframes active-tab-swap {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.active-tab-chip.swapping {
+  animation: active-tab-swap 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* New-tab popup menu (clicking the + button) */
+.tab-new-menu {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 40px rgba(45, 40, 32, 0.12);
+  padding: 4px;
+  min-width: 200px;
+  z-index: 100;
+}
+.tab-new-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.tab-new-menu-item:hover { background: var(--bg-hover); }
+.tab-new-menu-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.tab-new-menu-label { flex: 1; }
+.tab-new-menu-hint {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
 
 .input-row {
   display: flex;

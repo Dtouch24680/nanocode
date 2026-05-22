@@ -6,7 +6,7 @@
  */
 
 import { initSplitPane } from './terminal-pane.js'
-import { TabManager } from './tab-manager.js'
+import { TabManager, TYPE_ICON_SVG } from './tab-manager.js'
 import { createExplorer } from './explorer.js'
 
 const mobileQuery = window.matchMedia('(max-width: 768px)')
@@ -92,12 +92,42 @@ function setupTabs(projectId) {
     stripEl,
     stackEl,
     projectId,
-    onActiveChange: (pane) => {
+    onActiveChange: (pane, tabMeta) => {
       activePane = pane
+      updateActiveTabChip(tabMeta)
     },
     onStatusChange: setStatus,
   })
   tabManager.restore()
+}
+
+const TAB_LABEL_OVERRIDE = {
+  bash: 'terminal',
+  claude: 'claude',
+  codex: 'codex',
+  agent: 'cursor',
+  opencode: 'opencode',
+}
+
+function updateActiveTabChip(tabMeta) {
+  const chip = document.getElementById('active-tab-chip')
+  const icon = document.getElementById('active-tab-icon')
+  const label = document.getElementById('active-tab-label')
+  if (!chip || !icon || !label) return
+  if (!tabMeta) {
+    chip.hidden = true
+    return
+  }
+  chip.hidden = false
+  const type = tabMeta.type || 'bash'
+  // Re-add the class for the type-specific accent + (re)play the swap animation
+  chip.className = 'active-tab-chip active-tab-chip-' + type
+  chip.classList.remove('swapping')
+  // Force reflow so the next add restarts the animation
+  void chip.offsetWidth
+  chip.classList.add('swapping')
+  icon.innerHTML = TYPE_ICON_SVG[type] || TYPE_ICON_SVG.bash
+  label.textContent = tabMeta.label
 }
 
 function setupChatInput() {

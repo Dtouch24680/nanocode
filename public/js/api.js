@@ -39,10 +39,13 @@ export function fetchTabs(projectId) {
   return request(`/projects/${projectId}/tabs`)
 }
 
-export function createTab(projectId, label) {
+export function createTab(projectId, opts = {}) {
+  const body = {}
+  if (opts.label) body.label = opts.label
+  if (opts.type) body.type = opts.type
   return request(`/projects/${projectId}/tabs`, {
     method: 'POST',
-    body: JSON.stringify(label ? { label } : {}),
+    body: JSON.stringify(body),
   })
 }
 

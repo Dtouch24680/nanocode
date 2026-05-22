@@ -83,9 +83,9 @@ export class TabManager {
 
   // --- Public mutations ---
 
-  async newTab() {
+  async newTab(type = 'bash') {
     try {
-      const tab = await createTab(this.projectId)
+      const tab = await createTab(this.projectId, { type })
       this._pendingActiveId = tab.id
       // The WS broadcast that follows will add the tab + setActive.
       return tab.id
@@ -116,7 +116,7 @@ export class TabManager {
     }
     this._renderStrip()
     const active = this._getActive()
-    this.onActiveChange(active?.pane || null)
+    this.onActiveChange(active?.pane || null, active ? { id: active.id, label: active.label, type: active.type } : null)
     if (active) {
       this.onStatusChange(!!active.pane._ws && active.pane._ws.readyState === WebSocket.OPEN)
       requestAnimationFrame(() => { try { active.pane.fitAddon.fit() } catch {} })
@@ -221,9 +221,10 @@ export class TabManager {
     for (const t of serverTabs) {
       const local = this.tabs.find((x) => x.id === t.id)
       if (!local) {
-        this._addTab(t.id, t.label)
-      } else if (local.label !== t.label) {
-        local.label = t.label
+        this._addTab(t.id, t.label, t.type || 'bash')
+      } else {
+        if (local.label !== t.label) local.label = t.label
+        if (t.type && local.type !== t.type) local.type = t.type
       }
     }
 
@@ -274,7 +275,7 @@ export class TabManager {
 
   // --- Internals ---
 
-  _addTab(id, label) {
+  _addTab(id, label, type = 'bash') {
     const paneEl = document.createElement('div')
     paneEl.className = 'pane-terminal'
     paneEl.dataset.tabId = id
@@ -288,7 +289,7 @@ export class TabManager {
       },
     })
 
-    this.tabs.push({ id, label, pane, paneEl })
+    this.tabs.push({ id, label, type, pane, paneEl })
   }
 
   _getActive() {
@@ -339,9 +340,15 @@ export class TabManager {
     for (const tab of this.tabs) {
       const btn = document.createElement('button')
       btn.type = 'button'
-      btn.className = 'tab-chip' + (tab.id === this.activeId ? ' active' : '')
+      btn.className = 'tab-chip tab-chip-' + (tab.type || 'bash') +
+        (tab.id === this.activeId ? ' active' : '')
       btn.dataset.tabId = tab.id
       btn.title = 'Double-click to rename'
+
+      const icon = document.createElement('span')
+      icon.className = 'tab-chip-icon'
+      icon.innerHTML = TYPE_ICON_SVG[tab.type || 'bash'] || TYPE_ICON_SVG.bash
+      btn.appendChild(icon)
 
       const label = document.createElement('span')
       label.className = 'tab-chip-label'
@@ -366,8 +373,73 @@ export class TabManager {
     addBtn.type = 'button'
     addBtn.className = 'tab-chip-add'
     addBtn.textContent = '+'
-    addBtn.title = 'New tab (Ctrl+T)'
-    addBtn.addEventListener('click', () => this.newTab())
+    addBtn.title = 'New tab — click for menu, Ctrl+T for bash'
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this._showNewTabMenu(addBtn)
+    })
     this.stripEl.appendChild(addBtn)
   }
+
+  _showNewTabMenu(anchor) {
+    // Dismiss any open menu
+    this._closeNewTabMenu()
+    const menu = document.createElement('div')
+    menu.className = 'tab-new-menu'
+    for (const opt of NEW_TAB_OPTIONS) {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.className = 'tab-new-menu-item'
+      item.innerHTML =
+        `<span class="tab-new-menu-icon">${TYPE_ICON_SVG[opt.type] || ''}</span>` +
+        `<span class="tab-new-menu-label">${opt.label}</span>` +
+        (opt.hint ? `<span class="tab-new-menu-hint">${opt.hint}</span>` : '')
+      item.addEventListener('click', () => {
+        this._closeNewTabMenu()
+        this.newTab(opt.type)
+      })
+      menu.appendChild(item)
+    }
+    document.body.appendChild(menu)
+    const rect = anchor.getBoundingClientRect()
+    menu.style.position = 'fixed'
+    menu.style.top = (rect.bottom + 6) + 'px'
+    menu.style.left = rect.left + 'px'
+    this._menuEl = menu
+    // Click-outside closes
+    setTimeout(() => {
+      const close = (e) => {
+        if (!menu.contains(e.target)) {
+          this._closeNewTabMenu()
+          document.removeEventListener('click', close, true)
+        }
+      }
+      document.addEventListener('click', close, true)
+    }, 0)
+  }
+
+  _closeNewTabMenu() {
+    if (this._menuEl) {
+      this._menuEl.remove()
+      this._menuEl = null
+    }
+  }
 }
+
+const NEW_TAB_OPTIONS = [
+  { type: 'bash', label: 'Terminal', hint: 'bash' },
+  { type: 'claude', label: 'Claude Code', hint: 'claude' },
+  { type: 'codex', label: 'Codex', hint: 'codex' },
+  { type: 'agent', label: 'Cursor Agent', hint: 'agent' },
+  { type: 'opencode', label: 'OpenCode', hint: 'opencode' },
+]
+
+const TYPE_ICON_SVG = {
+  bash: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+  claude: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9.5a3 3 0 1 1 0 5"/><path d="M15 9.5a3 3 0 1 0 0 5"/></svg>`,
+  codex: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+  agent: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>`,
+  opencode: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 9l-3 3 3 3M16 9l3 3-3 3"/></svg>`,
+}
+
+export { TYPE_ICON_SVG }

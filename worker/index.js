@@ -218,6 +218,8 @@ process.on('SIGINT', shutdown)
 // Adapter: the existing terminal/files routes expect a `store` object with
 // the methods of server/store.js — projects, tabs, settings, etc. Map the
 // DataStore (one JSON file per user) to that interface.
+const TAB_TYPES = new Set(['bash', 'claude', 'codex', 'agent', 'opencode'])
+
 function createStoreAdapter(dataStore) {
   function load() { return dataStore.load() }
   return {
@@ -268,14 +270,24 @@ function createStoreAdapter(dataStore) {
       }
     },
     listTabs(projectId) {
-      return (load().tabs?.[projectId] || []).map((t) => ({ ...t }))
+      return (load().tabs?.[projectId] || []).map((t) => ({ ...t, type: t.type || 'bash' }))
+    },
+    getTab(projectId, tabId) {
+      const t = (load().tabs?.[projectId] || []).find((t) => t.id === tabId)
+      return t ? { ...t, type: t.type || 'bash' } : null
     },
     createTab(projectId, opts = {}) {
       const data = load()
       if (!data.tabs[projectId]) data.tabs[projectId] = []
       const id = opts.id || cryptoRandomId().slice(0, 8)
-      const n = data.tabs[projectId].length + 1
-      const tab = { id, label: opts.label || `bash ${n}`, createdAt: Date.now() }
+      const type = TAB_TYPES.has(opts.type) ? opts.type : 'bash'
+      const n = data.tabs[projectId].filter((t) => (t.type || 'bash') === type).length + 1
+      const tab = {
+        id,
+        label: opts.label || `${type} ${n}`,
+        type,
+        createdAt: Date.now(),
+      }
       data.tabs[projectId].push(tab)
       dataStore.saveTabs(projectId, data.tabs[projectId])
       return { ...tab }

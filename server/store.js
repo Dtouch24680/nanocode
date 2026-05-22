@@ -5,6 +5,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs'
 import { randomUUID } from 'crypto'
 
+const TAB_TYPES = new Set(['bash', 'claude', 'codex', 'agent', 'opencode'])
+
 function emptyData() {
   return { projects: [], settings: {}, tabs: {} }
 }
@@ -87,10 +89,12 @@ export function createStore(filePath = ':memory:') {
     if (!data.tabs[projectId]) data.tabs[projectId] = []
     const id = opts.id || randomUUID().slice(0, 8)
     const existing = data.tabs[projectId]
-    const n = existing.length + 1
+    const type = TAB_TYPES.has(opts.type) ? opts.type : 'bash'
+    const n = existing.filter((t) => (t.type || 'bash') === type).length + 1
     const tab = {
       id,
-      label: opts.label || `bash ${n}`,
+      label: opts.label || `${type} ${n}`,
+      type,
       createdAt: Date.now(),
     }
     existing.push(tab)

@@ -152,7 +152,8 @@ export function createTerminalRoutes(store) {
     const label = typeof req.body?.label === 'string' && req.body.label.trim()
       ? req.body.label.trim().slice(0, 40)
       : undefined
-    const tab = store.createTab(req.params.id, { label })
+    const type = typeof req.body?.type === 'string' ? req.body.type : undefined
+    const tab = store.createTab(req.params.id, { label, type })
     broadcastTabs(req.params.id)
     res.status(201).json(tab)
   })
@@ -247,6 +248,19 @@ export function createTerminalRoutes(store) {
     : 'bash'
   const SSH = IS_WIN ? 'C:\\Windows\\System32\\OpenSSH\\ssh.exe' : 'ssh'
 
+  // Shell-quoted command-line for each tab type. Coding-agent types
+  // launch their binary in the project cwd; when the agent exits the
+  // worker auto-respawns the session as a raw bash so the tab doesn't
+  // get stuck in the "dead" state.
+  const TAB_LAUNCHERS = {
+    bash: () => 'exec bash -l',
+    claude: () => 'claude --dangerously-skip-permissions; exec bash -l',
+    codex: () => 'codex; exec bash -l',
+    agent: () => 'agent; exec bash -l',
+    opencode: () => 'opencode .; exec bash -l',
+  }
+  const CODING_AGENT_TYPES = new Set(['claude', 'codex', 'agent', 'opencode'])
+
   /** Build SSH args for a remote project. */
   function buildSshArgs(project, remoteCmd) {
     const args = [
@@ -286,6 +300,13 @@ export function createTerminalRoutes(store) {
         return
       }
 
+      // Authoritatively resolve the tab's type from the server-side store
+      // (the client may omit it). Default to 'bash' for legacy tabs.
+      const tab = store.getTab ? store.getTab(projectId, tabId) : null
+      const tabType = tab?.type || 'bash'
+      const launcherFn = TAB_LAUNCHERS[tabType] || TAB_LAUNCHERS.bash
+      const launchCmd = launcherFn()
+
       const sessionKey = `${projectId}:bash:${tabId}`
       const isRemote = !!project.ssh_host
       let command
@@ -294,11 +315,18 @@ export function createTerminalRoutes(store) {
 
       if (isRemote) {
         command = SSH
-        args = buildSshArgs(project, `cd ${sq(project.cwd)} && exec bash -l`)
+        args = buildSshArgs(project, `cd ${sq(project.cwd)} && ${launchCmd}`)
         cwd = home
-      } else {
+      } else if (tabType === 'bash') {
         command = SHELL
         args = IS_WIN ? [] : ['--login']
+        cwd = project.cwd
+      } else {
+        // Coding agents: wrap in `bash -lc` so we get a login shell
+        // environment (PATH, nvm, etc.) AND can chain `; exec bash -l`
+        // to fall back to a raw terminal when the agent exits.
+        command = 'bash'
+        args = ['-lc', launchCmd]
         cwd = project.cwd
       }
 
