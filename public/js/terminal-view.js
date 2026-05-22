@@ -553,31 +553,39 @@ function setupMobile() {
     })
   }
 
-  // Keep --vh in sync with the visual viewport (i.e. the visible area
-  // above the soft keyboard). The CSS layer prefers `100dvh` where
-  // supported and `--vh` overrides where set; both paths cooperate.
-  // Runs on desktop too — visualViewport.height tracks the actual
-  // content area whether or not a virtual keyboard is involved, so
-  // there's no need to gate on isMobile() here.
-  const syncViewportHeight = () => {
-    if (!window.visualViewport) return
-    document.documentElement.style.setProperty(
-      '--vh',
-      `${window.visualViewport.height}px`
-    )
+  if (!isMobile()) return
+
+  // Mobile keyboard handling, lifted verbatim from codebuilder.
+  // The mobile media query freezes html/body and lets .app-layout
+  // consume `calc(var(--vvh, 100dvh) - 48px)`. We keep --vvh synced
+  // to visualViewport.height so the layout shrinks when the soft
+  // keyboard opens. killScroll() defangs iOS Safari's habit of
+  // scrolling the page upward as the keyboard slides in.
+  const chatInput = document.getElementById('chat-input')
+  const killScroll = () => {
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
   }
-  syncViewportHeight()
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => {
-      syncViewportHeight()
-      // Layout shrunk/grew — xterm needs to recompute cols/rows so the
-      // PTY sees the new geometry. Without this the terminal's
-      // reported size is whatever it was before the keyboard opened.
-      fitTerminals()
+  window.addEventListener('scroll', killScroll)
+  document.addEventListener('scroll', killScroll)
+  if (chatInput) {
+    chatInput.addEventListener('focus', () => {
+      setTimeout(killScroll, 50)
+      setTimeout(killScroll, 150)
+      setTimeout(killScroll, 300)
     })
   }
-
-  if (!isMobile()) return
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      document.documentElement.style.setProperty(
+        '--vvh',
+        `${window.visualViewport.height}px`
+      )
+      killScroll()
+    })
+    window.visualViewport.addEventListener('scroll', killScroll)
+  }
 
   // --- Swipe to switch between terminal tabs ----------------------
   // Heuristics: single finger, total elapsed < 400 ms, horizontal
