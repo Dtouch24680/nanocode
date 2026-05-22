@@ -92,67 +92,95 @@ function setupTabs(projectId) {
     stripEl,
     stackEl,
     projectId,
-    onActiveChange: (pane, tabMeta, direction) => {
+    onActiveChange: (pane) => {
       activePane = pane
-      updateActiveTabChip(direction)
+      updateActiveTabChip()
     },
     onStatusChange: setStatus,
   })
   tabManager.restore()
-  // Wire prev/next click handlers once
-  const prevBtn = document.getElementById('tab-slot-prev')
-  const nextBtn = document.getElementById('tab-slot-next')
-  if (prevBtn) prevBtn.addEventListener('click', () => tabManager && tabManager.cycle(-1))
-  if (nextBtn) nextBtn.addEventListener('click', () => tabManager && tabManager.cycle(1))
+  // Re-render carousel when window resizes (recompute translateX so
+  // the active slot stays centered).
+  window.addEventListener('resize', () => updateActiveTabChip({ noAnim: true }))
 }
 
-function updateActiveTabChip(direction) {
-  const chip = document.getElementById('active-tab-chip')
-  if (!chip || !tabManager) return
+const SLOT_WIDTH_PX = 110
+const SLOT_GAP_PX = 4
 
-  const { prev, current, next } = tabManager.getNeighbors()
-  if (!current) {
+/**
+ * Render the carousel of all tabs and translate the track so the active
+ * tab is horizontally centered in the viewport. The animation comes
+ * from the CSS transition on .tab-slot-track's transform.
+ */
+function updateActiveTabChip(opts = {}) {
+  const chip = document.getElementById('active-tab-chip')
+  const track = document.getElementById('tab-slot-track')
+  if (!chip || !track || !tabManager) return
+
+  const tabs = tabManager.tabs
+  const activeId = tabManager.activeId
+  if (!tabs.length || !activeId) {
     chip.hidden = true
     return
   }
   chip.hidden = false
 
-  // --- Current slot ---
-  const curEl = document.getElementById('tab-slot-current')
-  const curIcon = document.getElementById('active-tab-icon')
-  const curLabel = document.getElementById('active-tab-label')
-  const curType = current.type || 'bash'
-  curEl.className = 'tab-slot tab-slot-current type-' + curType
-  curIcon.innerHTML = TYPE_ICON_SVG[curType] || TYPE_ICON_SVG.bash
-  curLabel.textContent = current.label
-
-  // --- Prev slot ---
-  const prevEl = document.getElementById('tab-slot-prev')
-  if (prev) {
-    prevEl.hidden = false
-    document.getElementById('prev-tab-icon').innerHTML = TYPE_ICON_SVG[prev.type || 'bash'] || TYPE_ICON_SVG.bash
-    document.getElementById('prev-tab-label').textContent = prev.label
+  // Rebuild slot DOM only when the tab set changes (id list); otherwise
+  // update labels + classes in place so the existing slot elements
+  // keep their transform animation continuity.
+  const wantIds = tabs.map((t) => t.id).join(',')
+  if (track.dataset.tabIds !== wantIds) {
+    track.innerHTML = ''
+    for (const t of tabs) {
+      const slot = document.createElement('button')
+      slot.type = 'button'
+      slot.className = 'tab-slot type-' + (t.type || 'bash')
+      slot.dataset.tabId = t.id
+      slot.innerHTML =
+        `<span class="tab-slot-icon">${TYPE_ICON_SVG[t.type || 'bash'] || TYPE_ICON_SVG.bash}</span>` +
+        `<span class="tab-slot-label"></span>`
+      slot.querySelector('.tab-slot-label').textContent = t.label
+      slot.addEventListener('click', () => {
+        if (tabManager && t.id !== tabManager.activeId) tabManager.setActive(t.id)
+      })
+      track.appendChild(slot)
+    }
+    track.dataset.tabIds = wantIds
   } else {
-    prevEl.hidden = true
+    // Label/type updates: refresh in place
+    const slotEls = track.children
+    tabs.forEach((t, i) => {
+      const slot = slotEls[i]
+      if (!slot) return
+      slot.className = 'tab-slot type-' + (t.type || 'bash')
+      const labelEl = slot.querySelector('.tab-slot-label')
+      if (labelEl && labelEl.textContent !== t.label) labelEl.textContent = t.label
+    })
   }
 
-  // --- Next slot ---
-  const nextEl = document.getElementById('tab-slot-next')
-  if (next) {
-    nextEl.hidden = false
-    document.getElementById('next-tab-icon').innerHTML = TYPE_ICON_SVG[next.type || 'bash'] || TYPE_ICON_SVG.bash
-    document.getElementById('next-tab-label').textContent = next.label
-  } else {
-    nextEl.hidden = true
+  // Active class
+  for (const slot of track.children) {
+    slot.classList.toggle('active', slot.dataset.tabId === activeId)
   }
 
-  // --- Slide animation in the direction of motion ---
-  chip.classList.remove('slide-left', 'slide-right')
-  // Force a reflow so the next class add restarts the animation
-  void chip.offsetWidth
-  if (direction === 'forward') chip.classList.add('slide-left')
-  else if (direction === 'back') chip.classList.add('slide-right')
-  else chip.classList.add('slide-left')
+  // Center the active slot via translateX
+  const activeIdx = tabs.findIndex((t) => t.id === activeId)
+  if (activeIdx < 0) return
+  const containerW = chip.getBoundingClientRect().width
+  const slotPitch = SLOT_WIDTH_PX + SLOT_GAP_PX
+  const activeSlotCenter = activeIdx * slotPitch + SLOT_WIDTH_PX / 2
+  const containerCenter = containerW / 2
+  const translateX = Math.round(containerCenter - activeSlotCenter)
+
+  if (opts.noAnim) {
+    track.classList.add('no-anim')
+    track.style.transform = `translateX(${translateX}px)`
+    // Force layout, then drop the no-anim flag so subsequent updates animate.
+    void track.offsetWidth
+    track.classList.remove('no-anim')
+  } else {
+    track.style.transform = `translateX(${translateX}px)`
+  }
 }
 
 function setupChatInput() {
