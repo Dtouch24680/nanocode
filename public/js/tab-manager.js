@@ -41,6 +41,14 @@ export class TabManager {
     this.onActiveChange = opts.onActiveChange || (() => {})
     this.onStatusChange = opts.onStatusChange || (() => {})
 
+    // Carousel track — all pane DOM lives here side-by-side. The
+    // track's translateX selects which pane is visible, and the CSS
+    // transition is the slide animation. Created once per TabManager;
+    // re-used across switchProject() calls.
+    this.trackEl = document.createElement('div')
+    this.trackEl.className = 'terminal-track no-anim'
+    this.stackEl.appendChild(this.trackEl)
+
     /** @type {{ id: string, label: string, pane: TerminalPane, paneEl: HTMLElement }[]} */
     this.tabs = []
     this.activeId = null
@@ -119,11 +127,16 @@ export class TabManager {
       if ((oldIdx + 1) % n === newIdx) direction = 'forward'
       else if ((newIdx + 1) % n === oldIdx) direction = 'back'
     }
+    // Adjacent moves get the slide animation; everything else (jumps,
+    // first activation, wrap-around at the ends of the strip) snaps so
+    // the track doesn't visibly whizz past every intermediate pane.
+    const adjacent = Math.abs(newIdx - oldIdx) === 1 && oldIdx >= 0
     this.activeId = id
     saveActiveId(this.projectId, id)
     for (const tab of this.tabs) {
       tab.paneEl.classList.toggle('active', tab.id === id)
     }
+    this._syncTrackPosition({ noAnim: !adjacent })
     this._renderStrip()
     const active = this._getActive()
     this.onActiveChange(active?.pane || null, active ? { id: active.id, label: active.label, type: active.type } : null, direction)
@@ -270,6 +283,14 @@ export class TabManager {
         serverTabs.findIndex((t) => t.id === a.id) -
         serverTabs.findIndex((t) => t.id === b.id)
     )
+    // Mirror that order into the carousel track so the translateX math
+    // stays in sync with the array. appendChild on an existing child is
+    // a move, so iterating in tab-order pushes each pane to its new
+    // position without disturbing the others.
+    for (const tab of this.tabs) {
+      this.trackEl.appendChild(tab.paneEl)
+    }
+    this._syncTrackPosition({ noAnim: true })
 
     // Empty-list auto-create — guard against multiple devices racing.
     if (this.tabs.length === 0 && !this._creatingEmpty) {
@@ -305,7 +326,7 @@ export class TabManager {
     const paneEl = document.createElement('div')
     paneEl.className = 'pane-terminal'
     paneEl.dataset.tabId = id
-    this.stackEl.appendChild(paneEl)
+    this.trackEl.appendChild(paneEl)
 
     const pane = new TerminalPane(paneEl, {
       projectId: this.projectId,
@@ -316,6 +337,31 @@ export class TabManager {
     })
 
     this.tabs.push({ id, label, type, pane, paneEl })
+    // Track grew; keep the visible position pinned to the active tab.
+    this._syncTrackPosition({ noAnim: true })
+  }
+
+  /** Move the carousel track so the active tab is in view. */
+  _syncTrackPosition({ noAnim = false } = {}) {
+    if (!this.trackEl) return
+    const idx = this.tabs.findIndex((t) => t.id === this.activeId)
+    if (idx < 0) {
+      // No active tab — keep the current transform; the next setActive
+      // will re-align.
+      return
+    }
+    if (noAnim) {
+      this.trackEl.classList.add('no-anim')
+      this.trackEl.style.transform = `translateX(-${idx * 100}%)`
+      // Force a layout flush so the transform paints before we lift the
+      // no-anim guard, otherwise the next setActive would animate from
+      // the OLD position.
+      void this.trackEl.offsetWidth
+      requestAnimationFrame(() => this.trackEl.classList.remove('no-anim'))
+    } else {
+      this.trackEl.classList.remove('no-anim')
+      this.trackEl.style.transform = `translateX(-${idx * 100}%)`
+    }
   }
 
   _getActive() {
