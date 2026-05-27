@@ -937,6 +937,27 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   box-shadow: 0 2px 12px rgba(45, 40, 32, 0.08);
 }
 
+/* GLB 3D viewer slot — fills the preview content area. The canvas is
+   created and sized by glb-viewer.js via a ResizeObserver; this rule
+   just gives it a definite host so the observer has something to
+   measure. */
+.preview-glb-wrap {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+.preview-glb-wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  /* Disable browser touch panning so OrbitControls can own the
+     touchmove stream — otherwise the page tries to scroll while the
+     user is rotating the model. */
+  touch-action: none;
+}
+
 .preview-code {
   margin: 0;
   padding: var(--s-3);

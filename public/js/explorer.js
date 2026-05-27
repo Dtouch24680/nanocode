@@ -48,6 +48,7 @@ function saveExplorerState(projectId, state) {
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'])
 const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdx'])
 const HTML_EXTS = new Set(['html', 'htm'])
+const GLB_EXTS = new Set(['glb'])
 
 // Map common code file extensions to highlight.js language ids
 const HLJS_LANG_MAP = {
@@ -112,9 +113,19 @@ export function createExplorer(container, projectId) {
   let uploading = false
   let dragCounter = 0
   let htmlViewMode = 'preview' // 'preview' | 'raw' — only used for HTML files
+  let glbMode = 'material'     // 'material' | 'color' | 'clay' | 'wireframe'
+  let glbViewer = null         // active GlbViewer instance (must dispose on teardown)
+  let glbViewerToken = 0       // increments per load so stale async loads can no-op
 
   let pollTimer = null
   let cancelled = false
+
+  function disposeGlbViewer() {
+    if (glbViewer) {
+      try { glbViewer.dispose() } catch {}
+      glbViewer = null
+    }
+  }
 
   // DOM
   container.innerHTML = ''
@@ -352,6 +363,10 @@ export function createExplorer(container, projectId) {
       renderPreview() // image renders without content fetch
       return
     }
+    if (GLB_EXTS.has(ext)) {
+      renderPreview() // GLB renders via three.js using the raw URL
+      return
+    }
 
     try {
       const data = await apiContent(filePath)
@@ -580,6 +595,9 @@ export function createExplorer(container, projectId) {
   }
 
   function renderPreview() {
+    // Tear down any live three.js viewer before clearing the DOM so
+    // the WebGL context, RAF loop, and ResizeObserver all release.
+    disposeGlbViewer()
     previewEl.innerHTML = ''
     if (!selectedPath) {
       const empty = document.createElement('div')
@@ -607,7 +625,39 @@ export function createExplorer(container, projectId) {
     const ext = extOf(selectedPath)
     const isImage = IMAGE_EXTS.has(ext)
     const isHtml = HTML_EXTS.has(ext)
-    const isText = !isImage && fileContent !== null && fileError !== 'binary' && fileError !== 'too large'
+    const isGlb = GLB_EXTS.has(ext)
+    const isText = !isImage && !isGlb && fileContent !== null && fileError !== 'binary' && fileError !== 'too large'
+
+    // GLB toolbar: four exclusive render-mode buttons. Selecting one
+    // swaps every mesh's material on the live viewer.
+    if (isGlb) {
+      const modes = [
+        { id: 'material',  label: 'Material'  },
+        { id: 'color',     label: 'Color'     },
+        { id: 'clay',      label: 'Clay'      },
+        { id: 'wireframe', label: 'Wireframe' },
+      ]
+      const toggle = document.createElement('div')
+      toggle.className = 'preview-toggle'
+      for (const m of modes) {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'preview-toggle-btn' + (glbMode === m.id ? ' active' : '')
+        btn.textContent = m.label
+        btn.addEventListener('click', () => {
+          if (glbMode === m.id) return
+          glbMode = m.id
+          if (glbViewer) glbViewer.setMode(m.id)
+          // Re-render just the toolbar's active state, not the canvas:
+          // a full renderPreview() would dispose + recreate the viewer.
+          for (const el of toggle.children) {
+            el.classList.toggle('active', el.textContent === m.label)
+          }
+        })
+        toggle.appendChild(btn)
+      }
+      actions.appendChild(toggle)
+    }
 
     if (isHtml && !editing) {
       const toggle = document.createElement('div')
@@ -709,6 +759,44 @@ export function createExplorer(container, projectId) {
       img.alt = selectedPath.split('/').pop() || 'image'
       wrap.appendChild(img)
       content.appendChild(wrap)
+      return
+    }
+
+    if (isGlb) {
+      const wrap = document.createElement('div')
+      wrap.className = 'preview-glb-wrap'
+      content.appendChild(wrap)
+      // Show a small "loading" hint while three.js spins up and the
+      // bytes stream in. createGlbViewer is async (lazy-imports the
+      // ~600 KB three bundle).
+      const loading = document.createElement('div')
+      loading.className = 'preview-loading'
+      loading.textContent = 'Loading 3D model…'
+      wrap.appendChild(loading)
+      const token = ++glbViewerToken
+      const url = rawUrl(selectedPath, true)
+      // Dynamic import keeps three.js out of the cold-start bundle.
+      import('./glb-viewer.js').then(async ({ createGlbViewer }) => {
+        // Bail if the user clicked away before three.js finished
+        // loading — disposeGlbViewer already ran on the next render.
+        if (token !== glbViewerToken || cancelled) return
+        try {
+          glbViewer = await createGlbViewer(wrap)
+          if (token !== glbViewerToken) {
+            try { glbViewer.dispose() } catch {}
+            glbViewer = null
+            return
+          }
+          loading.remove()
+          await glbViewer.load(url)
+          if (token !== glbViewerToken) return
+          glbViewer.setMode(glbMode)
+        } catch (err) {
+          loading.textContent = `Failed to load: ${err?.message || err}`
+        }
+      }).catch((err) => {
+        loading.textContent = `Failed to load three.js: ${err?.message || err}`
+      })
       return
     }
 

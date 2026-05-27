@@ -88,6 +88,7 @@ const vendorMap = {
   '/vendor/xterm-addon-web-links': path.join(ROOT, 'node_modules/@xterm/addon-web-links'),
   '/vendor/marked': path.join(ROOT, 'node_modules/marked/lib'),
   '/vendor/dompurify': path.join(ROOT, 'node_modules/dompurify/dist'),
+  '/vendor/three': path.join(ROOT, 'node_modules/three'),
 }
 for (const [route, dir] of Object.entries(vendorMap)) {
   app.use(route, express.static(dir, vendorOpts))

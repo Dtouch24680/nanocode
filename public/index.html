@@ -27,6 +27,19 @@
     <script src="/vendor/marked/marked.umd.js"></script>
     <script src="/vendor/dompurify/purify.min.js"></script>
     <script src="/vendor/highlight/highlight.min.js"></script>
+
+    <!-- three.js is loaded lazily by glb-viewer.js. The import map
+         below lets the bare specifiers `three` and `three/addons/…`
+         resolve to the locally-vendored files under /vendor/three/.
+         Must precede every <script type="module"> below. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.min.js",
+          "three/addons/": "/vendor/three/examples/jsm/"
+        }
+      }
+    </script>
   </head>
   <body>
     <header class="app-header">
