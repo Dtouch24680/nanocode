@@ -180,19 +180,23 @@
           Remote (SSH)
         </label>
         <div id="proj-local-fields">
-          <div class="dialog-label">Folder</div>
+          <label class="dialog-label" for="proj-cwd">Folder
+            <input
+              id="proj-cwd"
+              type="text"
+              autocomplete="off"
+              placeholder="/home/you/project or /opt/whatever"
+            />
+          </label>
+          <p class="dialog-hint">Type any absolute path, or browse:</p>
           <div class="folder-browser">
             <div class="folder-breadcrumb" id="folder-breadcrumb"></div>
             <div class="folder-list" id="folder-list"></div>
             <div class="folder-current" id="folder-current"></div>
-            <button type="button" id="folder-select-btn" class="btn-primary">
-              Select this folder
+            <button type="button" id="folder-select-btn" class="btn-secondary">
+              Use this folder
             </button>
           </div>
-          <input type="hidden" id="proj-cwd" />
-          <p class="dialog-hint" id="proj-cwd-hint">
-            Click "Select this folder" to set the project path.
-          </p>
         </div>
         <div id="proj-remote-fields" class="ssh-fields" hidden>
           <label class="dialog-label">Host

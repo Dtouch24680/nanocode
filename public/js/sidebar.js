@@ -79,9 +79,21 @@ export function initSidebar(onProjectSwitch) {
       if (localFields) localFields.hidden = remote
       if (remoteFields) remoteFields.hidden = !remote
       document.getElementById('proj-cwd').value = ''
-      document.getElementById('proj-cwd-hint').textContent =
-        remote ? '' : 'Click "Select this folder" to set the project path.'
     })
+  }
+
+  // When the user types a path directly, auto-fill the project name
+  // from its last segment — same convenience the SSH form provides.
+  const cwdInput = document.getElementById('proj-cwd')
+  const nameInput = document.getElementById('proj-name')
+  if (cwdInput && nameInput) {
+    cwdInput.addEventListener('input', () => {
+      if (nameInput.dataset.manual) return
+      const segs = cwdInput.value.trim().replace(/\/$/, '').split('/').filter(Boolean)
+      const last = segs[segs.length - 1] || ''
+      if (last) nameInput.value = last
+    })
+    nameInput.addEventListener('input', () => { nameInput.dataset.manual = '1' })
   }
 
   form.addEventListener('submit', async (event) => {
@@ -185,10 +197,10 @@ function switchProject(projectId) {
 }
 
 function openAddDialog() {
-  document.getElementById('proj-name').value = ''
+  const nameInput = document.getElementById('proj-name')
+  nameInput.value = ''
+  delete nameInput.dataset.manual
   document.getElementById('proj-cwd').value = ''
-  document.getElementById('proj-cwd-hint').textContent =
-    'Click "Select this folder" to set the project path.'
   const toggle = document.getElementById('proj-remote-toggle')
   if (toggle) toggle.checked = false
   const local = document.getElementById('proj-local-fields')
@@ -211,7 +223,6 @@ function selectCurrentFolder() {
   const name = segments.length ? segments[segments.length - 1] : ''
   const nameInput = document.getElementById('proj-name')
   if (name && !nameInput.value.trim()) nameInput.value = name
-  document.getElementById('proj-cwd-hint').textContent = browsePath
 }
 
 async function loadFolder(path) {

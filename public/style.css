@@ -1391,6 +1391,13 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   border-color: var(--border-active);
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
+/* Filesystem paths read better in a monospace font — applies to the
+   Add-project dialog's "Folder" path input. */
+.dialog-label input#proj-cwd,
+.dialog-label input#proj-remote-dir {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
 .dialog-toggle {
   display: flex;
   align-items: center;
