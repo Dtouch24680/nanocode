@@ -154,6 +154,18 @@ export function startRouterMode({
   })
   app.use(auth)
 
+  // Roll the browser-side cookie expiry forward on every authenticated
+  // request. Without this the cookie is only Set-Cookie'd on /login and
+  // its Max-Age ages out exactly N days after that login moment —
+  // even if the user has been visiting daily and the server-side
+  // session's expiresAt has been touched on every request. Refreshing
+  // here keeps the cookie's Max-Age and the session's expiresAt
+  // moving forward in lockstep.
+  app.use((req, res, next) => {
+    if (req.sid) res.setHeader('set-cookie', cookieValue(req.sid))
+    next()
+  })
+
   // /api/auth/whoami after auth
   app.get('/api/auth/whoami', (req, res) => {
     res.json({ uid: req.user.uid, username: req.user.username })
