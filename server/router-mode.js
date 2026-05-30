@@ -96,7 +96,7 @@ export function startRouterMode({
   app.post('/logout', (req, res) => {
     const sid = parseCookie(req.headers['cookie'])
     if (sid) sessions.revoke(sid)
-    res.setHeader('set-cookie', `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict`)
+    res.setHeader('set-cookie', `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`)
     res.status(204).end()
   })
 
@@ -237,7 +237,19 @@ export function startRouterMode({
 // login feel transient even though the server-side session is still
 // valid. With Max-Age the cookie persists across browser restarts
 // until the server-side session also expires, and the rolling
-// `touch` keeps extending both in lockstep on every request.
+// refresh middleware below keeps extending both in lockstep on
+// every authenticated request.
+//
+// SameSite=Lax (not Strict):
+// Strict makes the browser drop the cookie on ANY top-level
+// navigation that originates from another site — opening a
+// bookmark, clicking a nanocode link from Slack/email, even
+// pasting a URL into a fresh tab in some browsers. The user
+// then sees /login even though the cookie is still stored, and
+// after they re-login the OLD cookie just gets overwritten by the
+// new one. Lax keeps the same XSRF protection for cross-site POSTs
+// but allows the cookie on top-level GET navigations, which is the
+// behavior users intuitively expect.
 //
 // Note: not adding `Secure` because nanocode is reached over plain
 // HTTP by default (port 2333). If you front it with TLS, append
@@ -245,5 +257,5 @@ export function startRouterMode({
 const COOKIE_MAX_AGE_S = 3 * 24 * 60 * 60
 
 function cookieValue(sid) {
-  return `${COOKIE_NAME}=${sid}; Path=/; Max-Age=${COOKIE_MAX_AGE_S}; HttpOnly; SameSite=Strict`
+  return `${COOKIE_NAME}=${sid}; Path=/; Max-Age=${COOKIE_MAX_AGE_S}; HttpOnly; SameSite=Lax`
 }
