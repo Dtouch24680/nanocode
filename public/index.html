@@ -21,12 +21,18 @@
     <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
     <link rel="stylesheet" href="/style.css" />
 
-    <script src="/vendor/xterm/lib/xterm.js"></script>
-    <script src="/vendor/xterm-addon-fit/lib/addon-fit.js"></script>
-    <script src="/vendor/xterm-addon-web-links/lib/addon-web-links.js"></script>
-    <script src="/vendor/marked/marked.umd.js"></script>
-    <script src="/vendor/dompurify/purify.min.js"></script>
-    <script src="/vendor/highlight/highlight.min.js"></script>
+    <!-- `defer` on every classic script so the eager-loaded vendor
+         libs don't block HTML parsing or first paint on weak networks.
+         Browsers fetch them in parallel while parsing the document,
+         then execute them in source order before app.js (module
+         scripts are deferred by default, and run after deferred
+         classic scripts). -->
+    <script defer src="/vendor/xterm/lib/xterm.js"></script>
+    <script defer src="/vendor/xterm-addon-fit/lib/addon-fit.js"></script>
+    <script defer src="/vendor/xterm-addon-web-links/lib/addon-web-links.js"></script>
+    <script defer src="/vendor/marked/marked.umd.js"></script>
+    <script defer src="/vendor/dompurify/purify.min.js"></script>
+    <script defer src="/vendor/highlight/highlight.min.js"></script>
 
     <!-- three.js is loaded lazily by glb-viewer.js. The import map
          below lets the bare specifiers `three` and `three/addons/…`

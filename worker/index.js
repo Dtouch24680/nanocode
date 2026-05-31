@@ -25,6 +25,7 @@
  */
 
 import express from 'express'
+import compression from 'compression'
 import { createServer } from 'node:http'
 import { connect as netConnect } from 'node:net'
 import { existsSync, mkdirSync, unlinkSync, chmodSync, writeFileSync, readFileSync } from 'node:fs'
@@ -78,6 +79,12 @@ const store = createStoreAdapter(new DataStore({ path: dataPath }))
 
 // Mount existing routes on a fresh express app.
 const app = express()
+// gzip / brotli on every response. On a weak network the eager
+// payload (xterm.js + marked + highlight.js + style.css ~ 580 KB raw)
+// compresses to ~150 KB — a 4× speedup before the page becomes
+// interactive. The router proxies the worker's response bytes through
+// unchanged, so compression done here also benefits remote browsers.
+app.use(compression())
 app.use(express.json({ limit: '4mb' }))
 // Static workspace assets (only reachable after the router has authed)
 app.use(express.static(path.join(ROOT, 'public')))

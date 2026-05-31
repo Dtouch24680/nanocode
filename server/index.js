@@ -1,4 +1,5 @@
 import express from 'express'
+import compression from 'compression'
 import { createServer } from 'http'
 import { fileURLToPath } from 'url'
 import path from 'path'
@@ -26,6 +27,8 @@ if (process.env.NANOCODE_SYSTEM === '1') {
 async function startSingleUserMode() {
 
 const app = express()
+// gzip on every response — see worker/index.js for the rationale.
+app.use(compression())
 app.use(express.json())
 app.use(express.static(path.join(root, 'public')))
 
