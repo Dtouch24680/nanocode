@@ -10,6 +10,7 @@
  */
 
 import { TerminalPane } from './terminal-pane.js'
+import { ClaudeBlockRenderer } from './claude-block-renderer.js'
 import { fetchTabs, createTab, deleteTab, patchTab } from './api.js'
 
 const ACTIVE_KEY_PREFIX = 'activeTab:'
@@ -328,13 +329,19 @@ export class TabManager {
     paneEl.dataset.tabId = id
     this.trackEl.appendChild(paneEl)
 
-    const pane = new TerminalPane(paneEl, {
+    const paneOpts = {
       projectId: this.projectId,
       tabId: id,
       onStatusChange: (connected) => {
         if (this.activeId === id) this.onStatusChange(connected)
       },
-    })
+    }
+
+    // Claude tabs use a DOM block renderer instead of xterm for mobile-friendly
+    // chat-style output with per-block copy and native page scroll.
+    const pane = type === 'claude'
+      ? new ClaudeBlockRenderer(paneEl, paneOpts)
+      : new TerminalPane(paneEl, paneOpts)
 
     this.tabs.push({ id, label, type, pane, paneEl })
     // Track grew; keep the visible position pinned to the active tab.

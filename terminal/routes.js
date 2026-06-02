@@ -1,7 +1,7 @@
 /** Terminal routes — Express Router + WebSocket handler. */
 
 import { Router } from 'express'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { platform } from 'node:os'
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { resolve, relative, isAbsolute, join } from 'node:path'
@@ -299,6 +299,154 @@ export function createTerminalRoutes(store) {
     return "'" + s.replace(/'/g, "'\\''") + "'"
   }
 
+  // ── Claude stream-json bridge ─────────────────────────────────────────────────
+  //
+  // Design: spawn a NEW claude process per user message (--print exits after
+  // one response). Session continuity is achieved via --resume <sessionId>.
+  // History is accumulated in-memory for reconnect replay.
+  //
+  // Map: sessionKey → { claudeSessionId, clients, history, busy }
+  const claudeSessions = new Map()
+
+  /**
+   * Broadcast a claude event JSON object to all clients of a session.
+   */
+  function claudeBroadcast(cs, event) {
+    cs.history.push(event)
+    if (cs.history.length > 500) cs.history.shift()
+    const msg = JSON.stringify({ type: 'claude-event', event })
+    for (const client of cs.clients) {
+      if (client.readyState === 1) try { client.send(msg) } catch {}
+    }
+  }
+
+  /**
+   * Run one claude turn: spawn claude --print with the user text as a CLI
+   * argument. Use --resume <sessionId> for turns 2+ to continue the session.
+   */
+  function runClaudeTurn(cs, userText, sessionKey, cwd) {
+    if (cs.busy) {
+      // Queue not implemented: just surface an error
+      const errEvent = { type: 'system', subtype: 'stderr', text: 'Previous turn still running, please wait.' }
+      claudeBroadcast(cs, errEvent)
+      return
+    }
+    cs.busy = true
+
+    // First turn uses --session-id to claim a fixed UUID; subsequent turns
+    // use --resume to continue the same conversation.
+    const isFirstTurn = cs.turnCount === 0
+    const sessionArg = isFirstTurn
+      ? `--session-id=${cs.claudeSessionId}`
+      : `--resume=${cs.claudeSessionId}`
+    cs.turnCount++
+
+    const launchArgs = [
+      '--print',
+      '--output-format=stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--dangerously-skip-permissions',
+      sessionArg,
+      '--',     // end of flags
+      userText,
+    ]
+    const escapedArgs = launchArgs.map((a) => sq(a))
+    const launchCmd = `claude ${escapedArgs.join(' ')}`
+
+    console.log(`[claude:spawn] sessionKey=${sessionKey} turn=${cs.turnCount} len=${userText.length}`)
+    const proc = spawn('bash', ['-lc', launchCmd], {
+      cwd,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let lineBuffer = ''
+
+    proc.stdout.on('data', (chunk) => {
+      lineBuffer += chunk.toString('utf8')
+      const lines = lineBuffer.split('\n')
+      lineBuffer = lines.pop()
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        let event
+        try { event = JSON.parse(trimmed) } catch { continue }
+        claudeBroadcast(cs, event)
+      }
+    })
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString('utf8').trim()
+      if (!text) return
+      console.warn(`[claude:stderr] ${sessionKey}: ${text.slice(0, 120)}`)
+      const event = { type: 'system', subtype: 'stderr', text }
+      claudeBroadcast(cs, event)
+    })
+
+    proc.on('exit', (code) => {
+      cs.busy = false
+      if (code !== 0 && code != null) {
+        const event = { type: 'system', subtype: 'stderr', text: `claude exited with code ${code}` }
+        claudeBroadcast(cs, event)
+      }
+    })
+
+    proc.on('error', (err) => {
+      cs.busy = false
+      const event = { type: 'system', subtype: 'spawn_error', text: err.message }
+      claudeBroadcast(cs, event)
+    })
+  }
+
+  /**
+   * Attach a WS client to an existing (or new) claude session.
+   * The session key is `${projectId}:claude:${tabId}`.
+   */
+  function attachClaudeSession(ws, { projectId, tabId, project }) {
+    const sessionKey = `${projectId}:claude:${tabId}`
+    let cs = claudeSessions.get(sessionKey)
+
+    if (!cs) {
+      const tab = store.getTab ? store.getTab(projectId, tabId) : null
+      const claudeSessionId = tab?.claudeSessionId || randomUUID()
+      cs = {
+        claudeSessionId,
+        clients: new Set(),
+        history: [],
+        busy: false,
+        turnCount: 0,
+        cwd: project.cwd,
+      }
+      claudeSessions.set(sessionKey, cs)
+    }
+
+    // Replay history to newly-connected client
+    for (const event of cs.history) {
+      if (ws.readyState === 1) {
+        try { ws.send(JSON.stringify({ type: 'claude-event', event })) } catch {}
+      }
+    }
+
+    cs.clients.add(ws)
+
+    const onMsg = (raw) => {
+      let msg
+      try { msg = JSON.parse(raw) } catch { return }
+      if (msg.type === 'claude-input' && typeof msg.text === 'string' && msg.text.trim()) {
+        runClaudeTurn(cs, msg.text, sessionKey, project.cwd)
+      } else if (msg.type === 'ping') {
+        try { ws.send(JSON.stringify({ type: 'pong', id: msg.id })) } catch {}
+      }
+    }
+
+    ws.on('message', onMsg)
+    ws.on('close', () => {
+      ws.removeListener('message', onMsg)
+      cs.clients.delete(ws)
+    })
+  }
+
   function handleTerminalWs(ws) {
     const once = (raw) => {
       let msg
@@ -323,6 +471,15 @@ export function createTerminalRoutes(store) {
       // (the client may omit it). Default to 'bash' for legacy tabs.
       const tab = store.getTab ? store.getTab(projectId, tabId) : null
       const tabType = tab?.type || 'bash'
+      console.log(`[ws:attach] projectId=${projectId} tabId=${tabId} tabType=${tabType}`)
+
+      // ── Claude tabs: stream-json bridge (no PTY) ─────────────────────────────
+      if (tabType === 'claude') {
+        console.log(`[ws:attach] routing to claude stream-json bridge`)
+        attachClaudeSession(ws, { projectId, tabId, project })
+        return
+      }
+
       const launcherFn = TAB_LAUNCHERS[tabType] || TAB_LAUNCHERS.bash
       const launchCmd = launcherFn()
 

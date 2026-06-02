@@ -20,9 +20,21 @@ let currentProjectId = null
 
 const statusBash = document.getElementById('status-bash')
 
+// Label prefix per tab type for the connection badge in the header.
+const TAB_TYPE_LABEL = {
+  bash: 'Bash',
+  claude: 'Claude',
+  codex: 'Codex',
+  agent: 'Agent',
+  opencode: 'OpenCode',
+}
+
+let _activeTabType = 'bash'
+
 function setStatus(connected) {
   if (!statusBash) return
-  statusBash.textContent = `Bash: ${connected ? 'connected' : 'disconnected'}`
+  const label = TAB_TYPE_LABEL[_activeTabType] || 'Bash'
+  statusBash.textContent = `${label}: ${connected ? 'connected' : 'disconnected'}`
   statusBash.classList.toggle('connected', connected)
 }
 
@@ -92,9 +104,16 @@ function setupTabs(projectId) {
     stripEl,
     stackEl,
     projectId,
-    onActiveChange: (pane) => {
+    onActiveChange: (pane, tabMeta) => {
       activePane = pane
+      if (tabMeta && tabMeta.type) _activeTabType = tabMeta.type
       updateActiveTabChip()
+      // Re-render badge with correct label and current connection state
+      if (pane && pane._ws) {
+        setStatus(pane._ws.readyState === WebSocket.OPEN)
+      } else {
+        setStatus(false)
+      }
     },
     onStatusChange: setStatus,
   })

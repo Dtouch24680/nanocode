@@ -10,15 +10,18 @@
 
     <script>
       // Apply theme BEFORE the stylesheet paints — avoids flash.
-      // Default to dark; follow OS if user prefers light.
+      // Default to dark regardless of OS preference; only follow OS if the
+      // user has never explicitly set a theme AND the OS preference is light.
+      // Rule: if nanocodeTheme is unset → always dark.
       (function () {
         try {
           var t = localStorage.getItem('nanocodeTheme')
-          if (t !== 'dark' && t !== 'light') {
-            t = (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'light' : 'dark'
-          }
+          // If the user never saved a preference, default to dark unconditionally.
+          if (t !== 'dark' && t !== 'light') t = 'dark'
           if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark')
-        } catch (_) {}
+        } catch (_) {
+          document.documentElement.setAttribute('data-theme', 'dark')
+        }
       })()
     </script>
     <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />

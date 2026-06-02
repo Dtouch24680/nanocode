@@ -404,6 +404,4 @@ server.listen(PORT, HOST, () => {
   console.log(`Nanocode running on http://${HOST}:${PORT}`)
 })
 
-export { app, server, store }
-
 } // end startSingleUserMode

@@ -97,6 +97,10 @@ export function createStore(filePath = ':memory:') {
       type,
       createdAt: Date.now(),
     }
+    if (type === 'claude') {
+      tab.claudeSessionId = opts.claudeSessionId || randomUUID()
+      tab.claudeSessionStarted = false
+    }
     existing.push(tab)
     save()
     return { ...tab }
@@ -131,6 +135,22 @@ export function createStore(filePath = ':memory:') {
     if (!data.tabs[projectId]) return null
     const tab = data.tabs[projectId].find((t) => t.id === tabId)
     return tab ? { ...tab } : null
+  }
+
+  function updateTabMetadata(projectId, tabId, patch = {}) {
+    if (!data.tabs[projectId]) return null
+    const tab = data.tabs[projectId].find((t) => t.id === tabId)
+    if (!tab) return null
+    const allowed = ['claudeSessionId', 'claudeSessionStarted']
+    let changed = false
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(patch, key) && tab[key] !== patch[key]) {
+        tab[key] = patch[key]
+        changed = true
+      }
+    }
+    if (changed) save()
+    return { ...tab }
   }
 
   function migrateProjectsJson(jsonPath) {
@@ -168,7 +188,7 @@ export function createStore(filePath = ':memory:') {
     getSetting, setSetting, getAllSettings,
     createProject, getProject, listProjects, removeProject,
     migrateProjectsJson, ensureStarterProject,
-    listTabs, createTab, removeTab, renameTab, hasTab, getTab,
+    listTabs, createTab, removeTab, renameTab, hasTab, getTab, updateTabMetadata,
     close,
   }
 }

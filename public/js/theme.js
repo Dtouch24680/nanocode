@@ -18,8 +18,7 @@ function detectInitial() {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored === 'dark' || stored === 'light') return stored
   } catch {}
-  // Default to dark; follow OS if user prefers light.
-  if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) return 'light'
+  // No stored preference → always default to dark regardless of OS.
   return 'dark'
 }
 
