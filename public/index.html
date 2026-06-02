@@ -9,13 +9,13 @@
     <meta name="theme-color" content="#8cc63f" />
 
     <script>
-      // Apply theme BEFORE the stylesheet paints.
-      // Default is dark — only set data-theme for light mode.
+      // Apply theme BEFORE the stylesheet paints — avoids flash.
+      // Default to dark; follow OS if user prefers light.
       (function () {
         try {
           var t = localStorage.getItem('nanocodeTheme')
           if (t !== 'dark' && t !== 'light') {
-            t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'
+            t = (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'light' : 'dark'
           }
           if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark')
         } catch (_) {}

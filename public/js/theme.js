@@ -1,16 +1,12 @@
 /**
- * Theme manager — dark (default) / light.
- *
- * Our fork design is dark-first (visionOS glass). The toggle
- * switches to a lighter surface variant when requested.
+ * Theme manager — dark (preferred default) / light.
  *
  * Resolves the initial theme from:
  *   1. localStorage.nanocodeTheme  ("dark" | "light")
  *   2. window.matchMedia('(prefers-color-scheme: dark)') — OS preference
- *   3. dark (our default)
+ *   3. dark (our preferred default)
  *
- * Applies via `<html data-theme="light">`; CSS [data-theme="light"]
- * overrides surface tokens. Dark mode (default) needs no attribute.
+ * Applies via `<html data-theme="dark">` (upstream CSS convention).
  * Notifies listeners (e.g. xterm panes) via a custom
  * 'nanocode:theme' event on document.
  */
@@ -22,7 +18,7 @@ function detectInitial() {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored === 'dark' || stored === 'light') return stored
   } catch {}
-  // Default to dark; only override if user explicitly prefers light.
+  // Default to dark; follow OS if user prefers light.
   if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) return 'light'
   return 'dark'
 }
@@ -32,9 +28,8 @@ applyTheme(current)
 
 function applyTheme(theme) {
   current = theme
-  // Set on <html> to match the pre-paint script in index.html.
   const root = document.documentElement
-  if (theme === 'light') root.setAttribute('data-theme', 'light')
+  if (theme === 'dark') root.setAttribute('data-theme', 'dark')
   else root.removeAttribute('data-theme')
 }
 
