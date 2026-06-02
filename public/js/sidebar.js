@@ -130,13 +130,46 @@ export function initSidebar(onProjectSwitch) {
 /**
  * Render the list of available projects.
  */
+let _searchQuery = ''
+
 export function renderSidebar() {
   const container = document.getElementById('sidebar-projects')
   if (!container) return
 
   container.textContent = ''
 
-  for (const project of state.projects) {
+  // Search input (shown when 4+ projects)
+  if (state.projects.length >= 4) {
+    const searchInput = document.createElement('input')
+    searchInput.type = 'text'
+    searchInput.className = 'sidebar-search'
+    searchInput.placeholder = 'Search projects…'
+    searchInput.value = _searchQuery
+    searchInput.addEventListener('input', () => {
+      _searchQuery = searchInput.value
+      renderSidebar()
+    })
+    container.appendChild(searchInput)
+    if (_searchQuery) searchInput.focus()
+  } else {
+    _searchQuery = ''
+  }
+
+  // Empty state guidance
+  if (state.projects.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'sidebar-empty'
+    empty.textContent = 'No projects yet. Click + to add one.'
+    container.appendChild(empty)
+    return
+  }
+
+  const query = _searchQuery.toLowerCase()
+  const filtered = query
+    ? state.projects.filter((p) => p.name.toLowerCase().includes(query) || (p.ssh_host || '').toLowerCase().includes(query))
+    : state.projects
+
+  for (const project of filtered) {
     const item = document.createElement('button')
     item.className =
       'sidebar-project' + (project.id === state.activeProjectId ? ' active' : '')

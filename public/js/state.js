@@ -3,4 +3,6 @@ export const state = {
   activeProjectId: null,
   tabs: [],
   activeTabId: null,
+  cliProvider: 'claude',
+  fontSize: 14,
 }

@@ -1,13 +1,17 @@
 /**
- * Theme manager — light / dark.
+ * Theme manager — dark (default) / light.
+ *
+ * Our fork design is dark-first (visionOS glass). The toggle
+ * switches to a lighter surface variant when requested.
  *
  * Resolves the initial theme from:
- *   1. localStorage.nanocodeTheme  ("light" | "dark")
+ *   1. localStorage.nanocodeTheme  ("dark" | "light")
  *   2. window.matchMedia('(prefers-color-scheme: dark)') — OS preference
- *   3. light (the akari default)
+ *   3. dark (our default)
  *
- * Applies via `<body data-theme="dark">`; all CSS tokens are scoped on
- * that attribute. Notifies listeners (e.g. xterm panes) via a custom
+ * Applies via `<html data-theme="light">`; CSS [data-theme="light"]
+ * overrides surface tokens. Dark mode (default) needs no attribute.
+ * Notifies listeners (e.g. xterm panes) via a custom
  * 'nanocode:theme' event on document.
  */
 
@@ -18,8 +22,9 @@ function detectInitial() {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored === 'dark' || stored === 'light') return stored
   } catch {}
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
-  return 'light'
+  // Default to dark; only override if user explicitly prefers light.
+  if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) return 'light'
+  return 'dark'
 }
 
 let current = detectInitial()
@@ -27,10 +32,9 @@ applyTheme(current)
 
 function applyTheme(theme) {
   current = theme
-  // Set on <html> to match the pre-paint script in index.html (avoids
-  // a paint flash if the document body isn't ready yet).
+  // Set on <html> to match the pre-paint script in index.html.
   const root = document.documentElement
-  if (theme === 'dark') root.setAttribute('data-theme', 'dark')
+  if (theme === 'light') root.setAttribute('data-theme', 'light')
   else root.removeAttribute('data-theme')
 }
 
