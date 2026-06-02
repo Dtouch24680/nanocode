@@ -1863,30 +1863,6 @@ body.workspace-active .landing-overlay { display: none; }
 .tts-replay-btn.disabled { opacity: 0.3; cursor: default; }
 .tts-replay-btn:hover { background: var(--surface-3, rgba(255,255,255,0.1)); color: var(--fg, #fff); }
 
-/* ── Mic button ──────────────────────────────────────────────────── */
-
-.mic-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: var(--r-sm, 6px);
-  background: var(--surface-2, rgba(255,255,255,0.06));
-  color: var(--fg-2, rgba(255,255,255,0.6));
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
-.mic-btn:hover { background: var(--surface-3, rgba(255,255,255,0.1)); color: var(--fg, #fff); }
-.mic-btn:active { transform: scale(0.94); }
-@keyframes mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(229,57,53,0); }
-}
-.mic-btn.recording { background: #e53935; color: #fff; animation: mic-pulse 1s ease-in-out infinite; }
-
 /* ── Settings toggle button in header ───────────────────────────── */
 
 .settings-toggle-btn {
