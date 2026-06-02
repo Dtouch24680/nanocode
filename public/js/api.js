@@ -79,3 +79,16 @@ export function renameFsPath(projectId, from, to) {
     body: JSON.stringify({ from, to }),
   })
 }
+
+// ─── Settings ─────────────────────────────────────────────────────────────
+
+export function fetchSettings() {
+  return request('/settings')
+}
+
+export function updateSetting(key, value) {
+  return request('/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ key, value }),
+  })
+}
