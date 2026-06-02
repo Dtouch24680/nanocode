@@ -1,0 +1,16 @@
+{
+  "name": "Nanocode",
+  "short_name": "Nanocode",
+  "description": "Terminal workspace for AI coding assistants",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08090a",
+  "theme_color": "#8cc63f",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
