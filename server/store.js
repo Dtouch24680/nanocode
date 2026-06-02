@@ -127,6 +127,12 @@ export function createStore(filePath = ':memory:') {
     return data.tabs[projectId].some((t) => t.id === tabId)
   }
 
+  function getTab(projectId, tabId) {
+    if (!data.tabs[projectId]) return null
+    const tab = data.tabs[projectId].find((t) => t.id === tabId)
+    return tab ? { ...tab } : null
+  }
+
   function migrateProjectsJson(jsonPath) {
     if (!existsSync(jsonPath)) return
     try {
@@ -162,7 +168,7 @@ export function createStore(filePath = ':memory:') {
     getSetting, setSetting, getAllSettings,
     createProject, getProject, listProjects, removeProject,
     migrateProjectsJson, ensureStarterProject,
-    listTabs, createTab, removeTab, renameTab, hasTab,
+    listTabs, createTab, removeTab, renameTab, hasTab, getTab,
     close,
   }
 }
