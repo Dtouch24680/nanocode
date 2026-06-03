@@ -1,5 +1,20 @@
 # Work Log
 
+## 2026-06-03 [Task B 补丁: subagent assistant/partial_message gate 漏洞]
+实地抓取验证（claude --print --output-format=stream-json --verbose --include-partial-messages）：
+  - 当前 claude CLI 版本（Opus 4.8）中，assistant 和 partial_message 事件的 parent_tool_use_id 永远是 None
+  - subagent 活动只通过 user 事件（pid 非空）暴露在顶层流
+  - 但防御性编码必要：若未来版本产生带 pid 的 assistant/partial 事件，或通过 mock 构造测试，原代码漏洞会导致开关关闭时 subagent 活动仍渲染并污染 _liveAssistantBlock 状态
+修法（/public/js/claude-block-renderer.js）：
+  - `_handleAssistant`：顶部加 `if (event.parent_tool_use_id && !getSubagentActivityVisible()) return`（在 live-block 清零之前 return，避免状态污染）
+  - `_handlePartialMessage`：同上，在 msg 解析之前 return
+  - 主 agent 事件（pid=null/undefined）完全不受影响
+验证：
+  - 7 个 mock 行为验证 case 全 pass（含：主 agent toggle off → RENDERED；subagent toggle off → SKIPPED；subagent toggle on → RENDERED）
+  - node --check 语法 OK
+  - npm test 6/6 pass，grep FAIL/Error run.log → "# fail 0"
+commit 7e9c0d6
+
 ## 2026-06-03 [Task A + B: tool折叠修复 + subagent可见性开关]
 
 ### Task A - Tool Blocks 折叠设置无效（根因确认）
