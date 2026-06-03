@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tool Fold Harness</title>
+  <!-- Load real stylesheet -->
+  <link rel="stylesheet" href="../public/style.css">
+  <style>
+    body { background: #1a1a2e; color: #e0e0e0; font-family: sans-serif; padding: 20px; }
+    #status { padding: 10px; margin-bottom: 10px; background: #333; border-radius: 4px; font-family: monospace; white-space: pre; }
+  </style>
+</head>
+<body>
+  <div id="status">Initializing harness…</div>
+  <div id="render-area" class="cbr-container" style="max-width: 800px;"></div>
+
+  <script type="module">
+    // Inline minimal stubs so the module can be imported without WS
+    // We monkey-patch ClaudeBlockRenderer to skip _connect() in this harness.
+
+    // Load real renderer module
+    const mod = await import('../public/js/claude-block-renderer.js')
+    const { ClaudeBlockRenderer, setToolFoldLevel, getToolFoldLevel, TOOL_FOLD_LEVELS } = mod
+
+    // Patch: skip WS connect in harness
+    const origConnect = ClaudeBlockRenderer.prototype._connect
+    ClaudeBlockRenderer.prototype._connect = function() {
+      // No-op: don't try to open WebSocket in harness
+    }
+
+    const container = document.getElementById('render-area')
+    const renderer = new ClaudeBlockRenderer(container, {
+      projectId: 'test',
+      tabId: 'test-tab',
+      onStatusChange: () => {},
+    })
+
+    // ── Inject fake events ──────────────────────────────────────────────────────
+
+    // 1. A tool_use block (Bash with long command)
+    renderer._renderToolUsePart({
+      type: 'tool_use',
+      id: 'tu_bash_1',
+      name: 'Bash',
+      input: {
+        command: 'find /storage/home/zhiningjiao/code -name "*.js" | head -50 | xargs grep -l "data-fold" 2>/dev/null',
+        description: 'Search for fold-related code',
+      }
+    })
+
+    // 2. A tool_result block (user event content)
+    renderer._renderToolResultPart({
+      type: 'tool_result',
+      tool_use_id: 'tu_bash_1',
+      content: '/storage/home/zhiningjiao/code/nanocode/public/js/claude-block-renderer.js\n/storage/home/zhiningjiao/code/nanocode/public/js/app.js\n\n$ ls -la\ntotal 48\ndrwxr-xr-x 8 user user 4096 Jun  3 10:00 .\ndrwxr-xr-x 3 user user 4096 Jun  3 09:00 ..\n-rw-r--r-- 1 user user 8192 Jun  3 10:00 claude-block-renderer.js',
+    })
+
+    // 3. Another tool_use (Read)
+    renderer._renderToolUsePart({
+      type: 'tool_use',
+      id: 'tu_read_1',
+      name: 'Read',
+      input: { file_path: '/storage/home/zhiningjiao/code/nanocode/public/style.css' }
+    })
+
+    // 4. Another tool_result
+    renderer._renderToolResultPart({
+      type: 'tool_result',
+      tool_use_id: 'tu_read_1',
+      content: '/* CSS content here */\n.cbr-block-tool { background: var(--bg-secondary); }\n.cbr-tool-body { padding: 0; }',
+    })
+
+    // ── Expose test API to window ────────────────────────────────────────────────
+    window.harnessAPI = {
+      setToolFoldLevel,
+      getToolFoldLevel,
+      TOOL_FOLD_LEVELS,
+      getToolBlocks: () => Array.from(document.querySelectorAll('.cbr-block-tool')),
+      getToolResultBlocks: () => Array.from(document.querySelectorAll('.cbr-block-tool-result')),
+      getComputedDisplayOf: (el) => window.getComputedStyle(el).display,
+      getDataFold: (el) => el.getAttribute('data-fold'),
+    }
+
+    document.getElementById('status').textContent =
+      `Harness ready. Tool blocks: ${document.querySelectorAll('.cbr-block-tool').length}, ` +
+      `Tool result blocks: ${document.querySelectorAll('.cbr-block-tool-result').length}`
+
+    // Signal ready for playwright
+    document.body.setAttribute('data-harness-ready', 'true')
+  </script>
+</body>
+</html>

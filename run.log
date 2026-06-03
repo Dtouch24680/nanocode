@@ -353,3 +353,273 @@ ok 6 - system-mode worker lifecycle
 # skipped 6
 # todo 0
 # duration_ms 1662.100034
+
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
+
+TAP version 13
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.202117
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.491994
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.563928
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.6226
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 0.354967
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 1.359386
+      type: 'test'
+      ...
+    1..6
+ok 1 - store
+  ---
+  duration_ms: 6.830212
+  type: 'suite'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 81.623338
+Harness status: Harness ready. Tool blocks: 2, Tool result blocks: 2
+
+Blocks rendered: tool=2, tool_result=2
+  PASS: At least 1 tool_use block rendered
+  PASS: At least 1 tool_result block rendered
+
+=== Testing FULL level ===
+Full styles: [
+  {
+    "kind": "tool",
+    "index": 0,
+    "dataFold": "full",
+    "blockDisplay": "block",
+    "bodyDisplay": "block",
+    "cardDisplay": "flex",
+    "bodyContent": "jsonCopy{\n  \"command\": \"find /storage/home/zhining"
+  },
+  {
+    "kind": "tool",
+    "index": 1,
+    "dataFold": "full",
+    "blockDisplay": "block",
+    "bodyDisplay": "block",
+    "cardDisplay": "flex",
+    "bodyContent": "jsonCopy{\n  \"file_path\": \"/storage/home/zhiningjia"
+  },
+  {
+    "kind": "tool_result",
+    "index": 0,
+    "dataFold": "full",
+    "blockDisplay": "block",
+    "resultDisplay": "block",
+    "resultContent": "/storage/home/zhiningjiao/code/nanocode/public/js/"
+  },
+  {
+    "kind": "tool_result",
+    "index": 1,
+    "dataFold": "full",
+    "blockDisplay": "block",
+    "resultDisplay": "block",
+    "resultContent": "/* CSS content here */\n.cbr-block-tool { backgroun"
+  }
+]
+  PASS: Tool[0] data-fold is 'full'
+  PASS: Tool[0] .cbr-tool-body visible (not none) at full
+  PASS: Tool[0] .cbr-tool-body has content at full
+  PASS: Tool[1] data-fold is 'full'
+  PASS: Tool[1] .cbr-tool-body visible (not none) at full
+  PASS: Tool[1] .cbr-tool-body has content at full
+  PASS: ToolResult[0] data-fold is 'full'
+  PASS: ToolResult[0] .cbr-tool-result visible at full
+  PASS: ToolResult[0] has text content at full
+  PASS: ToolResult[1] data-fold is 'full'
+  PASS: ToolResult[1] .cbr-tool-result visible at full
+  PASS: ToolResult[1] has text content at full
+
+=== Testing HEADER level ===
+Header styles: [
+  {
+    "kind": "tool",
+    "index": 0,
+    "dataFold": "header",
+    "blockDisplay": "block",
+    "bodyDisplay": "none",
+    "cardDisplay": "flex",
+    "bodyContent": "jsonCopy{\n  \"command\": \"find /storage/home/zhining"
+  },
+  {
+    "kind": "tool",
+    "index": 1,
+    "dataFold": "header",
+    "blockDisplay": "block",
+    "bodyDisplay": "none",
+    "cardDisplay": "flex",
+    "bodyContent": "jsonCopy{\n  \"file_path\": \"/storage/home/zhiningjia"
+  },
+  {
+    "kind": "tool_result",
+    "index": 0,
+    "dataFold": "header",
+    "blockDisplay": "block",
+    "resultDisplay": "none",
+    "resultContent": "/storage/home/zhiningjiao/code/nanocode/public/js/"
+  },
+  {
+    "kind": "tool_result",
+    "index": 1,
+    "dataFold": "header",
+    "blockDisplay": "block",
+    "resultDisplay": "none",
+    "resultContent": "/* CSS content here */\n.cbr-block-tool { backgroun"
+  }
+]
+  PASS: Tool[0] data-fold is 'header'
+  PASS: Tool[0] .cbr-tool-body hidden (none) at header
+  PASS: Tool[0] block itself visible at header
+  PASS: Tool[1] data-fold is 'header'
+  PASS: Tool[1] .cbr-tool-body hidden (none) at header
+  PASS: Tool[1] block itself visible at header
+  PASS: ToolResult[0] data-fold is 'header'
+  PASS: ToolResult[0] .cbr-tool-result hidden at header
+  PASS: ToolResult[1] data-fold is 'header'
+  PASS: ToolResult[1] .cbr-tool-result hidden at header
+
+=== Testing LINE level ===
+Line styles: [
+  {
+    "kind": "tool",
+    "index": 0,
+    "dataFold": "line",
+    "blockDisplay": "block",
+    "bodyDisplay": "block",
+    "cardDisplay": "none",
+    "bodyContent": "jsonCopy{\n  \"command\": \"find /storage/home/zhining"
+  },
+  {
+    "kind": "tool",
+    "index": 1,
+    "dataFold": "line",
+    "blockDisplay": "block",
+    "bodyDisplay": "block",
+    "cardDisplay": "none",
+    "bodyContent": "jsonCopy{\n  \"file_path\": \"/storage/home/zhiningjia"
+  },
+  {
+    "kind": "tool_result",
+    "index": 0,
+    "dataFold": "line",
+    "blockDisplay": "block",
+    "resultDisplay": "none",
+    "resultContent": "/storage/home/zhiningjiao/code/nanocode/public/js/"
+  },
+  {
+    "kind": "tool_result",
+    "index": 1,
+    "dataFold": "line",
+    "blockDisplay": "block",
+    "resultDisplay": "none",
+    "resultContent": "/* CSS content here */\n.cbr-block-tool { backgroun"
+  }
+]
+  PASS: Tool[0] data-fold is 'line'
+  PASS: Tool[0] .cbr-tool-card hidden at line
+  PASS: Tool[1] data-fold is 'line'
+  PASS: Tool[1] .cbr-tool-card hidden at line
+  PASS: ToolResult[0] data-fold is 'line'
+  PASS: ToolResult[0] .cbr-tool-result hidden at line
+  PASS: ToolResult[1] data-fold is 'line'
+  PASS: ToolResult[1] .cbr-tool-result hidden at line
+
+=== Testing switch back to FULL (verifies no stuck state) ===
+  PASS: Tool[0] body visible again after switching back to full
+  PASS: Tool[1] body visible again after switching back to full
+  PASS: ToolResult[0] result visible again after switching back to full
+  PASS: ToolResult[1] result visible again after switching back to full
+
+Screenshot saved: qa-test/fold-header-screenshot.png
+Screenshot saved: qa-test/fold-line-screenshot.png
+Screenshot saved: qa-test/fold-full-screenshot.png
+
+============================================================
+Results: PASS=36 FAIL=0
+============================================================
+
+Evidence:
+  PASS: At least 1 tool_use block rendered
+  PASS: At least 1 tool_result block rendered
+  PASS: Tool[0] data-fold is 'full' | got: full
+  PASS: Tool[0] .cbr-tool-body visible (not none) at full | got: block
+  PASS: Tool[0] .cbr-tool-body has content at full | got: "jsonCopy{
+  "command": "find /storage/home/zhining"
+  PASS: Tool[1] data-fold is 'full' | got: full
+  PASS: Tool[1] .cbr-tool-body visible (not none) at full | got: block
+  PASS: Tool[1] .cbr-tool-body has content at full | got: "jsonCopy{
+  "file_path": "/storage/home/zhiningjia"
+  PASS: ToolResult[0] data-fold is 'full' | got: full
+  PASS: ToolResult[0] .cbr-tool-result visible at full | got: block
+  PASS: ToolResult[0] has text content at full | got: "/storage/home/zhiningjiao/code/nanocode/public/js/"
+  PASS: ToolResult[1] data-fold is 'full' | got: full
+  PASS: ToolResult[1] .cbr-tool-result visible at full | got: block
+  PASS: ToolResult[1] has text content at full | got: "/* CSS content here */
+.cbr-block-tool { backgroun"
+  PASS: Tool[0] data-fold is 'header' | got: header
+  PASS: Tool[0] .cbr-tool-body hidden (none) at header | got: none
+  PASS: Tool[0] block itself visible at header | got: block
+  PASS: Tool[1] data-fold is 'header' | got: header
+  PASS: Tool[1] .cbr-tool-body hidden (none) at header | got: none
+  PASS: Tool[1] block itself visible at header | got: block
+  PASS: ToolResult[0] data-fold is 'header' | got: header
+  PASS: ToolResult[0] .cbr-tool-result hidden at header | got: none
+  PASS: ToolResult[1] data-fold is 'header' | got: header
+  PASS: ToolResult[1] .cbr-tool-result hidden at header | got: none
+  PASS: Tool[0] data-fold is 'line' | got: line
+  PASS: Tool[0] .cbr-tool-card hidden at line | got: none
+  PASS: Tool[1] data-fold is 'line' | got: line
+  PASS: Tool[1] .cbr-tool-card hidden at line | got: none
+  PASS: ToolResult[0] data-fold is 'line' | got: line
+  PASS: ToolResult[0] .cbr-tool-result hidden at line | got: none
+  PASS: ToolResult[1] data-fold is 'line' | got: line
+  PASS: ToolResult[1] .cbr-tool-result hidden at line | got: none
+  PASS: Tool[0] body visible again after switching back to full | got: block
+  PASS: Tool[1] body visible again after switching back to full | got: block
+  PASS: ToolResult[0] result visible again after switching back to full | got: block
+  PASS: ToolResult[1] result visible again after switching back to full | got: block
+=== Testing fold switching on real 3001 page ===
+1. Current state: {"localStorage":"full","blockCount":2,"blocks":[{"class":"cbr-block-tool","dataFold":"full","bodyDisplay":"block"},{"class":"cbr-block-tool-result","dataFold":"full","bodyDisplay":"block"}]}
+2. After switch to header: {"localStorage":"header","blockCount":2,"blocks":[{"class":"cbr-block-tool","dataFold":"header","bodyDisplay":"none"},{"class":"cbr-block-tool-result","dataFold":"header","bodyDisplay":"none"}]}
+PASS: header fold hides body
+3. After switch to line: {"localStorage":"line","dataFold":"line","cardDisplay":"none","articleH":"5px"}
+PASS: line fold hides card
+4. After switch back to full: {"localStorage":"full","dataFold":"full","bodyDisplay":"block"}
+PASS: full fold shows body
+=== Real 3001 page fold test complete ===

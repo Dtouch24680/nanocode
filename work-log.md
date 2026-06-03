@@ -1,5 +1,12 @@
 # Work Log
 
+## 2026-06-03 [Tool Blocks fold 3-level switching — 真实 3001 页面深度验证]
+- 操作：用真实 Playwright browser 驱动真实 3001 页面，验证 full/header/line 三档折叠在各场景下的计算样式
+- 发现：代码已正确（commit 88ce0f8 live-apply fix 已生效），前几轮 agent 只断言 localStorage，未验证 computed style / 真实 DOM 视觉变化
+- 验证场景：初始加载 / 硬刷新 + WS 历史回放 / Settings 打开后切换 / Save 按钮路径 / radio click 路径
+- 测试结果：npm test 6/6 PASS；孤立 harness PASS=36 FAIL=0；真实 3001 页 3 项 PASS
+- 产出：evidence.md（计算样式证据 + 截图 evidence-fold-*-final.png）
+
 ## 2026-06-03 [Stop 不要杀 subagent — 传播路径实测 + 进程组隔离]
 - 操作：trace Stop 传播路径（terminal-view.js → /interrupt → routes.js `cs.currentProc.kill('SIGINT')`，单正 pid，非进程组/非 SIGKILL）；写 4 个 probe 复刻 spawn 实测进程树
 - 实测结论：

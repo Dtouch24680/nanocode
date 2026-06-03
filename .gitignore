@@ -4,3 +4,4 @@ data/
 
 # Compiled setuid helper (built at install time)
 helper/nanocode-spawn
+.gstack/
