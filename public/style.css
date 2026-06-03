@@ -1871,6 +1871,40 @@ body.workspace-active .landing-overlay { display: none; }
   textarea { font-size: 16px !important; }
 }
 
+/* -- Narrow phone header: shrink connection-status to a dot ---- */
+
+@media (max-width: 480px) {
+  /* Collapse the badge to a 10×10 status dot — just enough to
+     see connectivity at a glance, freeing space for the buttons. */
+  .connection-status {
+    font-size: 0;       /* hide text without changing DOM */
+    padding: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bg-secondary); /* disconnected: grey dot */
+    border: 1.5px solid var(--border);
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .connection-status.connected {
+    background: var(--success, #3d9a5a);
+    border-color: var(--success, #3d9a5a);
+  }
+
+  /* Ensure all header buttons stay visible and don't shrink away */
+  .header-pills {
+    gap: 6px;
+    flex-shrink: 0;
+    align-items: center;
+  }
+  .theme-toggle,
+  .settings-toggle-btn,
+  .agent-drawer-toggle {
+    flex-shrink: 0;
+  }
+}
+
 /* -- Reduced motion -------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
