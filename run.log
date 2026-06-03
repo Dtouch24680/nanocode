@@ -55,3 +55,117 @@ ok 1 - store
 # skipped 0
 # todo 0
 # duration_ms 108.354356
+
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
+
+TAP version 13
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.170458
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.489712
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.538824
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.619648
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 1.400623
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 0.284723
+      type: 'test'
+      ...
+    1..6
+ok 1 - store
+  ---
+  duration_ms: 6.698373
+  type: 'suite'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 96.319912
+
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
+
+TAP version 13
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.19744
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.484611
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.551745
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.627809
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 1.077169
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 0.23795
+      type: 'test'
+      ...
+    1..6
+ok 1 - store
+  ---
+  duration_ms: 6.391879
+  type: 'suite'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 78.372753

@@ -259,8 +259,23 @@ export class ClaudeBlockRenderer {
     this._ws = new WebSocket(`${proto}//${location.host}${WS_PATH}`)
 
     this._ws.onopen = () => {
+      const isReconnect = this._reconnectAttempts > 0
       this._reconnectAttempts = 0
       this.onStatusChange(true)
+
+      // On reconnect the server will replay the full cs.history. Clear the
+      // render area so history is displayed exactly once (not old render +
+      // replayed render = double). Also reset all live-block pointers so
+      // partial_message / assistant events start fresh.
+      if (isReconnect) {
+        this._scroll.innerHTML = ''
+        this._liveAssistantBlock = null
+        this._liveAssistantId = null
+        this._pendingNonces = new Set()
+        this._thinking = false
+        this._addSystemBlock('[Reconnected. Restoring session history…]')
+      }
+
       this._send({
         type: 'attach',
         projectId: this.projectId,
