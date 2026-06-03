@@ -1,5 +1,21 @@
 # Work Log
 
+## 2026-06-03 [Stop 不要杀 subagent — 传播路径实测 + 进程组隔离]
+- 操作：trace Stop 传播路径（terminal-view.js → /interrupt → routes.js `cs.currentProc.kill('SIGINT')`，单正 pid，非进程组/非 SIGKILL）；写 4 个 probe 复刻 spawn 实测进程树
+- 实测结论：
+  - nanocode 侧已最干净，单 pid SIGINT 不会从 OS 层扫 subagent
+  - subagent 是否存活取决于它在 claude 内部是否分离启动：setsid/nohup&/run_in_background → 存活（probe1/3/4）；前台未分离的 Bash 工具子进程被 claude 自身 abort 杀掉（probe2，非 nanocode 信号）；in-process Task subagent 推理随父 turn 中断结束 = harness 固有行为，nanocode 改不了
+- 改动：routes.js runClaudeTurn spawn 加 `detached: true`（进程组隔离，防御性，不加 unref），interrupt 注释改写为实测结论 + 不变量
+- 结果：✓ node --check 双文件 OK；npm test 6/6；terminal 测试 30 pass/6 skip/0 fail；probe4 验证 detached 下中断仍正常、分离子进程存活
+- 产出：evidence.md + .interrupt-probe/probe-run-{1..4}.log；待提交
+- 下一步：push fork
+
+## 2026-06-03 [即时预览: tool-fold radio + subagent 开关 change 即时生效]
+- 操作：public/js/app.js 给 input[name="tool-fold"] 三个 radio 加 change 监听 → setToolFoldLevel(value) 立刻调用；给 subagent-prompt-visible / subagent-activity-visible checkbox 加 change 监听 → setSubagentPromptVisible/setSubagentActivityVisible 立刻调用；Save 按钮保留为可选确认
+- 结果：✓ npm test 6/6，playwright 验证 4 项切换均不点 Save 即写 localStorage；刷新后保持
+- 产出：commit 88ce0f8，push fork zhining/nanocode-selfresume-bugs
+- 下一步：等验收官确认
+
 ## 2026-06-03 [Bug修复: busy队列 + thinking解锁 + subagent fold]
 
 **背景：主人实际使用发现3个问题，上一轮单测全过但实地用挂了。这次先复现再修再实跑验证。**

@@ -1,0 +1,52 @@
+[probe3] bash child pid=98152
+[evt] system/hook_started
+[evt] system/hook_started
+[evt] system/hook_response
+[evt] system/hook_response
+[evt] system/init
+[evt] system/status
+[evt] stream_event/
+[evt] stream_event/
+[evt] system/thinking_tokens
+[evt] stream_event/
+[evt] system/thinking_tokens
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] assistant/
+[evt] system/task_started
+[evt] stream_event/
+[evt] user/
+[evt] stream_event/
+[evt] stream_event/
+[evt] rate_limit_event/
+[evt] system/task_progress
+[evt] assistant/
+[evt] rate_limit_event/
+[evt] user/
+[probe3] marker pid=98418 launched after 12.1s
+[probe3] before:
+98418      1  98418  98418 Ss   bash
+[probe3] >>> SIGINT to bash child pid=98152
+[evt] system/task_notification
+[evt] system/task_notification
+[evt] user/
+[evt] user/
+[evt] result/error_during_execution
+[probe3] bash child exit code=0 sig=null
+[probe3] after interrupt:
+98418      1  98418  98418 Ss   bash
+[probe3] DONE marker-survived=true

@@ -384,24 +384,32 @@ export function createTerminalRoutes(store) {
     if (!cs) return res.status(404).json({ error: 'no claude session' })
     if (!cs.busy || !cs.currentProc) return res.json({ ok: false, reason: 'not busy' })
     try {
-      // Bug-fix (interrupt scope): we must interrupt only the claude process that
-      // nanocode spawned for THIS tab's current turn — not the whole process group.
+      // Interrupt scope — "Stop must not kill my sub-agents".
       //
-      // Previously: kill('SIGINT') on the `bash -lc claude …` child sends SIGINT
-      // to bash. Bash then forwards SIGINT to its foreground child (claude), which
-      // is correct in isolation. HOWEVER, if that claude process joined the same
-      // session as the main Claude Code instance (due to the session-id collision
-      // fixed in Bug 1), the interrupt could reach sub-agents running inside the
-      // main session.
+      // We send SIGINT to the SINGLE POSITIVE pid of this turn's `bash -lc claude`
+      // child. node's child_process.kill(sig) signals proc.pid only — it never
+      // signals the negative process-group id. bash then forwards SIGINT to its
+      // foreground child (claude), and claude aborts the current turn.
       //
-      // Sending SIGINT with a negative pid (process group) is the dangerous form;
-      // here we always target the single pid of our child bash process.
-      // node's child_process.kill() sends the signal to proc.pid only (not the
-      // process group), so this is already scoped correctly at the OS level.
+      // Empirically verified (see .interrupt-probe/, evidence.md):
+      //   • A sub-agent / Bash-tool child that was DETACHED into its own session
+      //     (setsid / nohup & / run_in_background) SURVIVES this interrupt — both
+      //     because the SIGINT is single-pid (not a group signal) and because the
+      //     child no longer shares claude's session. (probe1, probe3, probe4)
+      //   • A NON-detached, foreground Bash-tool child is terminated — but that is
+      //     claude's own abort logic killing the child it is actively waiting on,
+      //     NOT an OS signal nanocode sent. nanocode cannot prevent that from the
+      //     outside; the fix is to launch survivable work detached. (probe2)
+      //   • An in-process Task sub-agent's reasoning necessarily ends when its
+      //     parent turn is interrupted — that is harness-level behavior nanocode
+      //     cannot change. Only the OS processes a sub-agent detached survive.
       //
-      // After the Bug 1 fix, each spawned claude gets its own isolated session ID,
-      // so an interrupt here can no longer bleed into the main session's sub-agents.
-      // This comment documents the invariant that must be maintained.
+      // So nanocode already does the minimal correct thing here: single-pid
+      // SIGINT, never a process-group kill, never SIGKILL, no escalation timer.
+      // The spawn side additionally isolates the turn in its own process group
+      // (detached:true) so no group-scoped signal can ever bleed into detached
+      // sub-agent work. Maintain this invariant: never switch to kill(-pid) or
+      // add a SIGKILL escalation here.
       cs.currentProc.kill('SIGINT')
       res.json({ ok: true })
     } catch (err) {
@@ -494,7 +502,21 @@ export function createTerminalRoutes(store) {
       // use" / exit code 1).  See buildClaudeChildEnv() comment for details.
       env: buildClaudeChildEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
+      // detached:true puts this turn's `bash -lc claude …` into its own process
+      // group/session (setsid). This is defense-in-depth for the "Stop must not
+      // kill my sub-agents" requirement: the interrupt route sends SIGINT to the
+      // single positive pid (never the negative process-group id), so isolating
+      // the turn in its own group guarantees that even a future group-scoped
+      // signal aimed at nanocode can never sweep up work that a sub-agent has
+      // detached into ITS own session. Verified by .interrupt-probe/probe4: with
+      // detached:true the turn still interrupts cleanly on SIGINT while a
+      // sub-agent's detached background child survives. See the interrupt route
+      // for the full propagation analysis.
+      detached: true,
     })
+    // NOTE: we intentionally do NOT call proc.unref() — the turn is the
+    // foreground generation and should still die with the worker. detached
+    // here is purely for process-group isolation, not for outliving nanocode.
     cs.currentProc = proc
 
     let lineBuffer = ''

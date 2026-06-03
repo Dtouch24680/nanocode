@@ -1,0 +1,45 @@
+[probe2] bash child pid=96426 pgid=96417
+[evt] system/hook_started
+[evt] system/hook_started
+[evt] system/hook_response
+[evt] system/hook_response
+[evt] system/init
+[evt] system/status
+[evt] stream_event/
+[evt] stream_event/
+[evt] system/thinking_tokens
+[evt] stream_event/
+[evt] system/thinking_tokens
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] rate_limit_event/
+[probe2] marker pid=96683 launched after 7.3s
+[probe2] before:
+96683  96678  96683 S    bash
+[probe2] >>> SIGINT to bash child pid=96426
+[evt] user/
+[evt] user/
+[evt] result/error_during_execution
+[probe2] bash child exit code=0 sig=null
+[probe2] after interrupt:
+GONE
+[probe2] DONE done-file-exists=false

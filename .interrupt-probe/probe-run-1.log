@@ -1,0 +1,43 @@
+[probe] bash child pid=95926
+[evt] system/hook_started
+[evt] system/hook_started
+[evt] system/hook_response
+[evt] system/hook_response
+[evt] system/init
+[evt] system/status
+[evt] stream_event/
+[evt] stream_event/
+[evt] system/thinking_tokens
+[evt] stream_event/
+[evt] system/thinking_tokens
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] assistant/
+[evt] stream_event/
+[evt] stream_event/
+[evt] stream_event/
+[evt] rate_limit_event/
+[evt] user/
+[evt] system/status
+[probe] marker subprocess pid=96224 launched after 7.5s
+[probe] >>> sending SIGINT to bash child pid=95926 (mimics routes.js interrupt)
+[evt] user/
+[evt] result/error_during_execution
+[probe] bash child exit code=0 sig=null
+[probe] marker pid=96224 after interrupt:
+96224      1  96224 S    bash
+[probe] DONE

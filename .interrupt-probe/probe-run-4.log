@@ -1,0 +1,22 @@
+[probe4] bash child pid=99581 (detached:true, own pgid)
+[evt] system/hook_started
+[evt] system/hook_started
+[evt] system/hook_response
+[evt] system/hook_response
+[evt] system/init
+[evt] system/status
+[evt] system/thinking_tokens
+[evt] system/thinking_tokens
+[evt] assistant/
+[evt] assistant/
+[evt] assistant/
+[evt] user/
+[evt] system/status
+[probe4] marker pid=100019 after 7.6s
+[probe4] before: 100019      1 100019 100019 Ss
+[probe4] >>> SIGINT to single pid 99581 (positive pid, not group)
+[evt] user/
+[evt] result/error_during_execution
+[probe4] bash child exit code=0 sig=null (turn interrupted cleanly=true)
+[probe4] marker after: 100019      1 100019 100019 Ss
+[probe4] DONE marker-survived=true
