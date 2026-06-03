@@ -114,6 +114,10 @@ function setupTabs(projectId) {
       } else {
         setStatus(false)
       }
+      // Notify chat input bar about tab type change
+      document.dispatchEvent(new CustomEvent('nanocode:tab-active', {
+        detail: { type: tabMeta?.type || 'bash', tabId: tabMeta?.id },
+      }))
     },
     onStatusChange: setStatus,
   })
@@ -202,12 +206,138 @@ function updateActiveTabChip(opts = {}) {
   }
 }
 
+// Claude slash commands for the dropdown
+const CLAUDE_SLASH_COMMANDS = [
+  { cmd: '/clear',   hint: 'Clear conversation history' },
+  { cmd: '/compact', hint: 'Compact context' },
+  { cmd: '/help',    hint: 'Show help' },
+  { cmd: '/exit',    hint: 'Exit Claude Code' },
+  { cmd: '/status',  hint: 'Show session status' },
+  { cmd: '/restart', hint: 'Restart session' },
+]
+
 function setupChatInput() {
   const chatInput = document.getElementById('chat-input')
   const sendBtn = document.getElementById('send-btn')
   const suggestionsDropdown = document.getElementById('suggestions-dropdown')
 
   if (!chatInput || !sendBtn) return
+
+  // ── Claude tab stop button ────────────────────────────────────────────────
+  // Inject a Stop button into the input-row (next to send-btn) at init time.
+  const inputRow = chatInput.closest('.input-row')
+  const stopBtn = document.createElement('button')
+  stopBtn.type = 'button'
+  stopBtn.id = 'claude-stop-btn'
+  stopBtn.className = 'claude-stop-btn'
+  stopBtn.setAttribute('aria-label', 'Stop Claude')
+  stopBtn.title = 'Stop Claude (interrupt)'
+  stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
+  stopBtn.hidden = true
+  // Insert before send-btn
+  sendBtn.parentNode.insertBefore(stopBtn, sendBtn)
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let isClaudeTab = false      // is the active tab a claude tab?
+  let isClaudeThinking = false // is claude currently thinking?
+  let claudeSlashOpen = false  // is the slash commands dropdown open?
+
+  function updateInputBarForTabType() {
+    const tabType = _activeTabType
+    isClaudeTab = tabType === 'claude'
+    if (isClaudeTab) {
+      chatInput.placeholder = 'Message Claude… (/ for commands)'
+    } else {
+      chatInput.placeholder = 'Type a command...'
+    }
+    // Stop btn only visible when claude is thinking
+    updateThinkingState(isClaudeThinking && isClaudeTab)
+  }
+
+  function updateThinkingState(thinking) {
+    isClaudeThinking = thinking
+    if (isClaudeTab && thinking) {
+      chatInput.classList.add('claude-thinking')
+      stopBtn.hidden = false
+      sendBtn.hidden = true
+    } else {
+      chatInput.classList.remove('claude-thinking')
+      stopBtn.hidden = true
+      sendBtn.hidden = false
+    }
+  }
+
+  // Listen for tab switches
+  const origOnActiveChange = tabManager ? null : null  // will hook via event
+  document.addEventListener('nanocode:tab-active', (e) => {
+    _activeTabType = e.detail?.type || 'bash'
+    isClaudeThinking = false  // reset on tab switch
+    updateInputBarForTabType()
+  })
+
+  // Listen for claude thinking state changes
+  document.addEventListener('nanocode:claude-thinking', (e) => {
+    const detail = e.detail || {}
+    // Only react if this is the active tab
+    const activeId = tabManager ? tabManager.activeId : null
+    if (!activeId || detail.tabId !== activeId) return
+    updateThinkingState(!!detail.thinking)
+  })
+
+  // Stop button click: POST interrupt to backend
+  stopBtn.addEventListener('click', async () => {
+    if (!tabManager) return
+    const activeTab = tabManager.tabs?.find((t) => t.id === tabManager.activeId)
+    if (!activeTab) return
+    const projectId = tabManager.projectId
+    const tabId = activeTab.id
+    try {
+      await fetch(`/api/projects/${projectId}/tabs/${tabId}/interrupt`, { method: 'POST' })
+    } catch {}
+    // Optimistically reset thinking state
+    updateThinkingState(false)
+  })
+
+  // ── Slash-command dropdown for Claude tabs ────────────────────────────────
+  function showSlashCommands(query) {
+    if (!isClaudeTab) return
+    // query is the text after '/', e.g. '' or 'cl' or 'help'
+    const q = query.toLowerCase()
+    const matches = q
+      ? CLAUDE_SLASH_COMMANDS.filter((c) => c.cmd.slice(1).startsWith(q))
+      : CLAUDE_SLASH_COMMANDS
+
+    if (!matches.length) {
+      hideSlashCommands()
+      return
+    }
+    claudeSlashOpen = true
+    suggestionsDropdown.innerHTML = ''
+    for (const opt of matches) {
+      const item = document.createElement('div')
+      item.className = 'suggestion-item claude-slash-item'
+      item.innerHTML =
+        `<span class="claude-slash-cmd">${opt.cmd}</span>` +
+        `<span class="claude-slash-hint">${opt.hint}</span>`
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        chatInput.value = opt.cmd + ' '
+        autoResize()
+        hideSlashCommands()
+        chatInput.focus()
+      })
+      suggestionsDropdown.appendChild(item)
+    }
+    suggestionsDropdown.hidden = false
+  }
+
+  function hideSlashCommands() {
+    claudeSlashOpen = false
+    if (suggestionsDropdown) {
+      suggestionsDropdown.hidden = true
+      suggestionsDropdown.innerHTML = ''
+    }
+  }
 
   const HISTORY_KEY = 'cmdHistory'
   const MAX_HISTORY = 200
@@ -356,10 +486,13 @@ function setupChatInput() {
   function sendInput() {
     const text = chatInput.value
     if (!text) return
+    // Block sending to claude while it's thinking
+    if (isClaudeTab && isClaudeThinking) return
     if (activePane) activePane.sendInputWithEcho(text)
     pushHistory(text)
     resetHistoryNav()
     hideSuggestions()
+    hideSlashCommands()
     chatInput.value = ''
     autoResize()
     chatInput.focus()
@@ -367,17 +500,51 @@ function setupChatInput() {
 
   sendBtn.addEventListener('click', sendInput)
 
+  // ── IME composition guard ─────────────────────────────────────────────────
+  // Track whether the user is mid-composition (e.g. Chinese/Japanese IME).
+  // Some browsers (Chrome on Windows/Mac) set e.isComposing=true during
+  // compositionstart..compositionend, but others (older iOS Safari, some
+  // Android WebView) only set keyCode 229.  We use a flag + both signals.
+  let _isComposing = false
+  chatInput.addEventListener('compositionstart', () => { _isComposing = true })
+  chatInput.addEventListener('compositionend', () => { _isComposing = false })
+
   chatInput.addEventListener('input', () => {
     autoResize()
     resetHistoryNav()
-    showSuggestions(chatInput.value)
+    const val = chatInput.value
+    // Slash command mode for claude tabs
+    if (isClaudeTab && val.startsWith('/')) {
+      hideSuggestions()
+      showSlashCommands(val.slice(1))
+      return
+    }
+    hideSlashCommands()
+    showSuggestions(val)
   })
 
   chatInput.addEventListener('keydown', (e) => {
     const suggestionsOpen = suggestionsDropdown && !suggestionsDropdown.hidden
 
     if (e.key === 'Enter' && !e.shiftKey) {
+      // Block Enter while IME is composing (handles Chinese/Japanese/Korean input).
+      // e.isComposing is standard; keyCode===229 is the legacy fallback used by
+      // some older browsers / Android WebViews during composition.
+      if (e.isComposing || _isComposing || e.keyCode === 229) return
       e.preventDefault()
+      // If slash dropdown is open, pick the first item or close
+      if (claudeSlashOpen) {
+        const firstItem = suggestionsDropdown?.querySelector('.claude-slash-item')
+        if (firstItem) {
+          const cmdEl = firstItem.querySelector('.claude-slash-cmd')
+          if (cmdEl) {
+            chatInput.value = cmdEl.textContent + ' '
+            autoResize()
+          }
+        }
+        hideSlashCommands()
+        return
+      }
       if (suggestionsOpen && selectedSuggestion >= 0) {
         const text = getSelectedSuggestionText()
         if (text) {
@@ -401,7 +568,9 @@ function setupChatInput() {
     }
 
     if (e.key === 'Escape') {
-      if (suggestionsOpen) {
+      if (claudeSlashOpen) {
+        hideSlashCommands()
+      } else if (suggestionsOpen) {
         hideSuggestions()
       } else {
         chatInput.value = ''
@@ -463,7 +632,10 @@ function setupChatInput() {
   })
 
   chatInput.addEventListener('blur', () => {
-    setTimeout(hideSuggestions, 150)
+    setTimeout(() => {
+      hideSuggestions()
+      hideSlashCommands()
+    }, 150)
   })
 
   // Touch toolbar

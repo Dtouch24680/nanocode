@@ -135,17 +135,30 @@ class Session {
       console.warn(`[pty] command not found: ${command}`)
     }
     console.log(`[pty] spawn: command=${command} args=${JSON.stringify(this._args)} cwd=${cwd}`)
+    // Strip session-identity vars that Claude Code sets in the parent process so
+    // that any `claude` invocations started inside this PTY (e.g. codex/agent/
+    // claude tab types or a user typing `claude` in a bash tab) get a clean
+    // environment and cannot accidentally re-use the main session's UUID.
+    // See the same strip logic in routes.js → buildClaudeChildEnv().
+    const STRIP_PTY_KEYS = new Set([
+      'CLAUDE_CODE_SESSION_ID',
+      'CLAUDECODE',
+      'CLAUDE_CODE_ENTRYPOINT',
+      'CLAUDE_CODE_EXECPATH',
+      'CLAUDE_CODE_TMPDIR',
+      'AI_AGENT',
+    ])
+    const ptyEnv = { TERM: 'xterm-256color', COLORTERM: 'truecolor', FORCE_COLOR: '3' }
+    for (const [k, v] of Object.entries(process.env)) {
+      if (!STRIP_PTY_KEYS.has(k)) ptyEnv[k] = v
+    }
+
     this._proc = pty.spawn(command, this._args, {
       name: 'xterm-256color',
       cols: Math.max(1, cols || 80),
       rows: Math.max(1, rows || 24),
       cwd,
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        FORCE_COLOR: '3',
-      },
+      env: ptyEnv,
     })
 
     this._proc.onData((data) => {
