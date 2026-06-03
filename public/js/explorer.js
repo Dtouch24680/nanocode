@@ -1028,6 +1028,65 @@ export function createExplorer(container, projectId) {
       container.innerHTML = ''
       container.classList.remove('explorer', 'dragging')
     },
+    /**
+     * Feature 2: open a file path programmatically — called when user clicks
+     * a path link in a chat bubble (nanocode:open-in-explorer event).
+     *
+     * The path may be:
+     *   - An absolute path starting with /storage/ or /home/ (strip project root prefix if known)
+     *   - A ~/... path (expand to /storage/home/<user>/...)
+     *   - A repo-relative path like "server/index.js"
+     *
+     * We resolve by listing the directory tree and trying to find the entry.
+     * On success: expand ancestor dirs and call selectFile().
+     */
+    async openPath(rawPath) {
+      if (remote || cancelled) return
+      let filePath = rawPath
+
+      // Expand ~ to the project root or /storage/home/<user> heuristic
+      if (filePath.startsWith('~/')) {
+        // Attempt to resolve to an absolute path via the project cwd
+        // We don't have cwd here, so use /storage/home/<user> from window.location context
+        // For simplicity, pass the path as-is; the server file API will resolve it
+        // relative to the project root. Try stripping leading ~/ only.
+        filePath = filePath.slice(2)  // become relative path from home
+      }
+
+      // Try to find the file in the loaded tree
+      // Strategy: load the parent directory, find the entry, then selectFile
+      const parts = filePath.split('/').filter(Boolean)
+      if (!parts.length) return
+
+      // First try as a relative path from the project root
+      try {
+        // Navigate the tree: expand ancestor directories
+        let current = ''
+        for (let i = 0; i < parts.length - 1; i++) {
+          const next = current ? `${current}/${parts[i]}` : parts[i]
+          if (!expanded.has(next)) {
+            await expandDir(next)
+            if (cancelled) return
+          }
+          current = next
+        }
+        const parentDir = parts.slice(0, -1).join('/')
+        const siblings = entriesByDir.get(parentDir) || entriesByDir.get('') || []
+        const match = siblings.find((e) => e.path === filePath || e.name === parts[parts.length - 1])
+        if (match) {
+          renderTree()
+          await selectFile(match.path, match.size || 0, { force: true })
+          return
+        }
+      } catch {}
+
+      // If not found as relative path, try as-is (absolute paths won't match
+      // relative entries, but we try a fallback: just call selectFile with
+      // the path and let the API handle it)
+      try {
+        await selectFile(filePath, 0, { force: true })
+      } catch {}
+    },
     async switchProject(newProjectId) {
       persist()
       project = newProjectId

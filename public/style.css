@@ -2564,6 +2564,75 @@ body.workspace-active .landing-overlay { display: none; }
 /* Heading utility (from renderInlineMarkdown) */
 .cbr-h { margin: 0.5em 0 0.2em; color: var(--text); font-weight: 600; }
 
+/* ── Feature 2: Clickable file paths in chat bubbles ──────────── */
+.cbr-path-link {
+  color: var(--primary);
+  background: var(--primary-subtle, rgba(99,102,241,0.08));
+  border-radius: 3px;
+  padding: 0 0.25em;
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  transition: background 0.15s;
+}
+.cbr-path-link:hover {
+  background: var(--primary-light, rgba(99,102,241,0.18));
+}
+
+/* ── Feature 3: Auto-linked bare URLs in chat bubbles ──────────── */
+.cbr-autolink-url {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.cbr-autolink-url:hover {
+  text-decoration-style: solid;
+}
+
+/* ── Feature 1: Queue choice banner ─────────────────────────────── */
+.cbr-queue-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin: 6px 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm, 0.85rem);
+  color: var(--text);
+  flex-wrap: wrap;
+}
+.cbr-queue-banner-msg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.cbr-queue-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  background: var(--bg-card);
+  color: var(--text);
+  transition: background 0.15s, color 0.15s;
+}
+.cbr-queue-btn:hover { background: var(--bg-tertiary); }
+.cbr-queue-enqueue { border-color: var(--primary-light, #818cf8); color: var(--primary); }
+.cbr-queue-enqueue:hover { background: var(--primary-subtle, rgba(99,102,241,0.1)); }
+.cbr-queue-interrupt {
+  border-color: var(--error, #f87171);
+  color: var(--error, #f87171);
+}
+.cbr-queue-interrupt:hover { background: rgba(248,113,113,0.1); }
+.cbr-queue-cancel { color: var(--text-secondary); }
+
 /* ── Code block ────────────────────────────────────────────────── */
 
 .cbr-block-code {

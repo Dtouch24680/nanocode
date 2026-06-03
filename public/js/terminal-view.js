@@ -93,6 +93,14 @@ function setupExplorer(projectId) {
   const root = document.getElementById('explorer-root')
   if (!root) return
   explorer = createExplorer(root, projectId)
+
+  // Feature 2: listen for path-click events from chat bubble renderer
+  // The event bubbles up from wherever in the DOM the clicked span lives.
+  document.addEventListener('nanocode:open-in-explorer', (e) => {
+    const path = e.detail?.path
+    if (!path || !explorer) return
+    explorer.openPath(path).catch(() => {})
+  })
 }
 
 function setupTabs(projectId) {
@@ -538,13 +546,97 @@ function setupChatInput() {
     chatInput.style.overflowY = chatInput.scrollHeight > 120 ? 'auto' : 'hidden'
   }
 
+  // ── Feature 1: Queue-choice dialog ───────────────────────────────────────
+  // When claude is busy, instead of silently enqueuing, we show an inline
+  // banner with two actions: "排队" (enqueue) or "打断并发送" (interrupt+send).
+  // The banner is appended to .cbr-scroll of the active pane and removes
+  // itself once the user picks an action.
+
+  let _queueChoiceBanner = null
+
+  function dismissQueueBanner() {
+    if (_queueChoiceBanner) {
+      _queueChoiceBanner.remove()
+      _queueChoiceBanner = null
+    }
+  }
+
+  function showQueueChoiceBanner(text) {
+    dismissQueueBanner()
+
+    // Find the scroll container of the active CBR pane
+    const container = activePane?.container || activePane?._scroll?.parentElement
+    const scroll = container?.querySelector('.cbr-scroll') || activePane?._scroll
+    if (!scroll) {
+      // Fallback: just enqueue silently
+      if (activePane) activePane.sendInputWithEcho(text)
+      return
+    }
+
+    const banner = document.createElement('div')
+    banner.className = 'cbr-queue-banner'
+    banner.innerHTML =
+      `<span class="cbr-queue-banner-msg">Claude 正忙：</span>` +
+      `<button class="cbr-queue-btn cbr-queue-enqueue" title="等当前回合完成再发送">排队</button>` +
+      `<button class="cbr-queue-btn cbr-queue-interrupt" title="立即中断当前回合并发送">打断并发送</button>` +
+      `<button class="cbr-queue-btn cbr-queue-cancel" title="取消">取消</button>`
+    scroll.appendChild(banner)
+    scroll.scrollTop = scroll.scrollHeight
+    _queueChoiceBanner = banner
+
+    banner.querySelector('.cbr-queue-enqueue').addEventListener('click', () => {
+      dismissQueueBanner()
+      // Send normally — server will enqueue since it's busy
+      if (activePane) activePane.sendInputWithEcho(text)
+      pushHistory(text)
+      resetHistoryNav()
+      chatInput.focus()
+    })
+
+    banner.querySelector('.cbr-queue-interrupt').addEventListener('click', async () => {
+      dismissQueueBanner()
+      // Interrupt the current turn, then send
+      const activeTab = tabManager?.tabs?.find((t) => t.id === tabManager.activeId)
+      const projectId = tabManager?.projectId
+      if (activeTab && projectId) {
+        try {
+          await fetch(`/api/projects/${projectId}/tabs/${activeTab.id}/interrupt`, { method: 'POST' })
+        } catch {}
+        // Optimistically update thinking state
+        updateThinkingState(false)
+      }
+      // Small delay so the interrupt lands before we send the next turn
+      setTimeout(() => {
+        if (activePane) activePane.sendInputWithEcho(text)
+        pushHistory(text)
+        resetHistoryNav()
+        chatInput.focus()
+      }, 150)
+    })
+
+    banner.querySelector('.cbr-queue-cancel').addEventListener('click', () => {
+      dismissQueueBanner()
+      chatInput.focus()
+    })
+  }
+
   function sendInput() {
     const text = chatInput.value
     if (!text) return
-    // Previously: blocked sending while claude is thinking. Removed — the
-    // server now has a FIFO queue, so messages sent while busy are enqueued
-    // and run after the current turn finishes. The client shows a "queued"
-    // system notice. Blocking here only caused a stuck UI (user had to refresh).
+
+    // Feature 1: when claude is busy on a claude tab, offer queue/interrupt choice
+    if (isClaudeTab && isClaudeThinking) {
+      // Clear input first so the user can keep typing if they cancel
+      chatInput.value = ''
+      autoResize()
+      hideSuggestions()
+      hideSlashCommands()
+      showQueueChoiceBanner(text)
+      chatInput.focus()
+      return
+    }
+
+    // Not busy (or not a claude tab): send immediately as before
     if (activePane) activePane.sendInputWithEcho(text)
     pushHistory(text)
     resetHistoryNav()

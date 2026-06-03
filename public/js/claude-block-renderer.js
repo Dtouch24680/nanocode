@@ -167,6 +167,138 @@ function attachCopyHandlers(el) {
   })
 }
 
+// ── Feature 2: Clickable file paths ──────────────────────────────────────────
+//
+// Conservative regex: matches absolute /storage/... or ~/... paths, or
+// relative repo paths like "server/index.js" (must have at least one "/" and
+// end with a known extension or be a file-like segment with no spaces).
+//
+// Rules to avoid false positives:
+//   - Must start with / or ~/ or contain an interior "/" (not just bare words)
+//   - Absolute paths must start with /storage/ or /home/ or ~/
+//   - Relative paths must contain at least one "/" and end with a word char or known ext
+//   - Must NOT be wrapped in an existing <a> (handled by DOM walk below)
+//   - Max length guard: skip if segment > 300 chars
+//
+// This regex is intentionally NOT applied to markdown-rendered HTML (which
+// marked already handles links). It is applied to raw text nodes only.
+
+// Path regex rules:
+//   - Absolute: must start with /storage/, /home/, or ~/
+//     Matches word chars, dots, hyphens, slashes — no spaces — excluding trailing punctuation
+//   - Relative: identifier/path/file.ext — NO spaces, at least one slash,
+//     must end with a known-ish extension (2-10 chars alpha), NOT preceded by :// (avoid
+//     matching inside URLs twice), and NOT pure numbers/dots (version fractions)
+// Trailing punctuation (.,;:!) is excluded via negative lookahead.
+const PATH_RE = /(?:(?:\/(?:storage|home)\/[^\s,;:!?()\[\]"'<>]+)|(?:~\/[^\s,;:!?()\[\]"'<>]+)|(?<![:/])(?:[a-zA-Z][a-zA-Z0-9_.-]*(?:\/[a-zA-Z0-9_.+-]+)+\.[a-zA-Z]{2,10})(?=\s|$|[,;:!?()\[\]"'<>]))/g
+
+// URL regex: bare http(s):// links not already inside an <a>
+const URL_RE = /https?:\/\/[^\s"'<>[\]()]+[^\s"'<>[\]().,;:!?]/g
+
+/**
+ * Walk text nodes inside `root`, find file paths and bare URLs, and replace
+ * them with clickable elements. Skips nodes already inside <a>, <pre>, <code>.
+ */
+function attachPathAndUrlHandlers(root) {
+  // Collect text nodes that are not inside <a>, <pre>, or <code>
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let p = node.parentElement
+      while (p && p !== root) {
+        const tag = p.tagName.toLowerCase()
+        if (tag === 'a' || tag === 'pre' || tag === 'code') return NodeFilter.FILTER_REJECT
+        p = p.parentElement
+      }
+      return NodeFilter.FILTER_ACCEPT
+    },
+  })
+
+  const textNodes = []
+  let node
+  while ((node = walker.nextNode())) textNodes.push(node)
+
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue
+    if (!text) continue
+
+    // Quick pre-check: does this text contain anything interesting?
+    if (!/https?:\/\//.test(text) && !/(\/storage\/|\/home\/|~\/|\w+\/\w+\.\w{1,10})/.test(text)) continue
+
+    // Build a combined regex pass: find all URLs and paths
+    // Strategy: find all matches with their positions, sort by index,
+    // split the text into literal + clickable parts.
+    const matches = []
+    let m
+
+    // Reset lastIndex
+    URL_RE.lastIndex = 0
+    PATH_RE.lastIndex = 0
+
+    while ((m = URL_RE.exec(text)) !== null) {
+      matches.push({ type: 'url', start: m.index, end: m.index + m[0].length, value: m[0] })
+    }
+    URL_RE.lastIndex = 0
+
+    while ((m = PATH_RE.exec(text)) !== null) {
+      if (m[0].length > 300) continue
+      matches.push({ type: 'path', start: m.index, end: m.index + m[0].length, value: m[0] })
+    }
+    PATH_RE.lastIndex = 0
+
+    if (!matches.length) continue
+
+    // Sort by start position, then remove overlaps
+    matches.sort((a, b) => a.start - b.start)
+    const deduped = []
+    let lastEnd = 0
+    for (const match of matches) {
+      if (match.start < lastEnd) continue  // overlaps previous match — skip
+      deduped.push(match)
+      lastEnd = match.end
+    }
+
+    if (!deduped.length) continue
+
+    // Build a document fragment replacing matched spans with elements
+    const frag = document.createDocumentFragment()
+    let pos = 0
+    for (const match of deduped) {
+      if (match.start > pos) {
+        frag.appendChild(document.createTextNode(text.slice(pos, match.start)))
+      }
+      if (match.type === 'url') {
+        const a = document.createElement('a')
+        a.href = match.value
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+        a.textContent = match.value
+        a.className = 'cbr-autolink-url'
+        frag.appendChild(a)
+      } else {
+        const span = document.createElement('span')
+        span.className = 'cbr-path-link'
+        span.textContent = match.value
+        span.title = 'Open in explorer: ' + match.value
+        span.dataset.path = match.value
+        span.addEventListener('click', (e) => {
+          e.stopPropagation()
+          document.dispatchEvent(new CustomEvent('nanocode:open-in-explorer', {
+            detail: { path: match.value },
+            bubbles: true,
+          }))
+        })
+        frag.appendChild(span)
+      }
+      pos = match.end
+    }
+    if (pos < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(pos)))
+    }
+
+    textNode.parentNode.replaceChild(frag, textNode)
+  }
+}
+
 // ── Main class ────────────────────────────────────────────────────────────────
 
 export class ClaudeBlockRenderer {
@@ -812,6 +944,8 @@ export class ClaudeBlockRenderer {
     }
     article.innerHTML = `<div class="cbr-text">${html}</div>`
     attachCopyHandlers(article)
+    // Feature 2 & 3: linkify paths and bare URLs in rendered text nodes
+    attachPathAndUrlHandlers(article)
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
@@ -1033,6 +1167,7 @@ export class ClaudeBlockRenderer {
   _appendUserBlock(text) {
     const article = this._makeBlock('cbr-block-prompt cbr-user-prompt')
     article.innerHTML = `<p class="cbr-prompt-text">&#10095; ${escHtml(text)}</p>`
+    attachPathAndUrlHandlers(article)
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
