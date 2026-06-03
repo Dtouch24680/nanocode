@@ -1355,7 +1355,9 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 
 .chat-textarea.claude-thinking {
   animation: claude-thinking-pulse 1.6s ease-in-out infinite;
-  pointer-events: none;
+  /* No pointer-events:none — user must be able to type while claude is thinking
+     so messages can be queued (see FIFO queue in routes.js runClaudeTurn). The
+     pulse animation alone signals the thinking state. */
   border-color: var(--border);
 }
 
