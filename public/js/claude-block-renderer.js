@@ -30,6 +30,12 @@ const BACKOFF_BASE = 500
 const BACKOFF_MAX = 10_000
 const PING_INTERVAL_MS = 5000
 
+// ── Lazy history loading ───────────────────────────────────────────────────────
+// Initial replay: only render the last N events to keep DOM lean.
+// "Load more" prepends another HISTORY_PAGE events when user scrolls to top.
+const INITIAL_HISTORY_BLOCKS = 50
+const HISTORY_PAGE_SIZE = 50
+
 // ── Tool-block fold level ──────────────────────────────────────────────────────
 // Three levels (persisted in localStorage):
 //   'full'    — show tool name + full input/output content (default)
@@ -363,6 +369,17 @@ export class ClaudeBlockRenderer {
     // _handleEvent checks this set before processing any incoming server event.
     this._replayedUuids = new Set()
 
+    // ── Lazy history state ──────────────────────────────────────────────────────
+    // Full fetched event array from the server (never discarded).
+    // _historyRenderedStart is the index into this array of the earliest event
+    // that has been rendered. Rendering always proceeds from [_historyRenderedStart]
+    // upward. Events below that index are "older" and will be prepended on scroll.
+    this._historyEvents = []       // all events fetched from server
+    this._historyRenderedStart = 0 // index of oldest rendered event in _historyEvents
+    this._historyLoadingSentinel = null  // <div> at top, watched by IntersectionObserver
+    this._historyObserver = null   // IntersectionObserver for the sentinel
+    this._historyLoading = false   // prevent concurrent load-more
+
     // Thinking state: true when claude is processing a turn
     this._thinking = false
 
@@ -435,6 +452,7 @@ export class ClaudeBlockRenderer {
   dispose() {
     clearTimeout(this._reconnectTimer)
     this._stopPing()
+    this._removeHistorySentinel()
     if (this._ws) {
       this._ws.onclose = null
       this._ws.close()
@@ -449,10 +467,19 @@ export class ClaudeBlockRenderer {
    * into the renderer. Called once on first WS open (not reconnects — those
    * replay from in-memory cs.history via the WS broadcast).
    *
-   * De-dup strategy: every replayed event's uuid is stored in _replayedUuids.
-   * When the WS subsequently replays cs.history (which may overlap for the same
-   * session), _handleEvent skips events whose uuid was already rendered here.
-   * For cross-port / new-process scenarios cs.history is empty, so no overlap.
+   * Lazy loading strategy (front-end batching):
+   *   - All events are fetched from the server at once (no backend pagination).
+   *   - Only the last INITIAL_HISTORY_BLOCKS events are rendered into the DOM.
+   *   - A sentinel <div> is inserted at the top; an IntersectionObserver watches
+   *     it and prepends another HISTORY_PAGE_SIZE batch when the user scrolls up.
+   *   - Scroll position is preserved via scrollHeight-delta compensation so the
+   *     view doesn't jump when older content is prepended.
+   *
+   * De-dup strategy: ALL fetched events' uuids are recorded in _replayedUuids
+   * (even those not yet rendered). When the WS subsequently replays cs.history
+   * the dedup guard will skip already-seen events regardless of render status.
+   * When "load more" renders older events they are NOT re-added to _replayedUuids
+   * (they're already there), so no issues arise.
    */
   async _fetchAndReplayHistory() {
     const url = `/api/projects/${this.projectId}/tabs/${this.tabId}/history`
@@ -468,30 +495,205 @@ export class ClaudeBlockRenderer {
     const events = data?.events
     if (!Array.isArray(events) || events.length === 0) return
 
-    // Show a subtle separator so the user knows this is restored history
-    this._addSystemBlock(`[Restored ${events.length} event(s) from session history]`)
+    // Register ALL uuids for dedup (even those we won't render immediately).
+    // This is important: WS cs.history replay must skip ALL of these events,
+    // not just the ones we rendered. Otherwise older-but-not-yet-rendered events
+    // would be rendered again when a WS reconnect replays cs.history.
+    for (const event of events) {
+      if (event.uuid) this._replayedUuids.add(event.uuid)
+    }
 
-    // ── Perf: batch replay mode ──────────────────────────────────────────────
-    // During replay, suppress per-block _scrollBottom() rAF callbacks and
-    // nanocode:terminal-output dispatches (TTS does not need history events).
-    // We do a single scroll-to-bottom at the end instead of N rAF + layout hits.
+    // Store the full event list. Rendering will happen in slices.
+    this._historyEvents = events
+
+    // ── Determine which slice to render initially ────────────────────────────
+    // We render the last INITIAL_HISTORY_BLOCKS events (most recent), so the
+    // user lands at the bottom seeing the newest messages. Everything before
+    // that index is available for "load more" when scrolling up.
+    const totalEvents = events.length
+    const initialStart = Math.max(0, totalEvents - INITIAL_HISTORY_BLOCKS)
+    this._historyRenderedStart = initialStart
+
+    const hasOlderHistory = initialStart > 0
+
+    // Show a subtle separator. If we truncated, note how many older events exist.
+    if (hasOlderHistory) {
+      this._addSystemBlock(
+        `[Showing last ${totalEvents - initialStart} of ${totalEvents} event(s). Scroll up to load more.]`
+      )
+    } else {
+      this._addSystemBlock(`[Restored ${totalEvents} event(s) from session history]`)
+    }
+
+    // Insert the top-sentinel BEFORE rendering initial blocks (so it sits at top).
+    if (hasOlderHistory) {
+      this._insertHistorySentinel()
+    }
+
+    // ── Render the initial slice in batch replay mode ────────────────────────
+    // Suppress per-block _scrollBottom() rAF callbacks and TTS dispatches;
+    // do a single scroll-to-bottom at the end.
     this._replayMode = true
     try {
-      for (const event of events) {
-        // Track uuid for dedup against later WS replay (must happen BEFORE render
-        // so that the WS replay path sees it; pass opts.fromReplay=true so the
-        // _handleEvent dedup guard doesn't block the initial render itself).
-        if (event.uuid) this._replayedUuids.add(event.uuid)
-        this._handleEvent(event, { fromReplay: true })
+      for (let i = initialStart; i < totalEvents; i++) {
+        this._handleEvent(events[i], { fromReplay: true })
       }
     } finally {
       this._replayMode = false
     }
-    // Single scroll-to-bottom after all blocks are in DOM
+
+    // Single scroll-to-bottom after all initial blocks are in DOM
     requestAnimationFrame(() => {
       this._scroll.scrollTop = this._scroll.scrollHeight
       this._updateScrollBtn()
     })
+  }
+
+  /**
+   * Insert a sentinel element at the very top of the scroll area and wire up
+   * an IntersectionObserver to trigger loading more history when the sentinel
+   * becomes visible (i.e. the user scrolled up to the top).
+   */
+  _insertHistorySentinel() {
+    if (this._historyLoadingSentinel) return  // already installed
+
+    const sentinel = document.createElement('div')
+    sentinel.className = 'cbr-history-sentinel'
+    sentinel.setAttribute('aria-hidden', 'true')
+    // Minimal visual indicator: a thin loading stripe that disappears once all
+    // history is loaded. Height=1px ensures IntersectionObserver fires reliably.
+    sentinel.style.cssText = 'height:32px;display:flex;align-items:center;justify-content:center;color:var(--text-muted,#888);font-size:12px;opacity:0.6;'
+    sentinel.textContent = '↑ scroll up to load older messages'
+    this._historyLoadingSentinel = sentinel
+
+    // Prepend: must be the very first child so it's at the top visually
+    if (this._scroll.firstChild) {
+      this._scroll.insertBefore(sentinel, this._scroll.firstChild)
+    } else {
+      this._scroll.appendChild(sentinel)
+    }
+
+    // IntersectionObserver: fires when sentinel enters the viewport.
+    // threshold:0 = fires as soon as even 1px is visible.
+    // We use rootMargin:0px so it only fires when truly in view.
+    this._historyObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            this._loadMoreHistory()
+          }
+        }
+      },
+      { root: this._scroll, threshold: 0, rootMargin: '0px' }
+    )
+    this._historyObserver.observe(sentinel)
+  }
+
+  /**
+   * Prepend the next batch of older history events into the DOM.
+   * Preserves scroll position by compensating for the added scrollHeight.
+   * Called by the IntersectionObserver when the sentinel scrolls into view.
+   */
+  _loadMoreHistory() {
+    if (this._historyLoading) return
+    if (this._historyRenderedStart <= 0) {
+      // Nothing more to load — remove sentinel and observer
+      this._removeHistorySentinel()
+      return
+    }
+
+    this._historyLoading = true
+
+    // Determine the slice to prepend
+    const endIdx = this._historyRenderedStart
+    const startIdx = Math.max(0, endIdx - HISTORY_PAGE_SIZE)
+    this._historyRenderedStart = startIdx
+
+    // Capture current scroll offset for position compensation
+    const scrollEl = this._scroll
+    const scrollHeightBefore = scrollEl.scrollHeight
+    const scrollTopBefore = scrollEl.scrollTop
+
+    // Render older events into a DocumentFragment (off-DOM for perf)
+    const frag = document.createDocumentFragment()
+
+    // We need to insert a temporary container to collect new articles,
+    // then prepend them all at once. We render into a detached container.
+    const tempContainer = document.createElement('div')
+
+    // Temporarily redirect this._scroll to the temp container so all
+    // _render* and _add* methods append there. Restore afterward.
+    const realScroll = this._scroll
+    this._scroll = tempContainer
+
+    this._replayMode = true
+    try {
+      for (let i = startIdx; i < endIdx; i++) {
+        this._handleEvent(this._historyEvents[i], { fromReplay: true })
+      }
+    } finally {
+      this._replayMode = false
+      this._scroll = realScroll
+    }
+
+    // Move all newly-rendered children from tempContainer into a fragment
+    while (tempContainer.firstChild) {
+      frag.appendChild(tempContainer.firstChild)
+    }
+
+    // Find insertion point: just after the sentinel (index 1 if sentinel is [0])
+    const sentinel = this._historyLoadingSentinel
+    const insertAfter = sentinel || null
+
+    if (insertAfter && insertAfter.parentNode === scrollEl) {
+      // Insert the batch right after the sentinel
+      insertAfter.insertAdjacentElement ? null : null  // (not used; manual DOM splice)
+      const nextSibling = insertAfter.nextSibling
+      if (nextSibling) {
+        scrollEl.insertBefore(frag, nextSibling)
+      } else {
+        scrollEl.appendChild(frag)
+      }
+    } else {
+      // Fallback: prepend to the very top
+      if (scrollEl.firstChild) {
+        scrollEl.insertBefore(frag, scrollEl.firstChild)
+      } else {
+        scrollEl.appendChild(frag)
+      }
+    }
+
+    // ── Scroll position compensation ─────────────────────────────────────────
+    // Adding content at the top shifts all existing content down by the newly
+    // added height. Compensate by adding the same delta to scrollTop so the
+    // viewport appears unchanged (the user's current view stays in place).
+    const scrollHeightAfter = scrollEl.scrollHeight
+    const addedHeight = scrollHeightAfter - scrollHeightBefore
+    scrollEl.scrollTop = scrollTopBefore + addedHeight
+
+    this._historyLoading = false
+
+    // If we just rendered all remaining history, remove the sentinel
+    if (startIdx <= 0) {
+      this._removeHistorySentinel()
+    }
+  }
+
+  /**
+   * Remove the top sentinel and disconnect the IntersectionObserver.
+   * Called when all history has been loaded.
+   */
+  _removeHistorySentinel() {
+    if (this._historyObserver) {
+      this._historyObserver.disconnect()
+      this._historyObserver = null
+    }
+    if (this._historyLoadingSentinel) {
+      if (this._historyLoadingSentinel.parentNode) {
+        this._historyLoadingSentinel.parentNode.removeChild(this._historyLoadingSentinel)
+      }
+      this._historyLoadingSentinel = null
+    }
   }
 
   // ── WS connection ────────────────────────────────────────────────────────────
@@ -511,6 +713,12 @@ export class ClaudeBlockRenderer {
       // replayed render = double). Also reset all live-block pointers so
       // partial_message / assistant events start fresh.
       if (isReconnect) {
+        // Clean up lazy loading state before clearing the DOM
+        this._removeHistorySentinel()
+        this._historyEvents = []
+        this._historyRenderedStart = 0
+        this._historyLoading = false
+
         this._scroll.innerHTML = ''
         this._liveAssistantBlock = null
         this._liveAssistantId = null
