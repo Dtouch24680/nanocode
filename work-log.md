@@ -1,5 +1,32 @@
 # Work Log
 
+## 2026-06-03 [Bug修复: busy队列 + thinking解锁 + subagent fold]
+
+**背景：主人实际使用发现3个问题，上一轮单测全过但实地用挂了。这次先复现再修再实跑验证。**
+
+### 问题3（最重要）: busy时丢消息 → 改FIFO队列
+- **根因**：`runClaudeTurn` busy时直接广播stderr "Previous turn still running, please wait." 并return，消息彻底丢弃
+- **修法**：busy时push到`cs.queue`，广播`{type:'system',subtype:'queued'}`给客户端；exit handler里`setImmediate`跑下一条；interrupt时清空queue
+- **验证**：`node qa-test/test-queue-and-thinking.mjs` → PASS（2个result事件、1个queued事件、0个drop消息）
+
+### 问题2: thinking时发不了消息、要刷新才能发
+- **根因**：`terminal-view.js:490` `if (isClaudeTab && isClaudeThinking) return` 硬挡。server busy拒绝→不回result→thinking卡死true→只能刷新
+- **修法**：删除这个guard。有了server队列，发消息直接入队；result到了_setThinking(false)自愈。renderer加queued/info system subtype显示
+- **验证**：集成测试同上，客户端不再被block
+
+### 问题1: 开了subagent prompt开关仍看不到内容
+- **抓包验证**：`claude --print --output-format=stream-json -- "用Agent工具..."` 抓包确认：
+  - ✓ 顶层流确实有 `type:'assistant'` + `content[{type:'tool_use',name:'Agent',input:{prompt,description}}]`
+  - ✓ `parent_tool_use_id: null`，所以`_handleAssistant`的guard不会拦
+  - ✓ `_renderToolUsePart`的`isSubagentTool`匹配`name==='Agent'`正确
+- **真因**：`applyToolFold(article)` 被调用在subagent-prompt blocks上。如果用户把cbr_tool_fold设为`header`或`line`，block的body就被CSS fold掉了（`display:none`）。block文章存在但内容不可见 → 用户以为开关没用
+- **修法**：subagent-prompt blocks跳过`applyToolFold`，直接`setAttribute('data-fold','full')`；`setSubagentPromptVisible`里也补set
+
+### 产出
+- 3个原子提交：e1a7fda（队列）、6d561bd（thinking）、f067851（subagent fold）
+- 集成测试：`qa-test/test-queue-and-thinking.mjs` ALL PASS
+- run.log: grep -i "FAIL|Error|MISMATCH" → 干净
+
 ## 2026-06-03 [Task B 补丁: subagent assistant/partial_message gate 漏洞]
 实地抓取验证（claude --print --output-format=stream-json --verbose --include-partial-messages）：
   - 当前 claude CLI 版本（Opus 4.8）中，assistant 和 partial_message 事件的 parent_tool_use_id 永远是 None
