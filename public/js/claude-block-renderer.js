@@ -57,9 +57,12 @@ function getSubagentPromptVisible() {
 
 function setSubagentPromptVisible(val) {
   localStorage.setItem(SUBAGENT_PROMPT_KEY, val ? 'true' : 'false')
-  // Apply immediately to all existing subagent-prompt blocks
+  // Apply immediately to all existing subagent-prompt blocks.
+  // When making a block visible, also ensure data-fold='full' so the body
+  // content is shown (not folded away by the global tool-fold setting).
   document.querySelectorAll('.cbr-block-subagent-prompt').forEach((el) => {
     el.style.display = val ? '' : 'none'
+    if (val) el.setAttribute('data-fold', 'full')
   })
   document.dispatchEvent(new CustomEvent('cbr:subagent-prompt-changed', { detail: { visible: val } }))
 }
@@ -473,6 +476,11 @@ export class ClaudeBlockRenderer {
       this._addSystemBlock(`[stderr: ${event.text}]`)
     } else if (event.subtype === 'spawn_error') {
       this._addSystemBlock(`[Failed to start claude: ${event.text}]`)
+    } else if (event.subtype === 'queued') {
+      // Message was queued while server was busy — show feedback inline
+      this._addSystemBlock(`[queued: ${event.text}]`)
+    } else if (event.subtype === 'info') {
+      this._addSystemBlock(`[${event.text}]`)
     }
   }
 
@@ -668,7 +676,15 @@ export class ClaudeBlockRenderer {
         article.setAttribute('data-fold', next)
       })
     }
-    applyToolFold(article)
+    // Subagent-prompt blocks: always start at 'full' so the prompt text is
+    // visible even when the global tool-fold level is 'header' or 'line'.
+    // Without this the user enables the toggle and the block appears but the
+    // body is folded away by the global fold CSS — confusingly blank.
+    if (isSubagentPrompt) {
+      article.setAttribute('data-fold', 'full')
+    } else {
+      applyToolFold(article)
+    }
     attachCopyHandlers(article)
     this._scroll.appendChild(article)
     this._scrollBottom()
