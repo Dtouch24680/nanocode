@@ -7,6 +7,12 @@
  * Symlink-escape note: the sandbox check is lexical (path.relative). A symlink
  * inside the project pointing outside cwd will not be caught. This is acceptable
  * for a single-user local tool; the user controls their own filesystem.
+ *
+ * Cross-project / home-root access (read-only routes only):
+ *   When an absolute path is supplied, the sandbox check is expanded:
+ *   1. If any project's cwd is an ancestor of the path, use that project's sandbox.
+ *   2. Otherwise, fall back to HOME_ROOT (/storage/home/zhiningjiao) as the sandbox root.
+ *   3. Paths outside HOME_ROOT are always rejected (403).
  */
 
 import { Router } from 'express'
@@ -26,6 +32,9 @@ import {
 } from 'node:fs'
 import { resolve, relative, isAbsolute, basename, dirname, join } from 'node:path'
 import Busboy from 'busboy'
+
+/** Home-root sandbox for cross-project / codex_work access (single-user dev box). */
+const HOME_ROOT = resolve('/storage/home/zhiningjiao')
 
 const TEXT_SIZE_CAP = 256 * 1024 // 256 KB
 const UPLOAD_SIZE_CAP = 50 * 1024 * 1024 // 50 MB
@@ -74,6 +83,70 @@ function resolveSandboxed(project, relPath) {
   return { root, target, rel }
 }
 
+/**
+ * Resolve a path that may be absolute, using extended sandbox rules:
+ *   1. If the resolved path falls under the current project's cwd → normal sandbox.
+ *   2. If it falls under any other project's cwd → use that project's root.
+ *   3. Fallback: if it falls under HOME_ROOT → allow, root = HOME_ROOT.
+ *   4. Outside HOME_ROOT → 403.
+ *
+ * Returns { root, target, rel, crossProject: boolean }.
+ * Throws { status, error, code? } on rejection.
+ *
+ * Only intended for read-only routes (list, content, raw).
+ */
+function resolveWithFallback(project, store, inputPath) {
+  if (project.ssh_host) {
+    const err = new Error('remote browsing unsupported')
+    err.status = 400
+    err.code = 'REMOTE'
+    throw err
+  }
+
+  const input = String(inputPath || '')
+
+  // ── Case A: not absolute → standard project sandbox ──
+  if (!isAbsolute(input)) {
+    return { ...resolveSandboxed(project, input), crossProject: false }
+  }
+
+  // ── Absolute path: resolve it then sandbox-check ──
+  const target = resolve(input)
+
+  // 1. Check if it falls within the current project's cwd
+  const projectRoot = resolve(project.cwd)
+  const relToProject = relative(projectRoot, target)
+  if (!relToProject.startsWith('..') && !isAbsolute(relToProject)) {
+    return { root: projectRoot, target, rel: relToProject, crossProject: false }
+  }
+
+  // 2. Check all other projects
+  if (store) {
+    for (const p of store.listProjects()) {
+      if (p.id === project.id || p.ssh_host) continue
+      const pRoot = resolve(p.cwd)
+      const relToP = relative(pRoot, target)
+      if (!relToP.startsWith('..') && !isAbsolute(relToP)) {
+        return { root: pRoot, target, rel: relToP, crossProject: true, matchedProject: p }
+      }
+    }
+  }
+
+  // 3. Fallback: home-root sandbox
+  const relToHome = relative(HOME_ROOT, target)
+  if (!relToHome.startsWith('..') && !isAbsolute(relToHome)) {
+    return { root: HOME_ROOT, target, rel: relToHome, crossProject: true }
+  }
+
+  // 4. Outside home root — reject
+  const err = new Error('path outside allowed root')
+  err.status = 403
+  throw err
+}
+
+// Exported for unit tests only — not part of the public API.
+export { resolveWithFallback as _resolveWithFallback }
+
 /** Read the first 8KB of a file and look for a NUL byte (binary heuristic). */
 function isLikelyBinary(filePath) {
   let fd
@@ -116,15 +189,14 @@ export function createFileRoutes(store) {
 
     if (project.ssh_host) return res.json({ entries: [], remote: true, path: '' })
 
-    let target
+    let target, root
     try {
-      ;({ target } = resolveSandboxed(project, req.query.path))
+      ;({ target, root } = resolveWithFallback(project, store, req.query.path))
     } catch (err) {
       return res.status(err.status || 500).json({ error: err.message })
     }
 
     try {
-      const root = resolve(project.cwd)
       const dirents = readdirSync(target, { withFileTypes: true })
       const entries = []
       for (const d of dirents) {
@@ -169,7 +241,7 @@ export function createFileRoutes(store) {
 
     let target
     try {
-      ;({ target } = resolveSandboxed(project, req.query.path))
+      ;({ target } = resolveWithFallback(project, store, req.query.path))
     } catch (err) {
       return res.status(err.status || 500).json({ error: err.message })
     }
@@ -204,7 +276,7 @@ export function createFileRoutes(store) {
 
     let target
     try {
-      ;({ target } = resolveSandboxed(project, req.query.path))
+      ;({ target } = resolveWithFallback(project, store, req.query.path))
     } catch (err) {
       return res.status(err.status || 500).json({ error: err.message })
     }

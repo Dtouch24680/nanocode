@@ -1,0 +1,124 @@
+
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
+
+TAP version 13
+# Subtest: resolveWithFallback — sandbox rules
+    # Subtest: relative path within project cwd is allowed
+    ok 1 - relative path within project cwd is allowed
+      ---
+      duration_ms: 1.191309
+      type: 'test'
+      ...
+    # Subtest: relative path traversal outside project cwd is rejected
+    ok 2 - relative path traversal outside project cwd is rejected
+      ---
+      duration_ms: 0.528792
+      type: 'test'
+      ...
+    # Subtest: absolute path inside current project cwd is allowed (crossProject=false)
+    ok 3 - absolute path inside current project cwd is allowed (crossProject=false)
+      ---
+      duration_ms: 0.192888
+      type: 'test'
+      ...
+    # Subtest: absolute path inside another project cwd is allowed (crossProject=true)
+    ok 4 - absolute path inside another project cwd is allowed (crossProject=true)
+      ---
+      duration_ms: 0.22263
+      type: 'test'
+      ...
+    # Subtest: absolute path under HOME_ROOT (no project match) falls back to home-root sandbox
+    ok 5 - absolute path under HOME_ROOT (no project match) falls back to home-root sandbox
+      ---
+      duration_ms: 0.176107
+      type: 'test'
+      ...
+    # Subtest: absolute path outside HOME_ROOT (/etc) is rejected
+    ok 6 - absolute path outside HOME_ROOT (/etc) is rejected
+      ---
+      duration_ms: 0.217869
+      type: 'test'
+      ...
+    # Subtest: absolute path in another user home is rejected
+    ok 7 - absolute path in another user home is rejected
+      ---
+      duration_ms: 0.203818
+      type: 'test'
+      ...
+    # Subtest: absolute path at root / is rejected
+    ok 8 - absolute path at root / is rejected
+      ---
+      duration_ms: 0.271771
+      type: 'test'
+      ...
+    # Subtest: remote project throws REMOTE error
+    ok 9 - remote project throws REMOTE error
+      ---
+      duration_ms: 0.346774
+      type: 'test'
+      ...
+    # Subtest: remote project in store list is skipped for cross-project match
+    ok 10 - remote project in store list is skipped for cross-project match
+      ---
+      duration_ms: 0.447519
+      type: 'test'
+      ...
+    1..10
+ok 1 - resolveWithFallback — sandbox rules
+  ---
+  duration_ms: 5.28961
+  type: 'suite'
+  ...
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.203072
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.501841
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.551743
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.630466
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 0.354744
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 1.359386
+      type: 'test'
+      ...
+    1..6
+ok 2 - store
+  ---
+  duration_ms: 6.790343
+  type: 'suite'
+  ...
+1..2
+# tests 16
+# suites 2
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 161.362792

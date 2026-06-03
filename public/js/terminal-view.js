@@ -101,6 +101,13 @@ function setupExplorer(projectId) {
     if (!path || !explorer) return
     explorer.openPath(path).catch(() => {})
   })
+
+  // Cross-project switch requested by openPath (method C, step 1)
+  document.addEventListener('nanocode:switch-project', (e) => {
+    const { projectId } = e.detail || {}
+    if (!projectId) return
+    switchTerminalProject(projectId)
+  })
 }
 
 function setupTabs(projectId) {
