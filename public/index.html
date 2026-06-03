@@ -288,6 +288,50 @@
               <span class="settings-status" id="notify-sound-status"></span>
             </div>
           </section>
+
+          <section class="settings-section">
+            <h3 class="settings-section-title">Claude Tool Blocks</h3>
+            <p class="settings-desc">Control how tool calls (bash, file edits, etc.) are displayed in Claude tabs.</p>
+            <div class="settings-field">
+              <label class="settings-label">Default display level</label>
+              <div class="settings-radio-group" id="tool-fold-group">
+                <label class="settings-radio-label">
+                  <input type="radio" name="tool-fold" value="full" />
+                  Full — show tool name + content
+                </label>
+                <label class="settings-radio-label">
+                  <input type="radio" name="tool-fold" value="header" />
+                  Header only — show tool name, hide content
+                </label>
+                <label class="settings-radio-label">
+                  <input type="radio" name="tool-fold" value="line" />
+                  Line — collapse to a thin stripe
+                </label>
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-primary" id="tool-fold-save-btn">Save</button>
+              <span class="settings-status" id="tool-fold-status"></span>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3 class="settings-section-title">Claude Auto-Resume</h3>
+            <p class="settings-desc">
+              When Claude exits (session full, crash, /exit), automatically resume the most recent session
+              after a short countdown. You can press any key during the countdown to drop to bash instead.
+            </p>
+            <div class="settings-toggle-row">
+              <label class="toggle-label">
+                <input type="checkbox" id="claude-autoresume-enabled" checked />
+                <span>Enable auto-resume (claude --continue)</span>
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-primary" id="claude-autoresume-save-btn">Save</button>
+              <span class="settings-status" id="claude-autoresume-status"></span>
+            </div>
+          </section>
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@ import {
 import { showHosts, showProjects, hideLanding } from './landing.js'
 import { slugify, hostSlug, projectSlug, projectPath, navigateTo } from './router.js'
 import { initThemeToggle } from './theme.js'
+import { getToolFoldLevel, setToolFoldLevel } from './claude-block-renderer.js'
 
 let workspaceReady = false
 
@@ -333,6 +334,8 @@ function loadSettings() {
   }
   loadNotifySoundSettings()
   loadNtfySettings()
+  loadToolFoldSettings()
+  loadAutoResumeSettings()
 }
 
 if (cliSaveBtn) {
@@ -453,6 +456,61 @@ if (_ntfyTestBtn) {
         statusEl.className = 'settings-status error'
         setTimeout(() => { statusEl.textContent = '' }, 3000)
       }
+    }
+  })
+}
+
+// ─── Tool fold settings ───────────────────────────────────────────────────────
+
+const AUTORESUME_KEY = 'cbr_claude_autoresume'
+
+function loadToolFoldSettings() {
+  const current = getToolFoldLevel()
+  const radios = document.querySelectorAll('input[name="tool-fold"]')
+  for (const r of radios) r.checked = r.value === current
+}
+
+function loadAutoResumeSettings() {
+  const el = document.getElementById('claude-autoresume-enabled')
+  if (el) {
+    const stored = localStorage.getItem(AUTORESUME_KEY)
+    // Default true; only false if explicitly disabled
+    el.checked = stored !== 'false'
+  }
+}
+
+const toolFoldSaveBtn = document.getElementById('tool-fold-save-btn')
+if (toolFoldSaveBtn) {
+  toolFoldSaveBtn.addEventListener('click', () => {
+    const radios = document.querySelectorAll('input[name="tool-fold"]')
+    const selected = [...radios].find((r) => r.checked)
+    const statusEl = document.getElementById('tool-fold-status')
+    if (selected) {
+      setToolFoldLevel(selected.value)
+      if (statusEl) {
+        statusEl.textContent = 'Saved'
+        statusEl.className = 'settings-status success'
+        setTimeout(() => { statusEl.textContent = '' }, 2500)
+      }
+    }
+  })
+}
+
+const autoResumeSaveBtn = document.getElementById('claude-autoresume-save-btn')
+if (autoResumeSaveBtn) {
+  autoResumeSaveBtn.addEventListener('click', async () => {
+    const el = document.getElementById('claude-autoresume-enabled')
+    const enabled = el ? el.checked : true
+    localStorage.setItem(AUTORESUME_KEY, String(enabled))
+    // Persist to server settings so the PTY launcher can read it
+    try {
+      await updateSetting('claude_autoresume', enabled ? '1' : '0')
+    } catch {}
+    const statusEl = document.getElementById('claude-autoresume-status')
+    if (statusEl) {
+      statusEl.textContent = 'Saved'
+      statusEl.className = 'settings-status success'
+      setTimeout(() => { statusEl.textContent = '' }, 2500)
     }
   })
 }
