@@ -30,6 +30,33 @@ const BACKOFF_BASE = 500
 const BACKOFF_MAX = 10_000
 const PING_INTERVAL_MS = 5000
 
+// ── Tool-block fold level ──────────────────────────────────────────────────────
+// Three levels (persisted in localStorage):
+//   'full'    — show tool name + full input/output content (default)
+//   'header'  — show only the tool name header
+//   'line'    — collapse to a single thin line (just a coloured stripe)
+const TOOL_FOLD_KEY = 'cbr_tool_fold'
+const TOOL_FOLD_LEVELS = ['full', 'header', 'line']
+
+function getToolFoldLevel() {
+  const v = localStorage.getItem(TOOL_FOLD_KEY)
+  return TOOL_FOLD_LEVELS.includes(v) ? v : 'full'
+}
+
+function setToolFoldLevel(level) {
+  if (!TOOL_FOLD_LEVELS.includes(level)) return
+  localStorage.setItem(TOOL_FOLD_KEY, level)
+  // Apply to all currently-rendered tool blocks in the page
+  document.querySelectorAll('.cbr-block-tool, .cbr-block-tool-result').forEach((el) => {
+    applyToolFold(el, level)
+  })
+  document.dispatchEvent(new CustomEvent('cbr:tool-fold-changed', { detail: { level } }))
+}
+
+function applyToolFold(el, level) {
+  el.setAttribute('data-fold', level || getToolFoldLevel())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function escHtml(s) {
@@ -118,6 +145,31 @@ export class ClaudeBlockRenderer {
     this._scroll.className = 'cbr-scroll'
     container.appendChild(this._scroll)
 
+    // ── Scroll-to-bottom button ────────────────────────────────────────────────
+    // Floats over the scroll area; appears when the user is not at the bottom.
+    this._scrollBtn = document.createElement('button')
+    this._scrollBtn.className = 'cbr-scroll-to-bottom'
+    this._scrollBtn.setAttribute('aria-label', 'Scroll to bottom')
+    this._scrollBtn.title = 'Scroll to bottom'
+    this._scrollBtn.innerHTML =
+      `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
+      `<polyline points="6 9 12 15 18 9"/></svg>`
+    this._scrollBtn.addEventListener('click', () => {
+      this._scroll.scrollTo({ top: this._scroll.scrollHeight, behavior: 'smooth' })
+    })
+    container.appendChild(this._scrollBtn)
+
+    // Show/hide the button based on scroll position (debounced via rAF)
+    let _scrollRafPending = false
+    this._scroll.addEventListener('scroll', () => {
+      if (_scrollRafPending) return
+      _scrollRafPending = true
+      requestAnimationFrame(() => {
+        _scrollRafPending = false
+        this._updateScrollBtn()
+      })
+    }, { passive: true })
+
     this._ws = null
     this._exited = false
     this._reconnectAttempts = 0
@@ -128,17 +180,52 @@ export class ClaudeBlockRenderer {
     this._liveAssistantBlock = null
     this._liveAssistantId = null  // message id if available
 
+    // Thinking state: true when claude is processing a turn
+    this._thinking = false
+
     this._connect()
+  }
+
+  _updateScrollBtn() {
+    const s = this._scroll
+    // Consider "at bottom" if within 60px of the bottom (handles rounding/sub-px)
+    const atBottom = s.scrollHeight - s.scrollTop - s.clientHeight < 60
+    this._scrollBtn.classList.toggle('cbr-scroll-btn-visible', !atBottom)
+  }
+
+  // ── Thinking state (for external UI) ────────────────────────────────────────
+
+  isThinking() {
+    return this._thinking
+  }
+
+  _setThinking(val) {
+    if (this._thinking === val) return
+    this._thinking = val
+    // Broadcast to terminal-view.js so input bar can react
+    document.dispatchEvent(new CustomEvent('nanocode:claude-thinking', {
+      detail: { tabId: this.tabId, thinking: val },
+    }))
   }
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
   sendInputWithEcho(text) {
+    // Generate a nonce so the server echoes back a 'user' event with this same
+    // nonce. When our WS receives that broadcast we can recognise it as our own
+    // locally-echoed turn and skip rendering it again (dedup). On reconnect the
+    // 'user' event is replayed from server history without the nonce matching any
+    // pending-set entry, so it *will* be rendered — fixing the reconnect bug.
+    const nonce = (Math.random() * 0xFFFFFFFF | 0).toString(36) + Date.now().toString(36)
+    if (!this._pendingNonces) this._pendingNonces = new Set()
+    this._pendingNonces.add(nonce)
     this._appendUserBlock(text)
-    this._send({ type: 'claude-input', text })
+    this._send({ type: 'claude-input', text, _nonce: nonce })
     // Clear any live assistant block so next response starts fresh
     this._liveAssistantBlock = null
     this._liveAssistantId = null
+    // Enter thinking state
+    this._setThinking(true)
   }
 
   sendRaw(data) {
@@ -257,8 +344,15 @@ export class ClaudeBlockRenderer {
       case 'rate_limit_event':
         this._handleRateLimit(event)
         break
-      // user echo events from stream-json — skip, we already echoed locally
+      // 'user' events come from two sources:
+      //   1. Real-time broadcast: the server echoes back our own turn right after
+      //      we sent it. We can skip rendering because _appendUserBlock() already
+      //      showed it (dedup via nonce).
+      //   2. History replay on reconnect: the server stored the event in cs.history
+      //      and replays it when we reconnect. In this case no matching nonce is
+      //      pending, so we *must* render it so the user can see their past turns.
       case 'user':
+        this._handleUserEvent(event)
         break
       default:
         // Unknown event: ignore silently
@@ -269,6 +363,19 @@ export class ClaudeBlockRenderer {
     document.dispatchEvent(new CustomEvent('nanocode:terminal-output', {
       detail: JSON.stringify(event),
     }))
+  }
+
+  _handleUserEvent(event) {
+    // Dedup: if we sent this turn ourselves, a nonce will be in _pendingNonces.
+    // Consume and skip so we don't double-render the locally echoed block.
+    const nonce = event._nonce
+    if (nonce && this._pendingNonces && this._pendingNonces.has(nonce)) {
+      this._pendingNonces.delete(nonce)
+      return
+    }
+    // No nonce match → this is a history replay on reconnect. Render the block.
+    const text = event.message?.content?.find?.((c) => c.type === 'text')?.text
+    if (text) this._appendUserBlock(text)
   }
 
   _handleSystem(event) {
@@ -328,9 +435,10 @@ export class ClaudeBlockRenderer {
   }
 
   _handleResult(event) {
-    // End-of-turn: flush live block
+    // End-of-turn: flush live block, exit thinking state
     this._liveAssistantBlock = null
     this._liveAssistantId = null
+    this._setThinking(false)
 
     if (event.subtype === 'success' || event.subtype === 'error_max_turns') {
       const usage = event.usage
@@ -406,9 +514,26 @@ export class ClaudeBlockRenderer {
     const article = this._makeBlock('cbr-block-tool')
     article.innerHTML =
       `<div class="cbr-tool-card">` +
-      `<div class="cbr-tool-header"><span class="cbr-tool-name">${toolName}</span></div>` +
+      `<div class="cbr-tool-header">` +
+      `<span class="cbr-tool-name">${toolName}</span>` +
+      `<button class="cbr-tool-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+      `</button>` +
+      `</div>` +
       `<div class="cbr-tool-body">${inputHtml}</div>` +
       `</div>`
+    // Clicking the header (or fold button) manually toggles between full↔header
+    const header = article.querySelector('.cbr-tool-header')
+    if (header) {
+      header.style.cursor = 'pointer'
+      header.addEventListener('click', () => {
+        const cur = article.getAttribute('data-fold') || getToolFoldLevel()
+        // local per-block toggle: full→header→full (single block, not global)
+        const next = cur === 'full' ? 'header' : 'full'
+        article.setAttribute('data-fold', next)
+      })
+    }
+    applyToolFold(article)
     attachCopyHandlers(article)
     this._scroll.appendChild(article)
     this._scrollBottom()
@@ -430,6 +555,7 @@ export class ClaudeBlockRenderer {
       `<div class="cbr-tool-result">` +
       `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(text.slice(0, 2000))}${text.length > 2000 ? '\n…' : ''}</pre>` +
       `</div>`
+    applyToolFold(article)
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
@@ -459,6 +585,11 @@ export class ClaudeBlockRenderer {
   _scrollBottom() {
     requestAnimationFrame(() => {
       this._scroll.scrollTop = this._scroll.scrollHeight
+      // After programmatic scroll, re-evaluate button visibility
+      this._updateScrollBtn()
     })
   }
 }
+
+// Export fold helpers so settings panel (app.js) can wire them up
+export { getToolFoldLevel, setToolFoldLevel, TOOL_FOLD_LEVELS }
