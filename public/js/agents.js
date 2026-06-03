@@ -1,6 +1,7 @@
 /**
  * Agent manager right-side drawer.
  * Loads from /api/agents, persists via PUT /api/agents.
+ * Also shows recent Claude sessions from /api/recent-agents for quick resume.
  */
 
 let _agents = []
@@ -20,6 +21,7 @@ export function initAgentDrawer() {
     backdrop?.classList.add('open')
     toggleBtn?.classList.add('active')
     _loadAgents()
+    _loadRecentAgents()
   }
   function close() {
     drawer.classList.remove('open')
@@ -52,19 +54,135 @@ async function _loadAgents() {
   } catch {}
 }
 
+// ── Recent agents from /api/recent-agents ──────────────────────────────────
+
+async function _loadRecentAgents() {
+  const list = document.getElementById('agent-list')
+  if (!list) return
+
+  // Remove any existing recent section
+  list.querySelector('.recent-agent-section')?.remove()
+
+  let entries = []
+  try {
+    entries = await fetch('/api/recent-agents').then(r => r.json())
+  } catch {
+    return
+  }
+  if (!entries || !entries.length) return
+
+  const section = document.createElement('div')
+  section.className = 'recent-agent-section'
+
+  const title = document.createElement('div')
+  title.className = 'recent-agent-title'
+  title.textContent = '最近会话'
+  section.appendChild(title)
+
+  for (const entry of entries) {
+    const item = document.createElement('div')
+    item.className = 'recent-agent-item'
+    item.title = `${entry.projectName} · ${entry.sessionId}`
+
+    const dot = document.createElement('span')
+    dot.className = 'recent-agent-active-dot' + (entry.active ? ' active' : '')
+    item.appendChild(dot)
+
+    const info = document.createElement('div')
+    info.className = 'recent-agent-info'
+
+    const proj = document.createElement('div')
+    proj.className = 'recent-agent-proj'
+    proj.textContent = entry.projectName
+    info.appendChild(proj)
+
+    const summary = document.createElement('div')
+    summary.className = 'recent-agent-summary'
+    summary.textContent = entry.summary || '(无摘要)'
+    info.appendChild(summary)
+
+    item.appendChild(info)
+
+    const time = document.createElement('div')
+    time.className = 'recent-agent-time'
+    time.textContent = entry.relTime
+    item.appendChild(time)
+
+    item.addEventListener('click', () => _resumeSession(entry))
+    section.appendChild(item)
+  }
+
+  // Prepend above the existing agent items
+  list.prepend(section)
+}
+
+/**
+ * Navigate to a project and resume the given session.
+ * 1. Ensure the project exists in the store (POST if not found).
+ * 2. Navigate to the project workspace via hash routing.
+ * 3. Dispatch a custom event so terminal-view can open/focus the correct session tab.
+ */
+async function _resumeSession(entry) {
+  // Decode cwd from dirName: "-storage-home-user-code-nanocode" → "/storage/home/user/code/nanocode"
+  const cwd = entry.projectDir.replace(/^-/, '/').replace(/-/g, '/')
+
+  // Find project in current state or create it
+  let project = null
+  try {
+    const projects = await fetch('/api/projects').then(r => r.json())
+    project = projects.find(p => p.cwd === cwd)
+    if (!project) {
+      project = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: entry.projectName, cwd }),
+      }).then(r => r.json())
+    }
+  } catch (err) {
+    console.error('[recent-agents] failed to ensure project', err)
+    return
+  }
+
+  // Close the drawer
+  document.getElementById('agent-drawer')?.classList.remove('open')
+  document.getElementById('agent-drawer-backdrop')?.classList.remove('open')
+  document.getElementById('agent-drawer-toggle')?.classList.remove('active')
+
+  // Signal terminal-view to resume this session after navigation
+  // The sessionId is stored so the tab-manager can pick it up
+  window.__pendingResumeSession = { projectId: project.id, sessionId: entry.sessionId }
+
+  // Navigate to the project workspace
+  const allProjects = await fetch('/api/projects').then(r => r.json()).catch(() => [project])
+  const host = project.ssh_host
+    ? project.ssh_host.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    : 'local'
+  const base = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed'
+  location.hash = `#/${host}/${base}`
+
+  // After a tick, dispatch the resume event so terminal-view can handle it
+  setTimeout(() => {
+    document.dispatchEvent(new CustomEvent('nanocode:resume-session', {
+      detail: { projectId: project.id, sessionId: entry.sessionId },
+    }))
+  }, 600)
+}
+
 function _render() {
   const list = document.getElementById('agent-list')
   if (!list) return
 
-  // Preserve discover section if present
+  // Preserve recent-agent and discover sections if present
+  const recentSection = list.querySelector('.recent-agent-section')
   const discoverSection = list.querySelector('.agent-discover-section')
   list.innerHTML = ''
+  if (recentSection) list.appendChild(recentSection)
   if (discoverSection) list.appendChild(discoverSection)
 
   if (!_agents.length) {
     const empty = document.createElement('div')
     empty.className = 'agent-list-empty'
-    empty.textContent = 'No agents yet. Add one below or click ⟳ to discover from tmux.'
+    empty.textContent = 'No agents configured. Add one below or click ⟳ to discover from tmux.'
     list.appendChild(empty)
     return
   }

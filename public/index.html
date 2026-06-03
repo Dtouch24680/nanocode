@@ -119,240 +119,228 @@
           <button type="button" class="btn-icon" id="settings-panel-close" onclick="document.getElementById('settings-panel').classList.remove('open')" aria-label="Close">&#10005;</button>
         </div>
         <div class="settings-container">
-          <section class="settings-section">
-            <h3 class="settings-section-title">CLI Provider</h3>
-            <p class="settings-desc">Choose which CLI tool to use for assistant sessions.</p>
-            <div class="settings-radio-group" id="cli-provider-group">
-              <label class="settings-radio-label">
-                <input type="radio" name="cli-provider" value="claude" checked />
-                Claude Code <span class="settings-radio-hint">(default)</span>
-              </label>
-              <label class="settings-radio-label">
-                <input type="radio" name="cli-provider" value="agent" />
-                Cursor Agent
-              </label>
-              <label class="settings-radio-label">
-                <input type="radio" name="cli-provider" value="opencode" />
-                OpenCode
-              </label>
-              <label class="settings-radio-label">
-                <input type="radio" name="cli-provider" value="codex" />
-                Codex
-              </label>
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="cli-save-btn">Save</button>
-              <span class="settings-status" id="cli-status"></span>
-            </div>
-          </section>
 
+          <!-- ══ 会话 ══ -->
           <section class="settings-section">
-            <h3 class="settings-section-title">Terminal Font Size</h3>
-            <p class="settings-desc">Adjust the font size for terminal panes.</p>
-            <div class="settings-range-row">
-              <input type="range" id="font-size-range" min="10" max="22" step="1" value="14" class="settings-range" />
-              <span class="settings-range-value" id="font-size-value">14px</span>
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="font-size-save-btn">Save</button>
-              <span class="settings-status" id="font-size-status"></span>
-            </div>
-          </section>
+            <h3 class="settings-section-title settings-group-title">会话</h3>
 
-          <section class="settings-section">
-            <h3 class="settings-section-title">Text-to-Speech (GPT-SoVITS)</h3>
-            <p class="settings-desc">
-              Read Claude output aloud using a local TTS service.
-              Click <strong>Test TTS</strong> to verify audio works on your device.
-              <br/>
-              <span class="tts-status-dot" id="tts-status-dot" title="TTS service status"></span>
-              <span class="tts-status-text" id="tts-status-text"></span>
-            </p>
-            <div class="settings-toggle-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="tts-enabled" />
-                <span>Enable TTS for Claude output</span>
-              </label>
-            </div>
-            <div class="settings-toggle-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="tts-streaming" />
-                <span>Streaming mode (lower latency)</span>
-              </label>
-            </div>
-            <div class="settings-field" style="margin-top: var(--s-2)">
-              <label class="settings-label">Reference audio path</label>
-              <input type="text" id="tts-ref-audio" class="settings-input" placeholder="/path/to/catgirl_voice.wav" />
-            </div>
-            <div class="settings-field">
-              <label class="settings-label">Reference prompt text</label>
-              <input type="text" id="tts-prompt-text" class="settings-input" placeholder="Reference audio transcript" />
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="tts-save-btn">Save Voice</button>
-              <button type="button" class="btn btn-secondary" id="tts-test-btn">Test TTS</button>
-              <span class="settings-status" id="tts-status"></span>
-            </div>
-            <details class="tts-log-details">
-              <summary class="tts-log-summary">TTS Debug Log</summary>
-              <div class="tts-log-panel" id="tts-log-panel"></div>
-            </details>
-          </section>
-
-          <section class="settings-section">
-            <h3 class="settings-section-title">Services</h3>
-            <p class="settings-desc">Port health of background services (checked every 30s).</p>
-            <p class="services-local-ip" id="services-local-ip"></p>
-            <div class="services-grid" id="services-grid"></div>
-            <form class="services-add-form" id="services-add-form" autocomplete="off">
-              <input type="text" id="svc-add-name" class="settings-input" placeholder="Name" />
-              <input type="text" id="svc-add-host" class="settings-input" placeholder="IP / host" />
-              <input type="number" id="svc-add-port" class="settings-input" placeholder="Port" min="1" max="65535" />
-              <button type="submit" class="btn btn-secondary">+ Add</button>
-            </form>
-            <p class="services-checked-at" id="services-checked-at"></p>
-          </section>
-
-          <section class="settings-section">
-            <h3 class="settings-section-title">Push Notifications (ntfy)</h3>
-            <p class="settings-desc">
-              Send push notifications via <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy.sh</a>
-              when done / blocked / QA events occur. Leave blank to disable.
-            </p>
-            <div class="settings-field">
-              <label class="settings-label">ntfy server URL</label>
-              <input type="text" id="ntfy-url" class="settings-input" placeholder="https://ntfy.sh" />
-            </div>
-            <div class="settings-field">
-              <label class="settings-label">Topic</label>
-              <input type="text" id="ntfy-topic" class="settings-input" placeholder="zhining-watchdog" />
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="ntfy-save-btn">Save</button>
-              <button type="button" class="btn btn-secondary" id="ntfy-test-btn">Test</button>
-              <span class="settings-status" id="ntfy-status"></span>
-            </div>
-          </section>
-
-          <section class="settings-section">
-            <h3 class="settings-section-title">Notification Sounds</h3>
-            <p class="settings-desc">Play sounds when agent events occur (done / blocked / QA).</p>
-            <div class="settings-toggle-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="notify-sound-enabled" />
-                <span>Enable notification sounds</span>
-              </label>
-            </div>
-            <div class="settings-field">
-              <label class="settings-label">Volume</label>
-              <div style="display:flex;align-items:center;gap:8px">
-                <input type="range" id="notify-sound-volume" min="0" max="1" step="0.05" value="0.7" style="flex:1" />
-                <span id="notify-sound-volume-value" style="min-width:36px;text-align:right">70%</span>
+            <!-- CLI Provider -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">CLI Provider</div>
+              <div class="settings-radio-group" id="cli-provider-group">
+                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="claude" checked /> Claude Code</label>
+                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="agent" /> Cursor Agent</label>
+                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="opencode" /> OpenCode</label>
+                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="codex" /> Codex</label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="cli-save-btn">Save</button>
+                <span class="settings-status" id="cli-status"></span>
               </div>
             </div>
-            <div class="settings-field">
-              <label class="settings-label">Done</label>
-              <div style="display:flex;align-items:center;gap:8px">
-                <select id="notify-sound-done" class="settings-input" style="flex:1">
-                  <option value="bamboo">Bamboo knock</option>
-                  <option value="ding">Bright ding</option>
-                  <option value="thud">Low thud</option>
-                </select>
-                <button type="button" class="btn btn-secondary" id="notify-test-done">&#9654;</button>
+
+            <!-- Render Mode -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">渲染模式 <span class="settings-hint-inline">block=富文本 / terminal=PTY 兜底</span></div>
+              <div class="settings-radio-group" id="render-mode-group">
+                <label class="settings-radio-label"><input type="radio" name="render-mode" value="block" checked /> Block（默认，富文本）</label>
+                <label class="settings-radio-label"><input type="radio" name="render-mode" value="terminal" /> Terminal（PTY raw，兜底）</label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="render-mode-save-btn">Save</button>
+                <span class="settings-status" id="render-mode-status"></span>
               </div>
             </div>
-            <div class="settings-field">
-              <label class="settings-label">Blocked</label>
-              <div style="display:flex;align-items:center;gap:8px">
-                <select id="notify-sound-blocked" class="settings-input" style="flex:1">
-                  <option value="thud">Low thud</option>
-                  <option value="bamboo">Bamboo knock</option>
-                  <option value="ding">Bright ding</option>
-                </select>
-                <button type="button" class="btn btn-secondary" id="notify-test-blocked">&#9654;</button>
+
+            <!-- Auto-Resume -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Auto-Resume <span class="settings-hint-inline">claude 退出后自动 --continue</span></div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" id="claude-autoresume-enabled" checked />
+                  <span>启用 auto-resume（3s 倒计时可取消）</span>
+                </label>
               </div>
-            </div>
-            <div class="settings-field">
-              <label class="settings-label">QA</label>
-              <div style="display:flex;align-items:center;gap:8px">
-                <select id="notify-sound-qa" class="settings-input" style="flex:1">
-                  <option value="ding">Bright ding</option>
-                  <option value="bamboo">Bamboo knock</option>
-                  <option value="thud">Low thud</option>
-                </select>
-                <button type="button" class="btn btn-secondary" id="notify-test-qa">&#9654;</button>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="claude-autoresume-save-btn">Save</button>
+                <span class="settings-status" id="claude-autoresume-status"></span>
               </div>
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="notify-sound-save-btn">Save</button>
-              <span class="settings-status" id="notify-sound-status"></span>
             </div>
           </section>
 
+          <!-- ══ 显示 ══ -->
           <section class="settings-section">
-            <h3 class="settings-section-title">Claude Tool Blocks</h3>
-            <p class="settings-desc">Control how tool calls (bash, file edits, etc.) are displayed in Claude tabs.</p>
-            <div class="settings-field">
-              <label class="settings-label">Default display level</label>
+            <h3 class="settings-section-title settings-group-title">显示</h3>
+
+            <!-- Tool fold -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Tool block 折叠</div>
               <div class="settings-radio-group" id="tool-fold-group">
-                <label class="settings-radio-label">
-                  <input type="radio" name="tool-fold" value="full" />
-                  Full — show tool name + content
-                </label>
-                <label class="settings-radio-label">
-                  <input type="radio" name="tool-fold" value="header" />
-                  Header only — show tool name, hide content
-                </label>
-                <label class="settings-radio-label">
-                  <input type="radio" name="tool-fold" value="line" />
-                  Line — collapse to a thin stripe
-                </label>
+                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="full" /> Full（工具名+内容）</label>
+                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="header" /> Header only（只显示工具名）</label>
+                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="line" /> Line（折叠为细条）</label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="tool-fold-save-btn">Save</button>
+                <span class="settings-status" id="tool-fold-status"></span>
               </div>
             </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="tool-fold-save-btn">Save</button>
-              <span class="settings-status" id="tool-fold-status"></span>
+
+            <!-- Subagent visibility -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Subagent 可见性 <span class="settings-hint-inline">立即生效</span></div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" id="subagent-prompt-visible" checked />
+                  <span>显示发给 subagent 的 prompt</span>
+                </label>
+              </div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" id="subagent-activity-visible" />
+                  <span>显示 subagent 活动（通常较冗长，默认关）</span>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="subagent-vis-save-btn">Save</button>
+                <span class="settings-status" id="subagent-vis-status"></span>
+              </div>
+            </div>
+
+            <!-- Font size -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">终端字号</div>
+              <div class="settings-range-row">
+                <input type="range" id="font-size-range" min="10" max="22" step="1" value="14" class="settings-range" />
+                <span class="settings-range-value" id="font-size-value">14px</span>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="font-size-save-btn">Save</button>
+                <span class="settings-status" id="font-size-status"></span>
+              </div>
             </div>
           </section>
 
+          <!-- ══ 服务监控 ══ -->
           <section class="settings-section">
-            <h3 class="settings-section-title">Subagent Visibility</h3>
-            <p class="settings-desc">Control what is shown when Claude dispatches subagents (Agent/Task tool, or codex via Bash). Changes apply immediately.</p>
-            <div class="settings-toggle-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="subagent-prompt-visible" checked />
-                <span>Show message sent to subagent (the prompt/task given to Agent/Task/codex)</span>
-              </label>
+            <h3 class="settings-section-title settings-group-title">服务监控</h3>
+
+            <!-- Services -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">端口健康 <span class="settings-hint-inline">每 30s 检查</span></div>
+              <p class="services-local-ip" id="services-local-ip"></p>
+              <div class="services-grid" id="services-grid"></div>
+              <form class="services-add-form" id="services-add-form" autocomplete="off">
+                <input type="text" id="svc-add-name" class="settings-input" placeholder="Name" />
+                <input type="text" id="svc-add-host" class="settings-input" placeholder="IP / host" />
+                <input type="number" id="svc-add-port" class="settings-input" placeholder="Port" min="1" max="65535" />
+                <button type="submit" class="btn btn-secondary">+ Add</button>
+              </form>
+              <p class="services-checked-at" id="services-checked-at"></p>
             </div>
-            <div class="settings-toggle-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="subagent-activity-visible" />
-                <span>Show subagent activity (nested events, usually verbose — off by default)</span>
-              </label>
+
+            <!-- ntfy -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">ntfy 推送 <span class="settings-hint-inline">留空禁用</span></div>
+              <div class="settings-field">
+                <label class="settings-label">Server URL</label>
+                <input type="text" id="ntfy-url" class="settings-input" placeholder="https://ntfy.sh" />
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">Topic</label>
+                <input type="text" id="ntfy-topic" class="settings-input" placeholder="zhining-watchdog" />
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="ntfy-save-btn">Save</button>
+                <button type="button" class="btn btn-secondary" id="ntfy-test-btn">Test</button>
+                <span class="settings-status" id="ntfy-status"></span>
+              </div>
             </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="subagent-vis-save-btn">Save</button>
-              <span class="settings-status" id="subagent-vis-status"></span>
+
+            <!-- Notification sounds -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">通知音效</div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" id="notify-sound-enabled" />
+                  <span>启用音效（done / blocked / QA）</span>
+                </label>
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">音量</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="range" id="notify-sound-volume" min="0" max="1" step="0.05" value="0.7" style="flex:1" />
+                  <span id="notify-sound-volume-value" style="min-width:36px;text-align:right">70%</span>
+                </div>
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">Done</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <select id="notify-sound-done" class="settings-input" style="flex:1">
+                    <option value="bamboo">Bamboo knock</option>
+                    <option value="ding">Bright ding</option>
+                    <option value="thud">Low thud</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary" id="notify-test-done">&#9654;</button>
+                </div>
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">Blocked</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <select id="notify-sound-blocked" class="settings-input" style="flex:1">
+                    <option value="thud">Low thud</option>
+                    <option value="bamboo">Bamboo knock</option>
+                    <option value="ding">Bright ding</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary" id="notify-test-blocked">&#9654;</button>
+                </div>
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">QA</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <select id="notify-sound-qa" class="settings-input" style="flex:1">
+                    <option value="ding">Bright ding</option>
+                    <option value="bamboo">Bamboo knock</option>
+                    <option value="thud">Low thud</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary" id="notify-test-qa">&#9654;</button>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="notify-sound-save-btn">Save</button>
+                <span class="settings-status" id="notify-sound-status"></span>
+              </div>
+            </div>
+
+            <!-- TTS -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">TTS（GPT-SoVITS） <span class="settings-hint-inline"><span class="tts-status-dot" id="tts-status-dot"></span><span class="tts-status-text" id="tts-status-text"></span></span></div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label"><input type="checkbox" id="tts-enabled" /> <span>启用 TTS</span></label>
+              </div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label"><input type="checkbox" id="tts-streaming" /> <span>流式模式（低延迟）</span></label>
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">参考音频路径</label>
+                <input type="text" id="tts-ref-audio" class="settings-input" placeholder="/path/to/voice.wav" />
+              </div>
+              <div class="settings-field">
+                <label class="settings-label">参考文本</label>
+                <input type="text" id="tts-prompt-text" class="settings-input" placeholder="参考音频的文字内容" />
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="tts-save-btn">Save</button>
+                <button type="button" class="btn btn-secondary" id="tts-test-btn">Test</button>
+                <span class="settings-status" id="tts-status"></span>
+              </div>
+              <details class="tts-log-details">
+                <summary class="tts-log-summary">TTS Debug Log</summary>
+                <div class="tts-log-panel" id="tts-log-panel"></div>
+              </details>
             </div>
           </section>
 
-          <section class="settings-section">
-            <h3 class="settings-section-title">Claude Auto-Resume</h3>
-            <p class="settings-desc">
-              When Claude exits (session full, crash, /exit), automatically resume the most recent session
-              after a short countdown. You can press any key during the countdown to drop to bash instead.
-            </p>
-            <div class="settings-toggle-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="claude-autoresume-enabled" checked />
-                <span>Enable auto-resume (claude --continue)</span>
-              </label>
-            </div>
-            <div class="settings-actions">
-              <button type="button" class="btn btn-primary" id="claude-autoresume-save-btn">Save</button>
-              <span class="settings-status" id="claude-autoresume-status"></span>
-            </div>
-          </section>
         </div>
       </div>
     </div>

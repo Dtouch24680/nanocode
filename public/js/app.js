@@ -314,7 +314,7 @@ for (const type of ['done', 'blocked', 'qa']) {
   }
 }
 
-// ─── Settings panel (CLI provider + font size + ntfy) ─────────────────────────
+// ─── Settings panel (CLI provider + font size + ntfy + renderMode) ────────────
 
 const cliProviderGroup = document.getElementById('cli-provider-group')
 const cliSaveBtn = document.getElementById('cli-save-btn')
@@ -325,7 +325,19 @@ const fontSizeValue = document.getElementById('font-size-value')
 const fontSizeSaveBtn = document.getElementById('font-size-save-btn')
 const fontSizeStatusEl = document.getElementById('font-size-status')
 
-function loadSettings() {
+const renderModeGroup = document.getElementById('render-mode-group')
+const renderModeSaveBtn = document.getElementById('render-mode-save-btn')
+const renderModeStatusEl = document.getElementById('render-mode-status')
+
+function loadRenderModeSettings(serverSettings) {
+  const mode = (serverSettings?.renderMode) || 'block'
+  const radios = renderModeGroup?.querySelectorAll('input[name="render-mode"]')
+  if (radios) {
+    for (const radio of radios) radio.checked = radio.value === mode
+  }
+}
+
+function loadSettings(serverSettings) {
   const radios = cliProviderGroup?.querySelectorAll('input[name="cli-provider"]')
   if (radios && state.cliProvider) {
     for (const radio of radios) {
@@ -341,6 +353,7 @@ function loadSettings() {
   loadToolFoldSettings()
   loadAutoResumeSettings()
   loadSubagentVisSettings()
+  loadRenderModeSettings(serverSettings)
 }
 
 if (cliSaveBtn) {
@@ -360,6 +373,31 @@ if (cliSaveBtn) {
         cliStatusEl.textContent = err.message
         cliStatusEl.className = 'settings-status error'
         setTimeout(() => { cliStatusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
+// ─── Render mode save ────────────────────────────────────────────────────────
+
+if (renderModeSaveBtn) {
+  renderModeSaveBtn.addEventListener('click', async () => {
+    const selected = renderModeGroup?.querySelector('input[name="render-mode"]:checked')
+    if (!selected) return
+    const mode = selected.value === 'terminal' ? 'terminal' : 'block'
+    try {
+      await updateSetting('renderMode', mode)
+      state.renderMode = mode
+      if (renderModeStatusEl) {
+        renderModeStatusEl.textContent = 'Saved — 新 tab 生效'
+        renderModeStatusEl.className = 'settings-status success'
+        setTimeout(() => { renderModeStatusEl.textContent = '' }, 3000)
+      }
+    } catch (err) {
+      if (renderModeStatusEl) {
+        renderModeStatusEl.textContent = err.message
+        renderModeStatusEl.className = 'settings-status error'
+        setTimeout(() => { renderModeStatusEl.textContent = '' }, 3000)
       }
     }
   })
@@ -595,10 +633,12 @@ const settingsPanel = document.getElementById('settings-panel')
 const settingsToggleBtn = document.getElementById('settings-toggle-btn')
 const settingsPanelBackdrop = document.getElementById('settings-panel-backdrop')
 
-function openSettingsPanel() {
+async function openSettingsPanel() {
   settingsPanel?.classList.add('open')
   settingsPanelBackdrop?.classList.add('open')
-  loadSettings()
+  let serverSettings = {}
+  try { serverSettings = await fetchSettings() } catch {}
+  loadSettings(serverSettings)
   loadServices()
 }
 
@@ -689,6 +729,7 @@ async function init() {
     const settings = await fetchSettings()
     if (settings.cli_provider) state.cliProvider = settings.cli_provider
     if (settings.font_size) state.fontSize = settings.font_size
+    if (settings.renderMode) state.renderMode = settings.renderMode
   } catch {}
 
   const backBtn = document.getElementById('back-to-menu')

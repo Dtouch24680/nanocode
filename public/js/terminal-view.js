@@ -127,6 +127,61 @@ function setupTabs(projectId) {
   window.addEventListener('resize', () => updateActiveTabChip({ noAnim: true }))
 }
 
+// ── Session resume from agent-list ──────────────────────────────────────────
+//
+// When the user clicks a recent-agent entry, agents.js dispatches
+// 'nanocode:resume-session' with { projectId, sessionId }.
+// We ensure we're in the right workspace, then find or create the claude tab
+// that owns that sessionId and activate it. The tab-manager's history fetch
+// already handles the jsonl replay via ClaudeBlockRenderer.
+
+document.addEventListener('nanocode:resume-session', async (e) => {
+  const { projectId, sessionId } = e.detail || {}
+  if (!projectId || !sessionId) return
+
+  // Make sure we are in the right workspace
+  if (currentProjectId !== projectId) {
+    // switchTerminalProject will be called by the hash-change handler; wait briefly
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
+  if (!tabManager) return
+
+  // Find a claude tab with this sessionId
+  try {
+    const tabs = await fetch(`/api/projects/${projectId}/tabs`).then(r => r.json())
+    const match = tabs.find(t => t.type === 'claude' && t.claudeSessionId === sessionId)
+    if (match) {
+      // Tab exists — just activate it
+      if (tabManager.projectId === projectId) {
+        tabManager.setActive(match.id)
+      } else {
+        tabManager._pendingActiveId = match.id
+      }
+    } else {
+      // Create a new claude tab pre-loaded with this sessionId
+      const newTab = await fetch(`/api/projects/${projectId}/tabs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'claude', label: `resume` }),
+      }).then(r => r.json())
+
+      // Patch the tab's claudeSessionId to point at the target session
+      // so the history endpoint finds the right jsonl
+      if (newTab?.id) {
+        await fetch(`/api/projects/${projectId}/tabs/${newTab.id}/session`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ claudeSessionId: sessionId }),
+        }).catch(() => {})
+        tabManager._pendingActiveId = newTab.id
+      }
+    }
+  } catch (err) {
+    console.warn('[resume-session] error', err)
+  }
+})
+
 const SLOT_WIDTH_PX = 110
 const SLOT_GAP_PX = 4
 

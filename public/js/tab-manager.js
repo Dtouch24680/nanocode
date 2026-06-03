@@ -364,9 +364,11 @@ export class TabManager {
       },
     }
 
-    // Claude tabs use a DOM block renderer instead of xterm for mobile-friendly
-    // chat-style output with per-block copy and native page scroll.
-    const pane = type === 'claude'
+    // Claude tabs use a DOM block renderer by default (rich text, mobile-friendly).
+    // If the global renderMode setting is 'terminal', use raw PTY instead.
+    const renderMode = (() => { try { return window.__nanocodeState?.renderMode || 'block' } catch { return 'block' } })()
+    const useBlockRenderer = type === 'claude' && renderMode !== 'terminal'
+    const pane = useBlockRenderer
       ? new ClaudeBlockRenderer(paneEl, paneOpts)
       : new TerminalPane(paneEl, paneOpts)
 

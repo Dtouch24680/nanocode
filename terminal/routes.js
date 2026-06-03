@@ -221,6 +221,29 @@ export function createTerminalRoutes(store) {
   })
 
   /**
+   * PATCH /api/projects/:id/tabs/:tabId/session
+   * Update a claude tab's claudeSessionId so history replay and --resume target
+   * the specified session. Used by the agent-list resume flow.
+   * Body: { claudeSessionId: string }
+   */
+  router.patch('/api/projects/:id/tabs/:tabId/session', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+    const tab = store.getTab ? store.getTab(req.params.id, req.params.tabId) : null
+    if (!tab) return res.status(404).json({ error: 'tab not found' })
+    if (tab.type !== 'claude') return res.status(400).json({ error: 'not a claude tab' })
+    const { claudeSessionId } = req.body || {}
+    if (!claudeSessionId || typeof claudeSessionId !== 'string') {
+      return res.status(400).json({ error: 'claudeSessionId required' })
+    }
+    const updated = store.updateTabMetadata
+      ? store.updateTabMetadata(req.params.id, req.params.tabId, { claudeSessionId })
+      : null
+    if (!updated) return res.status(404).json({ error: 'update failed' })
+    res.json(updated)
+  })
+
+  /**
    * /ws/tabs handler — clients send `{type:'subscribe', projectId}` and
    * receive `{type:'tabs:update', projectId, tabs:[]}` on every mutation
    * (and once immediately as a snapshot).
@@ -472,6 +495,124 @@ export function createTerminalRoutes(store) {
     const events = parseJsonlHistory(resolvedPath)
     console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
     res.json({ events, sessionId: resolvedSessionId, fallback })
+  })
+
+  // ── GET /api/recent-agents ────────────────────────────────────────────────
+  //
+  // Scan ~/.claude/projects/*/*.jsonl by mtime descending.
+  // Rule: include all files with mtime within the last 24 h; if the result is
+  // fewer than 5 entries, pad up to the 5 most-recent files regardless of age.
+  // Returns up to max 50 entries (no pagination needed at current scale).
+  //
+  // Each entry:
+  //   { projectDir, projectName, sessionId, mtime (ISO), relTime, summary, active }
+  //
+  // projectName is derived from the directory name by reversing the cwd encoding:
+  //   replace all '-' with '/' → strip leading '/' → take the last path component.
+
+  router.get('/api/recent-agents', (req, res) => {
+    const claudeProjectsRoot = join(home, '.claude', 'projects')
+    if (!existsSync(claudeProjectsRoot)) return res.json([])
+
+    const now = Date.now()
+    const H24 = 24 * 60 * 60 * 1000
+
+    /** Decode project directory name back to a human-friendly project name. */
+    function dirToProjectName(dirName) {
+      // dirName: e.g. "-storage-home-user-code-nanocode"
+      // → cwd: "/storage/home/user/code/nanocode"
+      // → project name: "nanocode"
+      try {
+        const cwd = dirName.replace(/^-/, '/').replace(/-/g, '/')
+        const parts = cwd.split('/').filter(Boolean)
+        return parts[parts.length - 1] || dirName
+      } catch {
+        return dirName
+      }
+    }
+
+    /** Extract the first user prompt text from a jsonl path (≤120 chars). */
+    function extractSummary(jsonlPath) {
+      try {
+        const content = readFileSync(jsonlPath, 'utf-8')
+        for (const line of content.split('\n')) {
+          if (!line.trim()) continue
+          let row
+          try { row = JSON.parse(line) } catch { continue }
+          if (row.type === 'user' && row.message?.content) {
+            const parts = row.message.content
+            if (Array.isArray(parts)) {
+              for (const p of parts) {
+                if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
+                  return p.text.trim().slice(0, 120)
+                }
+              }
+            } else if (typeof parts === 'string' && parts.trim()) {
+              return parts.trim().slice(0, 120)
+            }
+          }
+        }
+      } catch {}
+      return '(无摘要)'
+    }
+
+    /** Relative time string from mtime ms. */
+    function relTime(mtimeMs) {
+      const diff = now - mtimeMs
+      const mins = Math.floor(diff / 60000)
+      if (mins < 1) return '刚刚'
+      if (mins < 60) return `${mins}m ago`
+      const hrs = Math.floor(mins / 60)
+      if (hrs < 24) return `${hrs}h ago`
+      const days = Math.floor(hrs / 24)
+      return `${days}d ago`
+    }
+
+    // Collect all jsonl entries across all project dirs
+    const allEntries = []
+    let dirs
+    try { dirs = readdirSync(claudeProjectsRoot, { withFileTypes: true }) } catch { return res.json([]) }
+
+    for (const d of dirs) {
+      if (!d.isDirectory()) continue
+      const projectDir = join(claudeProjectsRoot, d.name)
+      let files
+      try { files = readdirSync(projectDir) } catch { continue }
+      for (const f of files) {
+        if (!f.endsWith('.jsonl')) continue
+        const fullPath = join(projectDir, f)
+        try {
+          const st = statSync(fullPath)
+          allEntries.push({
+            dirName: d.name,
+            fullPath,
+            sessionId: f.replace(/\.jsonl$/, ''),
+            mtimeMs: st.mtimeMs,
+          })
+        } catch {}
+      }
+    }
+
+    // Sort by mtime desc
+    allEntries.sort((a, b) => b.mtimeMs - a.mtimeMs)
+
+    // Apply the 24h-or-min-5 rule
+    let cutoff = allEntries.filter((e) => now - e.mtimeMs <= H24)
+    if (cutoff.length < 5) cutoff = allEntries.slice(0, 5)
+    // Hard cap at 50 to avoid runaway payloads
+    cutoff = cutoff.slice(0, 50)
+
+    const result = cutoff.map((e) => ({
+      projectDir: e.dirName,
+      projectName: dirToProjectName(e.dirName),
+      sessionId: e.sessionId,
+      mtime: new Date(e.mtimeMs).toISOString(),
+      relTime: relTime(e.mtimeMs),
+      summary: extractSummary(e.fullPath),
+      active: now - e.mtimeMs <= H24,
+    }))
+
+    res.json(result)
   })
 
   const IS_WIN = platform() === 'win32'
@@ -926,11 +1067,18 @@ export function createTerminalRoutes(store) {
       const tabType = tab?.type || 'bash'
       console.log(`[ws:attach] projectId=${projectId} tabId=${tabId} tabType=${tabType}`)
 
-      // ── Claude tabs: stream-json bridge (no PTY) ─────────────────────────────
+      // ── Claude tabs: stream-json bridge OR PTY raw depending on renderMode ──
       if (tabType === 'claude') {
-        console.log(`[ws:attach] routing to claude stream-json bridge`)
-        attachClaudeSession(ws, { projectId, tabId, project })
-        return
+        const renderMode = store.getSetting('renderMode') || 'block'
+        if (renderMode === 'terminal') {
+          // PTY raw fallback — route as a coding-agent PTY (same as if tabType were 'claude'
+          // but handled below via TAB_LAUNCHERS). Fall through to PTY path.
+          console.log(`[ws:attach] routing claude to PTY raw (renderMode=terminal)`)
+        } else {
+          console.log(`[ws:attach] routing to claude stream-json bridge`)
+          attachClaudeSession(ws, { projectId, tabId, project })
+          return
+        }
       }
 
       const launcherFn = TAB_LAUNCHERS[tabType] || TAB_LAUNCHERS.bash
