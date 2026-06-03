@@ -486,8 +486,10 @@ function setupChatInput() {
   function sendInput() {
     const text = chatInput.value
     if (!text) return
-    // Block sending to claude while it's thinking
-    if (isClaudeTab && isClaudeThinking) return
+    // Previously: blocked sending while claude is thinking. Removed — the
+    // server now has a FIFO queue, so messages sent while busy are enqueued
+    // and run after the current turn finishes. The client shows a "queued"
+    // system notice. Blocking here only caused a stuck UI (user had to refresh).
     if (activePane) activePane.sendInputWithEcho(text)
     pushHistory(text)
     resetHistoryNav()
