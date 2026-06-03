@@ -316,6 +316,27 @@
           </section>
 
           <section class="settings-section">
+            <h3 class="settings-section-title">Subagent Visibility</h3>
+            <p class="settings-desc">Control what is shown when Claude dispatches subagents (Agent/Task tool, or codex via Bash). Changes apply immediately.</p>
+            <div class="settings-toggle-row">
+              <label class="toggle-label">
+                <input type="checkbox" id="subagent-prompt-visible" checked />
+                <span>Show message sent to subagent (the prompt/task given to Agent/Task/codex)</span>
+              </label>
+            </div>
+            <div class="settings-toggle-row">
+              <label class="toggle-label">
+                <input type="checkbox" id="subagent-activity-visible" />
+                <span>Show subagent activity (nested events, usually verbose — off by default)</span>
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-primary" id="subagent-vis-save-btn">Save</button>
+              <span class="settings-status" id="subagent-vis-status"></span>
+            </div>
+          </section>
+
+          <section class="settings-section">
             <h3 class="settings-section-title">Claude Auto-Resume</h3>
             <p class="settings-desc">
               When Claude exits (session full, crash, /exit), automatically resume the most recent session

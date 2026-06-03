@@ -11,7 +11,11 @@ import {
 import { showHosts, showProjects, hideLanding } from './landing.js'
 import { slugify, hostSlug, projectSlug, projectPath, navigateTo } from './router.js'
 import { initThemeToggle } from './theme.js'
-import { getToolFoldLevel, setToolFoldLevel } from './claude-block-renderer.js'
+import {
+  getToolFoldLevel, setToolFoldLevel,
+  getSubagentPromptVisible, setSubagentPromptVisible,
+  getSubagentActivityVisible, setSubagentActivityVisible,
+} from './claude-block-renderer.js'
 
 let workspaceReady = false
 
@@ -336,6 +340,7 @@ function loadSettings() {
   loadNtfySettings()
   loadToolFoldSettings()
   loadAutoResumeSettings()
+  loadSubagentVisSettings()
 }
 
 if (cliSaveBtn) {
@@ -492,6 +497,31 @@ if (toolFoldSaveBtn) {
         statusEl.className = 'settings-status success'
         setTimeout(() => { statusEl.textContent = '' }, 2500)
       }
+    }
+  })
+}
+
+// ─── Subagent visibility settings ────────────────────────────────────────────
+
+function loadSubagentVisSettings() {
+  const promptEl = document.getElementById('subagent-prompt-visible')
+  const activityEl = document.getElementById('subagent-activity-visible')
+  if (promptEl) promptEl.checked = getSubagentPromptVisible()
+  if (activityEl) activityEl.checked = getSubagentActivityVisible()
+}
+
+const subagentVisSaveBtn = document.getElementById('subagent-vis-save-btn')
+if (subagentVisSaveBtn) {
+  subagentVisSaveBtn.addEventListener('click', () => {
+    const promptEl = document.getElementById('subagent-prompt-visible')
+    const activityEl = document.getElementById('subagent-activity-visible')
+    if (promptEl) setSubagentPromptVisible(promptEl.checked)
+    if (activityEl) setSubagentActivityVisible(activityEl.checked)
+    const statusEl = document.getElementById('subagent-vis-status')
+    if (statusEl) {
+      statusEl.textContent = 'Saved'
+      statusEl.className = 'settings-status success'
+      setTimeout(() => { statusEl.textContent = '' }, 2500)
     }
   })
 }
