@@ -494,6 +494,15 @@ export class ClaudeBlockRenderer {
     this._liveAssistantBlock = null
     this._liveAssistantId = null
 
+    // Root D: clear live tool block map — final render replaces loading placeholders.
+    // Remove all live loading placeholder blocks from DOM before re-rendering.
+    if (this._liveToolBlocks && this._liveToolBlocks.size > 0) {
+      for (const block of this._liveToolBlocks.values()) {
+        if (block && block.parentNode) block.parentNode.removeChild(block)
+      }
+      this._liveToolBlocks.clear()
+    }
+
     const msg = event.message
     if (!msg || !Array.isArray(msg.content)) return
 
@@ -512,9 +521,38 @@ export class ClaudeBlockRenderer {
     const msg = event.message
     if (!msg || !Array.isArray(msg.content)) return
 
-    // We only do live-update for the simplest case: a single text part.
-    // Tool-use partials are rendered as they arrive.
     const parts = msg.content
+
+    // Root D: handle tool_use partials — show loading placeholder while streaming
+    // We track live loading blocks by tool id in _liveToolBlocks map
+    if (!this._liveToolBlocks) this._liveToolBlocks = new Map()
+
+    for (const part of parts) {
+      if (part.type === 'tool_use') {
+        const toolId = part.id
+        if (!toolId) continue
+        if (!this._liveToolBlocks.has(toolId)) {
+          // Create loading placeholder (input may be partial/incomplete JSON — safe to pass)
+          const safePart = { name: part.name || 'tool', id: toolId, input: null }
+          // Try to parse input if present (partial_json may arrive as a partial object)
+          if (part.input != null) {
+            try {
+              // input is already parsed by Claude CLI if it's an object; just use it
+              safePart.input = (typeof part.input === 'object') ? part.input : JSON.parse(part.input)
+            } catch {
+              safePart.input = null  // still incomplete JSON — stay loading
+            }
+          }
+          const loadBlock = this._renderToolUsePart(safePart, { loading: safePart.input == null })
+          this._liveToolBlocks.set(toolId, loadBlock)
+        }
+        // Note: we don't update the block on each delta — the final `assistant` event
+        // will render the completed tool_use block (or _handleAssistant will replace
+        // the live block). The loading placeholder just provides immediate feedback.
+      }
+    }
+
+    // Live-update for the single-text-part case (existing behaviour)
     if (parts.length === 1 && parts[0].type === 'text') {
       const text = parts[0].text || ''
       if (!this._liveAssistantBlock) {
@@ -532,7 +570,6 @@ export class ClaudeBlockRenderer {
       this._liveAssistantBlock.innerHTML = `<div class="cbr-text">${html}</div>`
       this._scrollBottom()
     }
-    // Multi-part partials: just let the final `assistant` event render them.
   }
 
   _handleResult(event) {
@@ -601,7 +638,7 @@ export class ClaudeBlockRenderer {
     this._scrollBottom()
   }
 
-  _renderToolUsePart(part) {
+  _renderToolUsePart(part, opts = {}) {
     const toolName = escHtml(part.name || 'tool')
 
     // ── Subagent prompt detection ─────────────────────────────────────────────
@@ -617,8 +654,13 @@ export class ClaudeBlockRenderer {
     )
     const isSubagentPrompt = isSubagentTool || isBashCodexDispatch
 
+    // Root D: partial/loading state — input may be partial JSON or null
+    const isLoading = opts.loading === true
+
     let inputHtml = ''
-    if (part.input != null) {
+    if (isLoading) {
+      inputHtml = `<div class="cbr-tool-loading">running…</div>`
+    } else if (part.input != null) {
       if (isSubagentTool) {
         // For subagent tools, show prompt and description in a more readable way
         const prompt = part.input.prompt || ''
@@ -647,17 +689,26 @@ export class ClaudeBlockRenderer {
     }
 
     const extraClass = isSubagentPrompt ? ' cbr-block-subagent-prompt' : ''
-    const article = this._makeBlock('cbr-block-tool' + extraClass)
+    const loadingClass = isLoading ? ' cbr-tool-loading-state' : ''
+    const article = this._makeBlock('cbr-block-tool' + extraClass + loadingClass)
+
+    // Root A: stamp data-tool-id so tool_result can find this block by tool_use_id
+    if (part.id) {
+      article.setAttribute('data-tool-id', part.id)
+    }
+
     article.innerHTML =
       `<div class="cbr-tool-card">` +
       `<div class="cbr-tool-header">` +
       `<span class="cbr-tool-name">${toolName}</span>` +
       (isSubagentTool ? `<span class="cbr-subagent-badge">subagent</span>` : '') +
+      (isLoading ? `<span class="cbr-tool-running-badge">running…</span>` : '') +
       `<button class="cbr-tool-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
       `<div class="cbr-tool-body">${inputHtml}</div>` +
+      `<div class="cbr-tool-output" style="display:none"></div>` +
       `</div>`
 
     // Apply subagent-prompt visibility
@@ -688,27 +739,77 @@ export class ClaudeBlockRenderer {
     attachCopyHandlers(article)
     this._scroll.appendChild(article)
     this._scrollBottom()
+    return article
   }
 
   _renderToolResultPart(part) {
-    // tool_result: show output compactly
+    // tool_result: show output, paired with the originating tool_use block if possible
     const content = part.content
-    if (!content) return
+    const isError = part.is_error === true  // Root C: read is_error flag
+
+    // Root B: build display text; handle string, array (text+image), and empty content
     let text = ''
+    let hasImage = false
     if (typeof content === 'string') {
       text = content
     } else if (Array.isArray(content)) {
-      text = content.filter((c) => c.type === 'text').map((c) => c.text).join('\n')
+      const textParts = content.filter((c) => c.type === 'text').map((c) => c.text)
+      text = textParts.join('\n')
+      hasImage = content.some((c) => c.type === 'image')
     }
-    if (!text.trim()) return
-    const article = this._makeBlock('cbr-block-tool-result')
-    article.innerHTML =
-      `<div class="cbr-tool-result">` +
-      `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(text.slice(0, 2000))}${text.length > 2000 ? '\n…' : ''}</pre>` +
+    // Root B: do NOT silently return on empty/non-text content — always show something
+    const displayText = text.trim()
+      ? text
+      : hasImage
+        ? '(image result)'
+        : content == null
+          ? '(no result)'
+          : '(empty result)'
+
+    const truncated = displayText.length > 2000
+    const displaySlice = truncated ? displayText.slice(0, 2000) + '\n…' : displayText
+
+    // Root C: add error class when is_error is true
+    const errorClass = isError ? ' cbr-tool-result--error' : ''
+
+    const resultHtml =
+      `<div class="cbr-tool-result${errorClass}">` +
+      (isError ? `<div class="cbr-tool-result-error-label">tool error</div>` : '') +
+      `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(displaySlice)}</pre>` +
       `</div>`
-    applyToolFold(article)
-    this._scroll.appendChild(article)
-    this._scrollBottom()
+
+    // Root A: try to pair with the originating tool_use block by tool_use_id
+    const toolUseId = part.tool_use_id
+    let paired = false
+    if (toolUseId) {
+      const toolBlock = this._scroll.querySelector(`[data-tool-id="${CSS.escape(toolUseId)}"]`)
+      if (toolBlock) {
+        // Remove loading state badge/class
+        toolBlock.classList.remove('cbr-tool-loading-state')
+        const runningBadge = toolBlock.querySelector('.cbr-tool-running-badge')
+        if (runningBadge) runningBadge.remove()
+
+        // Inject result into the .cbr-tool-output section of the existing tool block
+        const outputDiv = toolBlock.querySelector('.cbr-tool-output')
+        if (outputDiv) {
+          outputDiv.innerHTML = resultHtml
+          outputDiv.style.display = ''
+          // Add error border to the whole tool block if is_error
+          if (isError) toolBlock.classList.add('cbr-tool-block--error')
+          attachCopyHandlers(outputDiv)
+          paired = true
+        }
+      }
+    }
+
+    // Fallback (Root A): if no matching tool block, render as standalone result block
+    if (!paired) {
+      const article = this._makeBlock('cbr-block-tool-result')
+      article.innerHTML = resultHtml
+      applyToolFold(article)
+      this._scroll.appendChild(article)
+      this._scrollBottom()
+    }
   }
 
   // ── Utility blocks ─────────────────────────────────────────────────────────

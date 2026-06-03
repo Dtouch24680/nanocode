@@ -2707,12 +2707,14 @@ body.workspace-active .landing-overlay { display: none; }
 /* Default (no attribute): treat as full — prevents invisible body when
    localStorage is empty or before applyToolFold() runs */
 .cbr-block-tool:not([data-fold]) .cbr-tool-body,
+.cbr-block-tool:not([data-fold]) .cbr-tool-output,
 .cbr-block-tool-result:not([data-fold]) .cbr-tool-result {
   display: block;
 }
 
 /* full (default) — show everything, chevron points down */
 .cbr-block-tool[data-fold="full"] .cbr-tool-body,
+.cbr-block-tool[data-fold="full"] .cbr-tool-output,
 .cbr-block-tool-result[data-fold="full"] .cbr-tool-result {
   display: block;
 }
@@ -2721,8 +2723,9 @@ body.workspace-active .landing-overlay { display: none; }
   transition: transform var(--duration-fast);
 }
 
-/* header — show header only, hide body, chevron points right */
+/* header — show header only, hide body and output, chevron points right */
 .cbr-block-tool[data-fold="header"] .cbr-tool-body,
+.cbr-block-tool[data-fold="header"] .cbr-tool-output,
 .cbr-block-tool-result[data-fold="header"] .cbr-tool-result {
   display: none;
 }
@@ -2772,6 +2775,65 @@ body.workspace-active .landing-overlay { display: none; }
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-secondary);
+}
+
+/* ── Tool output (paired result injected into tool_use block) ───── */
+.cbr-tool-output {
+  border-top: 1px solid var(--border);
+}
+
+.cbr-tool-output .cbr-tool-result {
+  padding: 0;
+}
+
+/* ── Tool result error state (Root C: is_error) ─────────────────── */
+.cbr-tool-result--error {
+  background: rgba(239, 68, 68, 0.08);
+  border-top: 2px solid #ef4444;
+}
+
+.cbr-tool-result-error-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ef4444;
+  padding: var(--s-1) var(--s-3) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Error border on the whole tool_use block when result is_error */
+.cbr-tool-block--error {
+  border-color: #ef4444 !important;
+  border-left-color: #ef4444 !important;
+}
+
+/* Standalone tool_result block error state */
+.cbr-block-tool-result .cbr-tool-result--error {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* ── Tool loading/running state (Root D: partial streaming) ──────── */
+.cbr-tool-running-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: var(--s-2);
+  opacity: 0.7;
+  animation: cbr-pulse 1.5s ease-in-out infinite;
+}
+
+.cbr-tool-loading {
+  padding: var(--s-2) var(--s-3);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+@keyframes cbr-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }
 
 /* ── Usage bar (end-of-turn token counts) ───────────────────────── */
