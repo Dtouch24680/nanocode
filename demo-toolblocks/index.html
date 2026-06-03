@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool Block Demo — Correct Renderer</title>
+<style>
+/* ── Base reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d0d0d;
+  --bg-secondary: #161616;
+  --bg-tertiary: #1e1e1e;
+  --border: #2a2a2a;
+  --text: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666;
+  --primary: #60a5fa;
+  --accent: #a78bfa;
+  --error: #ef4444;
+  --font-mono: 'Menlo', 'Consolas', 'Monaco', monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 8px;
+  --radius-sm: 4px;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Layout ── */
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar h1 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.sidebar code { font-family: var(--font-mono); font-size: 11px; background: var(--bg-tertiary); padding: 1px 4px; border-radius: 3px; }
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: border-color 0.15s;
+}
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn.active { border-color: var(--primary); background: rgba(96, 165, 250, 0.1); color: var(--primary); }
+
+.fold-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fold-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+.fold-btn:hover, .fold-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(96, 165, 250, 0.08); }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.toggle-row input[type=checkbox] { cursor: pointer; accent-color: var(--primary); }
+
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; }
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.speed-control label { font-size: 12px; color: var(--text-secondary); }
+.speed-control input { flex: 1; accent-color: var(--primary); }
+
+.status-bar {
+  margin-top: auto;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ── Main content ── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab {
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.tab:hover { color: var(--text); background: var(--bg-tertiary); }
+.tab.active { background: var(--bg); border-color: var(--border); color: var(--text); }
+
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+/* ── Blocks ── */
+.block {
+  border-radius: var(--radius);
+  /* NOTE: do NOT add overflow:hidden here — it collapses flex-item height in Chrome.
+     Each block type that needs overflow:hidden must set it on an inner wrapper. */
+}
+
+/* User prompt */
+.block-user {
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-left: 3px solid var(--primary);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--primary);
+}
+
+/* System */
+.block-system {
+  background: transparent;
+  padding: 4px 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* Text */
+.block-text {
+  padding: 12px 16px;
+  line-height: 1.7;
+}
+.block-text p { margin-bottom: 8px; }
+.block-text p:last-child { margin-bottom: 0; }
+.block-text code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--primary);
+}
+
+/* Usage */
+.block-usage {
+  padding: 4px 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: -4px;
+}
+
+/* ── Tool block ── */
+.block-tool {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.block-tool:hover { border-color: rgba(96, 165, 250, 0.5); }
+.block-tool.error-border { border-color: var(--error) !important; border-left-color: var(--error) !important; }
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.tool-name {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.badge-subagent { color: var(--accent); background: rgba(167, 139, 250, 0.12); border: 1px solid rgba(167, 139, 250, 0.3); }
+.badge-loading { color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); animation: pulse 1.5s ease-in-out infinite; }
+
+@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+.fold-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  transition: color 0.15s;
+}
+.fold-btn:hover { color: var(--primary); }
+
+.tool-body { padding: 0; }
+.tool-body pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.tool-output {
+  border-top: 1px solid var(--border);
+}
+.tool-output:empty { display: none !important; border-top: none; }
+
+.tool-result-inner { padding: 0; }
+.tool-result-inner.error { background: rgba(239, 68, 68, 0.08); }
+.tool-result-inner .error-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--error);
+  padding: 6px 14px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tool-result-inner pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 14px;
+  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ── Fold states ── */
+
+/* full: show body + output */
+.block-tool[data-fold="full"] .tool-body,
+.block-tool[data-fold="full"] .tool-output { display: block; }
+.block-tool[data-fold="full"] .fold-btn::after { content: '▾'; }
+
+/* header: header only */
+.block-tool[data-fold="header"] .tool-body,
+.block-tool[data-fold="header"] .tool-output { display: none; }
+.block-tool[data-fold="header"] .fold-btn::after { content: '▸'; }
+
+/* line: collapsed stripe */
+.block-tool[data-fold="line"] {
+  min-height: 6px;
+  overflow: hidden;
+  padding: 0;
+}
+.block-tool[data-fold="line"]::before {
+  content: '';
+  display: block;
+  height: 6px;
+  background: var(--primary);
+  border-radius: var(--radius-sm);
+  opacity: 0.4;
+}
+.block-tool[data-fold="line"] .tool-header,
+.block-tool[data-fold="line"] .tool-body,
+.block-tool[data-fold="line"] .tool-output { display: none; }
+
+/* default: full if no attribute set */
+.block-tool:not([data-fold]) .tool-body,
+.block-tool:not([data-fold]) .tool-output { display: block; }
+
+/* ── Subagent block ── */
+.block-tool.subagent-prompt { border-left-color: var(--accent) !important; }
+
+/* ── Subagent activity block (inner workings: assistant/user events with parent_tool_use_id) ── */
+.subagent-activity-block {
+  background: rgba(167, 139, 250, 0.05);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.subagent-activity-block .activity-label {
+  font-size: 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.subagent-activity-block pre {
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* ── Loading state ── */
+.tool-loading-text {
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Code rendering ── */
+.code-wrap { position: relative; }
+.code-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 14px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--border);
+}
+.code-lang { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.copy-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.copy-btn:hover { color: var(--primary); border-color: var(--primary); }
+
+pre code.hljs { background: transparent; padding: 0; }
+pre { margin: 0; }
+
+/* ── Scenario header ── */
+.scenario-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.scenario-divider::before, .scenario-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Scroll to bottom ── */
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: var(--primary);
+  color: var(--bg);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.scroll-to-bottom.visible { display: flex; }
+</style>
+<!-- highlight.js for code coloring -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar controls -->
+  <div class="sidebar">
+    <h1>Tool Block Demo</h1>
+    <p>Standalone renderer — no WS, no store, no server. Feeds a fixture array of events and renders them correctly.</p>
+
+    <div class="label">Playback</div>
+    <div class="controls">
+      <button class="btn" id="btn-play-all">Play All Scenarios</button>
+      <button class="btn" id="btn-play-s1">Scenario 1: single tool</button>
+      <button class="btn" id="btn-play-s2">Scenario 2: error result</button>
+      <button class="btn" id="btn-play-s3">Scenario 3: multi-tool</button>
+      <button class="btn" id="btn-play-s4">Scenario 4: text+tool mixed</button>
+      <button class="btn" id="btn-play-s5">Scenario 5: subagent</button>
+      <button class="btn" id="btn-play-s6">Scenario 6: activity toggle bug</button>
+      <button class="btn" id="btn-clear">Clear</button>
+    </div>
+
+    <div class="label">Global fold level</div>
+    <div class="fold-controls">
+      <button class="fold-btn active" data-fold="full">full</button>
+      <button class="fold-btn" data-fold="header">header</button>
+      <button class="fold-btn" data-fold="line">line</button>
+    </div>
+
+    <div class="label">Visibility</div>
+    <label class="toggle-row">
+      <input type="checkbox" id="toggle-subagent-prompt" checked>
+      Show subagent prompts
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="toggle-subagent-activity">
+      Show subagent activity
+    </label>
+
+    <div class="label">Speed</div>
+    <div class="speed-control">
+      <label>Delay:</label>
+      <input type="range" id="speed" min="0" max="2000" step="100" value="400">
+      <span id="speed-label">400ms</span>
+    </div>
+
+    <div class="status-bar" id="status">Ready</div>
+  </div>
+
+  <!-- Main renderer -->
+  <div class="main">
+    <div class="tab-bar">
+      <button class="tab active">demo-renderer</button>
+    </div>
+    <div class="scroll-area" id="scroll">
+      <div style="color: var(--text-muted); font-size: 13px; padding: 40px; text-align: center;">
+        Select a scenario to play →
+      </div>
+      <button class="scroll-to-bottom" id="scroll-btn">↓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Inline fixture (works when opened via file:// protocol) ───────────────
+const INLINE_FIXTURE = [{"_comment":"=== FIXTURE: Real claude --output-format=stream-json --verbose --include-partial-messages events ===","_comment2":"Captured from actual nanocode server on 2026-06-03. Used as ground-truth for demo renderer."},{"_scenario":"--- Scenario 1: Single tool_use with successful tool_result ---"},{"type":"system","subtype":"init","cwd":"/storage/home/zhiningjiao/code/nanocode","session_id":"demo-session-001","tools":["Bash","Read","Write","Edit","Glob","Grep"],"model":"claude-opus-4-8","uuid":"init-uuid-001"},{"type":"user","message":{"role":"user","content":[{"type":"text","text":"use the Bash tool to run: echo hello world"}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-uuid-001","_nonce":"demo-nonce-001"},{"_comment":"partial_message: tool_use starts streaming (input partially built)","type":"partial_message","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_bash_001","name":"Bash","input":null}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"partial-uuid-001"},{"_comment":"partial_message: input now partially present as object","type":"partial_message","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_bash_001","name":"Bash","input":{"command":"echo hello world","description":"Print hello world"}}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"partial-uuid-002"},{"_comment":"assistant: FINAL message with completed tool_use block","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_001","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_bash_001","name":"Bash","input":{"command":"echo hello world","description":"Print hello world"}}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-001"},{"_comment":"user: tool_result -- paired via tool_use_id to above tool_use","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_demo_bash_001","content":"hello world\n","is_error":false}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-toolresult-001"},{"_comment":"assistant: text response after tool","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_002","type":"message","role":"assistant","content":[{"type":"text","text":"Done — `hello world`."}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-002"},{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.0012,"usage":{"input_tokens":1200,"output_tokens":45},"session_id":"demo-session-001","uuid":"result-uuid-001"},{"_scenario":"--- Scenario 2: tool_result is_error=true ---"},{"type":"user","message":{"role":"user","content":[{"type":"text","text":"run a command that will fail"}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-uuid-002","_nonce":"demo-nonce-002"},{"type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_003","role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_bash_002","name":"Bash","input":{"command":"ls /nonexistent/path/that/does/not/exist"}}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-003"},{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_demo_bash_002","content":"ls: cannot access '/nonexistent/path/that/does/not/exist': No such file or directory","is_error":true}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-toolresult-002"},{"type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_004","role":"assistant","content":[{"type":"text","text":"The command failed because the path doesn't exist."}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-004"},{"type":"result","subtype":"success","usage":{"input_tokens":800,"output_tokens":30},"session_id":"demo-session-001","uuid":"result-uuid-002"},{"_scenario":"--- Scenario 3: Multiple sequential tool_use calls in one turn ---"},{"type":"user","message":{"role":"user","content":[{"type":"text","text":"read two files: /tmp/a.txt and /tmp/b.txt"}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-uuid-003","_nonce":"demo-nonce-003"},{"_comment":"partial_message: first tool_use starts","type":"partial_message","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_read_001","name":"Read","input":null}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"partial-uuid-003"},{"_comment":"assistant: FINAL with two tool_use blocks","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_005","role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_read_001","name":"Read","input":{"file_path":"/tmp/a.txt"}},{"type":"tool_use","id":"toolu_demo_read_002","name":"Read","input":{"file_path":"/tmp/b.txt"}}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-005"},{"_comment":"tool_result for first Read","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_demo_read_001","content":"Contents of file A","is_error":false}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-toolresult-003"},{"_comment":"tool_result for second Read","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_demo_read_002","content":"Contents of file B","is_error":false}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-toolresult-004"},{"type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_006","role":"assistant","content":[{"type":"text","text":"Both files read successfully."}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-006"},{"type":"result","subtype":"success","usage":{"input_tokens":600,"output_tokens":20},"session_id":"demo-session-001","uuid":"result-uuid-003"},{"_scenario":"--- Scenario 4: Mixed text + tool_use in same assistant turn (streaming) ---"},{"type":"user","message":{"role":"user","content":[{"type":"text","text":"say something and then use a tool"}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-uuid-004","_nonce":"demo-nonce-004"},{"_comment":"partial: text streaming first","type":"partial_message","message":{"role":"assistant","content":[{"type":"text","text":"Let me check"}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"partial-uuid-004"},{"_comment":"partial: text + tool_use (mixed)","type":"partial_message","message":{"role":"assistant","content":[{"type":"text","text":"Let me check the file system first."},{"type":"tool_use","id":"toolu_demo_bash_003","name":"Bash","input":null}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"partial-uuid-005"},{"_comment":"assistant FINAL: text + tool_use complete","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_007","role":"assistant","content":[{"type":"text","text":"Let me check the file system first."},{"type":"tool_use","id":"toolu_demo_bash_003","name":"Bash","input":{"command":"ls /tmp | head -5"}}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-007"},{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_demo_bash_003","content":"systemd-private-abc\ntmux-1000\nsnap.snapd\n","is_error":false}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-toolresult-005"},{"type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_008","role":"assistant","content":[{"type":"text","text":"I can see the /tmp directory contents."}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-008"},{"type":"result","subtype":"success","usage":{"input_tokens":700,"output_tokens":35},"session_id":"demo-session-001","uuid":"result-uuid-004"},{"_scenario":"--- Scenario 5: Subagent (parent_tool_use_id present) ---"},{"type":"user","message":{"role":"user","content":[{"type":"text","text":"dispatch a subagent to do something"}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-uuid-005","_nonce":"demo-nonce-005"},{"_comment":"Main agent dispatches Agent tool (subagent)","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_009","role":"assistant","content":[{"type":"tool_use","id":"toolu_demo_agent_001","name":"Agent","input":{"prompt":"Please run: echo subagent_task_complete","description":"Run a simple echo command"}}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-009"},{"_comment":"Subagent internal assistant event (has parent_tool_use_id)","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_subagent_001","role":"assistant","content":[{"type":"tool_use","id":"toolu_subagent_bash_001","name":"Bash","input":{"command":"echo subagent_task_complete"}}]},"parent_tool_use_id":"toolu_demo_agent_001","session_id":"demo-session-001","uuid":"assistant-subagent-001"},{"_comment":"Subagent's tool_result (has parent_tool_use_id)","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_subagent_bash_001","content":"subagent_task_complete\n","is_error":false}]},"parent_tool_use_id":"toolu_demo_agent_001","session_id":"demo-session-001","uuid":"user-subagent-toolresult-001"},{"_comment":"Main agent gets the Agent tool result","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_demo_agent_001","content":"Subagent completed: subagent_task_complete","is_error":false}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"user-toolresult-006"},{"type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_demo_010","role":"assistant","content":[{"type":"text","text":"The subagent completed the task successfully."}]},"parent_tool_use_id":null,"session_id":"demo-session-001","uuid":"assistant-uuid-010"},{"type":"result","subtype":"success","usage":{"input_tokens":1500,"output_tokens":60},"session_id":"demo-session-001","uuid":"result-uuid-005"},{"_scenario":"--- Scenario 6: Activity toggle bug — events stream with toggle OFF, then toggle ON ---"},{"_comment":"PURPOSE: Reproduce the key bug. Events with parent_tool_use_id flow through while toggle is OFF. The real renderer discards them (line 437/491/518 return). This demo always builds DOM, hides via display:none, so toggling ON afterwards reveals them. Scenario verifies this works correctly."},{"type":"user","message":{"role":"user","content":[{"type":"text","text":"dispatch subagent — activity toggle is OFF right now"}]},"parent_tool_use_id":null,"session_id":"demo-session-002","uuid":"user-s6-001"},{"_comment":"Main agent calls Agent tool — this is a subagent-prompt block (toggle: show prompts)","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_s6_001","role":"assistant","content":[{"type":"tool_use","id":"toolu_s6_agent_001","name":"Agent","input":{"prompt":"Count from 1 to 3 using Bash, then summarize.","description":"Count task for subagent"}}]},"parent_tool_use_id":null,"session_id":"demo-session-002","uuid":"assistant-s6-001"},{"_comment":"Subagent activity: assistant event (parent_tool_use_id set). With toggle OFF in real renderer this is DISCARDED forever. In demo it builds DOM with display:none.","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_s6_sub_001","role":"assistant","content":[{"type":"text","text":"I'll count from 1 to 3 using Bash."},{"type":"tool_use","id":"toolu_s6_sub_bash_001","name":"Bash","input":{"command":"echo 1 && echo 2 && echo 3"}}]},"parent_tool_use_id":"toolu_s6_agent_001","session_id":"demo-session-002","uuid":"assistant-s6-sub-001"},{"_comment":"Subagent activity: user event with tool_result (parent_tool_use_id set). Discarded in real renderer.","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_s6_sub_bash_001","content":"1\n2\n3\n","is_error":false}]},"parent_tool_use_id":"toolu_s6_agent_001","session_id":"demo-session-002","uuid":"user-s6-sub-001"},{"_comment":"Subagent activity: final response from subagent (parent_tool_use_id set). Discarded in real renderer.","type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_s6_sub_002","role":"assistant","content":[{"type":"text","text":"Done. I counted: 1, 2, 3."}]},"parent_tool_use_id":"toolu_s6_agent_001","session_id":"demo-session-002","uuid":"assistant-s6-sub-002"},{"_comment":"Main agent receives Agent tool result (NO parent_tool_use_id — this is main agent level)","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_s6_agent_001","content":"Subagent counted successfully: 1, 2, 3","is_error":false}]},"parent_tool_use_id":null,"session_id":"demo-session-002","uuid":"user-s6-result-001"},{"type":"assistant","message":{"model":"claude-opus-4-8","id":"msg_s6_002","role":"assistant","content":[{"type":"text","text":"The subagent completed the counting task. You can now toggle ON 'Show subagent activity' to see the 3 hidden blocks that were rendered but hidden — they should appear immediately without replaying events."}]},"parent_tool_use_id":null,"session_id":"demo-session-002","uuid":"assistant-s6-002"},{"type":"result","subtype":"success","usage":{"input_tokens":800,"output_tokens":50},"session_id":"demo-session-002","uuid":"result-uuid-006"}]
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const FOLD_LEVELS = ['full', 'header', 'line']
+let globalFold = 'full'
+let subagentPromptVisible = true
+let subagentActivityVisible = false
+let playbackDelay = 400
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function renderMarkdown(text) {
+  if (!text) return ''
+  const lines = text.split('\n')
+  let out = ''
+  for (const line of lines) {
+    const safe = line
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, `<code>$1</code>`)
+    if (/^#{1,6}\s/.test(line)) {
+      const level = line.match(/^(#+)/)[1].length
+      out += `<h${level}>${safe.replace(/^#+\s*/, '')}</h${level}>`
+    } else if (line.trim() === '') {
+      out += ''
+    } else {
+      out += `<p>${safe}</p>`
+    }
+  }
+  return out
+}
+
+function renderJsonCode(obj) {
+  const pretty = JSON.stringify(obj, null, 2)
+  let highlighted = pretty
+  try {
+    if (window.hljs) {
+      highlighted = hljs.highlight(pretty, { language: 'json', ignoreIllegals: true }).value
+    }
+  } catch {}
+  return `<div class="code-wrap">
+    <div class="code-header">
+      <span class="code-lang">json</span>
+      <button class="copy-btn" onclick="copyCode(this, ${JSON.stringify(esc(pretty))})">Copy</button>
+    </div>
+    <pre><code class="hljs">${highlighted}</code></pre>
+  </div>`
+}
+
+function copyCode(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent
+    btn.textContent = 'Copied!'
+    setTimeout(() => { btn.textContent = orig }, 1500)
+  })
+}
+
+// ── State for a render session ─────────────────────────────────────────────
+let state = {
+  // Map of tool_use_id → DOM element (the .block-tool article)
+  toolBlocks: new Map(),
+  // Live text block during partial streaming (main agent)
+  liveTextBlock: null,
+  // Live activity block during subagent partial streaming
+  liveActivityBlock: null,
+}
+
+// ── DOM helpers ────────────────────────────────────────────────────────────
+const scroll = document.getElementById('scroll')
+const scrollBtn = document.getElementById('scroll-btn')
+
+function clearRenderer() {
+  // Remove all blocks except the scroll-to-bottom button
+  Array.from(scroll.children).forEach(el => {
+    if (!el.classList.contains('scroll-to-bottom')) el.remove()
+  })
+  state = { toolBlocks: new Map(), liveTextBlock: null, liveActivityBlock: null }
+}
+
+function appendBlock(el) {
+  scroll.insertBefore(el, scrollBtn)
+  scrollToBottom()
+}
+
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    scroll.scrollTop = scroll.scrollHeight
+    updateScrollBtn()
+  })
+}
+
+function updateScrollBtn() {
+  const atBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60
+  scrollBtn.classList.toggle('visible', !atBottom)
+}
+
+scroll.addEventListener('scroll', updateScrollBtn, { passive: true })
+scrollBtn.addEventListener('click', () => scroll.scrollTo({ top: scroll.scrollHeight, behavior: 'smooth' }))
+
+// ── Block factories ────────────────────────────────────────────────────────
+
+function makeDivider(label) {
+  const el = document.createElement('div')
+  el.className = 'scenario-divider'
+  el.textContent = label
+  return el
+}
+
+function makeUserBlock(text) {
+  const el = document.createElement('div')
+  el.className = 'block block-user'
+  el.textContent = '❯ ' + text
+  return el
+}
+
+function makeSystemBlock(text) {
+  const el = document.createElement('div')
+  el.className = 'block block-system'
+  el.textContent = text
+  return el
+}
+
+function makeTextBlock(text) {
+  const el = document.createElement('div')
+  el.className = 'block block-text'
+  el.innerHTML = renderMarkdown(text)
+  return el
+}
+
+function makeUsageBlock(usage, cost) {
+  const parts = []
+  if (usage?.input_tokens != null) parts.push(`in ${usage.input_tokens}`)
+  if (usage?.output_tokens != null) parts.push(`out ${usage.output_tokens}`)
+  if (cost != null) parts.push(`$${Number(cost).toFixed(4)}`)
+  const el = document.createElement('div')
+  el.className = 'block block-usage'
+  el.textContent = parts.join(' · ')
+  return el
+}
+
+/**
+ * Create a tool_use block.
+ * @param {object} part - { id, name, input }
+ * @param {object} opts - { loading: bool, isSubagent: bool }
+ * @returns {HTMLElement}
+ */
+function makeToolBlock(part, opts = {}) {
+  const { loading = false, isSubagent = false } = opts
+  const el = document.createElement('div')
+  el.className = 'block block-tool' + (isSubagent ? ' subagent-prompt' : '')
+  el.setAttribute('data-tool-id', part.id)
+  el.setAttribute('data-fold', globalFold)
+
+  // Subagent prompts always start in 'full' so content is visible
+  if (isSubagent) el.setAttribute('data-fold', 'full')
+
+  // Apply subagent-prompt visibility
+  if (isSubagent && !subagentPromptVisible) el.style.display = 'none'
+
+  // Build input HTML
+  let inputHtml = ''
+  if (loading) {
+    inputHtml = `<div class="tool-loading-text">running…</div>`
+  } else if (part.input != null) {
+    if (isSubagent) {
+      // For Agent/Task tools show prompt + description more readably
+      const prompt = part.input.prompt || ''
+      const desc = part.input.description || ''
+      if (desc) inputHtml += `<pre style="padding:8px 14px; font-size:12px; color:var(--text-secondary);">${esc(desc)}</pre>`
+      if (prompt) inputHtml += `<pre style="padding:8px 14px; font-size:12px; color:var(--text-secondary); border-top: 1px solid var(--border);">${esc(prompt.slice(0, 3000))}${prompt.length > 3000 ? '\n…' : ''}</pre>`
+      if (!desc && !prompt) inputHtml = renderJsonCode(part.input)
+    } else {
+      inputHtml = renderJsonCode(part.input)
+    }
+  }
+
+  el.innerHTML = `
+    <div class="tool-header">
+      <span class="tool-name">${esc(part.name || 'tool')}</span>
+      ${isSubagent ? '<span class="badge badge-subagent">subagent</span>' : ''}
+      ${loading ? '<span class="badge badge-loading">running…</span>' : ''}
+      <button class="fold-btn" title="Cycle fold state" onclick="event.stopPropagation()">▾</button>
+    </div>
+    <div class="tool-body">${inputHtml}</div>
+    <div class="tool-output"></div>
+  `
+
+  // Click to cycle fold state
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('a') || e.target.tagName === 'A' || e.target.closest('.copy-btn')) return
+    const cur = el.getAttribute('data-fold') || globalFold
+    const idx = FOLD_LEVELS.indexOf(cur)
+    const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
+    el.setAttribute('data-fold', next)
+    // Update fold button indicator
+    const foldBtn = el.querySelector('.fold-btn')
+    if (foldBtn) foldBtn.textContent = next === 'full' ? '▾' : next === 'header' ? '▸' : '—'
+  })
+
+  return el
+}
+
+/**
+ * Inject tool_result into the corresponding tool_use block.
+ * If no block found, create a standalone block.
+ */
+function injectToolResult(toolUseId, content, isError) {
+  // Build display text
+  let text = ''
+  let hasImage = false
+  if (typeof content === 'string') {
+    text = content
+  } else if (Array.isArray(content)) {
+    const textParts = content.filter(c => c.type === 'text').map(c => c.text)
+    text = textParts.join('\n')
+    hasImage = content.some(c => c.type === 'image')
+  }
+
+  const display = text.trim()
+    ? text
+    : hasImage ? '(image result)'
+    : content == null ? '(no result)'
+    : '(empty result)'
+
+  const truncated = display.length > 3000
+  const displaySlice = truncated ? display.slice(0, 3000) + '\n…' : display
+
+  const resultHtml = `
+    <div class="tool-result-inner${isError ? ' error' : ''}">
+      ${isError ? '<div class="error-label">tool error</div>' : ''}
+      <pre>${esc(displaySlice)}</pre>
+    </div>
+  `
+
+  // Try to pair with the tool_use block
+  const toolBlock = scroll.querySelector(`[data-tool-id="${CSS.escape(toolUseId)}"]`)
+  if (toolBlock) {
+    // Remove loading state
+    toolBlock.classList.remove('loading-state')
+    const loadingBadge = toolBlock.querySelector('.badge-loading')
+    if (loadingBadge) loadingBadge.remove()
+    const loadingText = toolBlock.querySelector('.tool-loading-text')
+    if (loadingText) loadingText.remove()
+
+    // Inject into .tool-output
+    const outputDiv = toolBlock.querySelector('.tool-output')
+    if (outputDiv) {
+      outputDiv.innerHTML = resultHtml
+      if (isError) toolBlock.classList.add('error-border')
+    }
+    scrollToBottom()
+  } else {
+    // Fallback: standalone result block (should not happen if events are ordered correctly)
+    const el = document.createElement('div')
+    el.className = 'block block-tool'
+    el.setAttribute('data-fold', globalFold)
+    el.style.borderLeftColor = '#888'
+    el.innerHTML = `
+      <div class="tool-header"><span class="tool-name" style="color:var(--text-muted)">result (unmatched: ${esc(toolUseId)})</span></div>
+      ${resultHtml}
+    `
+    appendBlock(el)
+  }
+}
+
+// ── Event handlers ─────────────────────────────────────────────────────────
+
+/**
+ * Process a single event object and update the DOM.
+ * This is the core rendering logic — pure function on event → DOM mutations.
+ */
+function handleEvent(event) {
+  if (!event || typeof event !== 'object') return
+  // Skip _comment and _scenario meta keys
+  if (event._comment || event._scenario || event._comment2) return
+
+  switch (event.type) {
+
+    case 'system': {
+      if (event.subtype === 'init') {
+        const toolCount = Array.isArray(event.tools) ? event.tools.length : '?'
+        const sid = event.session_id ? event.session_id.slice(0, 8) + '…' : '—'
+        appendBlock(makeSystemBlock(`[Session ${sid} · ${toolCount} tools available]`))
+      } else if (event.subtype === 'stderr') {
+        appendBlock(makeSystemBlock(`[stderr: ${event.text}]`))
+      } else if (event.subtype === 'info') {
+        appendBlock(makeSystemBlock(`[${event.text}]`))
+      }
+      break
+    }
+
+    case 'user': {
+      const content = event.message?.content
+      if (!Array.isArray(content)) break
+
+      const parentId = event.parent_tool_use_id
+
+      if (parentId) {
+        // Subagent activity (from or to a subagent)
+        if (!subagentActivityVisible) break
+        for (const c of content) {
+          if (c.type === 'text' && c.text?.trim()) {
+            const el = document.createElement('div')
+            el.className = 'block'
+            el.style.cssText = 'background:rgba(167,139,250,0.05); border:1px solid rgba(167,139,250,0.2); border-radius:8px; padding:8px 12px; font-size:12px; color:var(--text-secondary);'
+            el.innerHTML = `<div style="font-size:10px; color:var(--accent); text-transform:uppercase; font-weight:700; margin-bottom:4px;">subagent input</div><pre style="font-size:11px; white-space:pre-wrap; word-break:break-all;">${esc(c.text.slice(0, 2000))}</pre>`
+            appendBlock(el)
+          } else if (c.type === 'tool_result') {
+            injectToolResult(c.tool_use_id, c.content, !!c.is_error)
+          }
+        }
+        break
+      }
+
+      // Normal user event
+      for (const c of content) {
+        if (c.type === 'text' && c.text?.trim()) {
+          // History replay of user message (no _nonce dedup needed in demo)
+          // In demo mode we DON'T skip nonce events (they show the user turn)
+          appendBlock(makeUserBlock(c.text))
+        } else if (c.type === 'tool_result') {
+          // KEY LOGIC: pair tool_result with tool_use block using tool_use_id
+          injectToolResult(c.tool_use_id, c.content, !!c.is_error)
+        }
+      }
+      break
+    }
+
+    case 'partial_message': {
+      const msg = event.message
+      if (!msg || !Array.isArray(msg.content)) break
+      const parts = msg.content
+
+      if (event.parent_tool_use_id && !subagentActivityVisible) break
+
+      // CRITICAL FIX vs old renderer:
+      // Old renderer only handled single-part text. It ignored tool_use partials
+      // entirely, and when text + tool_use appeared together it didn't update
+      // the live text block at all.
+      // Correct behavior: handle EACH part type independently.
+
+      for (const part of parts) {
+        if (part.type === 'text') {
+          // Update or create live text block
+          const text = part.text || ''
+          if (text.trim()) {
+            if (!state.liveTextBlock) {
+              const el = document.createElement('div')
+              el.className = 'block block-text'
+              el.style.opacity = '0.7'  // visual cue: still streaming
+              appendBlock(el)
+              state.liveTextBlock = el
+            }
+            state.liveTextBlock.innerHTML = renderMarkdown(text)
+          }
+        } else if (part.type === 'tool_use') {
+          // Show loading placeholder for tool_use
+          const toolId = part.id
+          if (!toolId) continue
+          if (!state.toolBlocks.has(toolId)) {
+            const isSubagent = part.name === 'Agent' || part.name === 'Task' || part.name === 'TaskCreate'
+            const loadBlock = makeToolBlock(
+              { id: toolId, name: part.name || 'tool', input: null },
+              { loading: true, isSubagent }
+            )
+            appendBlock(loadBlock)
+            state.toolBlocks.set(toolId, loadBlock)
+          }
+        }
+      }
+      break
+    }
+
+    case 'assistant': {
+      if (event.parent_tool_use_id && !subagentActivityVisible) break
+
+      // Finalize live text block (remove streaming indicator)
+      if (state.liveTextBlock) {
+        state.liveTextBlock.style.opacity = ''
+        state.liveTextBlock = null
+      }
+
+      // Remove loading placeholders for tools we're about to re-render
+      // IMPORTANT: We only remove loading blocks that are NOT yet paired with results
+      // (i.e., blocks where .tool-output is still empty). This avoids removing
+      // blocks that already have their results injected.
+      const msg = event.message
+      if (!msg || !Array.isArray(msg.content)) break
+
+      // Collect tool IDs in the final message
+      const finalToolIds = new Set(
+        msg.content.filter(p => p.type === 'tool_use').map(p => p.id)
+      )
+
+      // Remove loading placeholders for these tool IDs
+      for (const [toolId, block] of state.toolBlocks.entries()) {
+        if (finalToolIds.has(toolId)) {
+          const outputDiv = block.querySelector('.tool-output')
+          // Only remove if no result injected yet (output still empty)
+          if (outputDiv && outputDiv.innerHTML.trim() === '') {
+            if (block.parentNode) block.parentNode.removeChild(block)
+            state.toolBlocks.delete(toolId)
+          }
+        }
+      }
+
+      // Render final content parts
+      for (const part of msg.content) {
+        if (part.type === 'text') {
+          // CRITICAL FIX: when assistant has both text + tool_use parts,
+          // old renderer skipped live text update during streaming (because
+          // parts.length > 1 check). Here we render the text part directly
+          // but check if the live block already has this text to avoid dup.
+          if (!part.text?.trim()) continue
+          // Check if the live text block already has this text (from partial_message)
+          // If liveTextBlock was finalized above, we still have the DOM node but
+          // state.liveTextBlock is null. Search by content.
+          const existingLive = scroll.querySelector('.block-text')
+          // If a live block was just finalized with the same content, reuse it
+          // rather than creating a duplicate. Simple heuristic: if no live block
+          // was removed (state was null from start), create new.
+          // Actually: the finalize above set state.liveTextBlock = null but the DOM
+          // node is still there. We need to update it rather than create a new one.
+          // Track it via a data attribute set during partial streaming.
+          const existingFinalizedLive = scroll.querySelector('[data-live-finalized]')
+          if (existingFinalizedLive) {
+            existingFinalizedLive.innerHTML = renderMarkdown(part.text)
+            existingFinalizedLive.removeAttribute('data-live-finalized')
+          } else {
+            const el = makeTextBlock(part.text)
+            appendBlock(el)
+          }
+        } else if (part.type === 'tool_use') {
+          const isSubagent = part.name === 'Agent' || part.name === 'Task' || part.name === 'TaskCreate'
+          // Check if we already have a placeholder for this tool
+          if (!state.toolBlocks.has(part.id)) {
+            const toolBlock = makeToolBlock(part, { loading: false, isSubagent })
+            appendBlock(toolBlock)
+            state.toolBlocks.set(part.id, toolBlock)
+          } else {
+            // Replace loading placeholder with full block
+            const loadBlock = state.toolBlocks.get(part.id)
+            const fullBlock = makeToolBlock(part, { loading: false, isSubagent })
+            if (loadBlock.parentNode) {
+              loadBlock.parentNode.replaceChild(fullBlock, loadBlock)
+            }
+            state.toolBlocks.set(part.id, fullBlock)
+          }
+        }
+      }
+      break
+    }
+
+    case 'result': {
+      // Finalize live text block
+      if (state.liveTextBlock) {
+        state.liveTextBlock.style.opacity = ''
+        state.liveTextBlock = null
+      }
+
+      if (event.subtype === 'success' || event.subtype === 'error_max_turns') {
+        const usage = event.usage
+        if (usage || event.total_cost_usd) {
+          appendBlock(makeUsageBlock(usage, event.total_cost_usd))
+        }
+      } else if (event.subtype === 'error') {
+        appendBlock(makeSystemBlock(`[Error: ${event.error?.message || 'unknown error'}]`))
+      }
+      break
+    }
+
+    case 'rate_limit_event': {
+      const info = event.rate_limit_info || {}
+      const msg = info.retryAfterMs
+        ? `Rate limited — retry in ${(info.retryAfterMs / 1000).toFixed(0)}s`
+        : 'Rate limit warning'
+      const el = makeSystemBlock(`[${msg}]`)
+      el.style.color = '#f59e0b'
+      appendBlock(el)
+      break
+    }
+  }
+}
+
+// ── Scenario playback ──────────────────────────────────────────────────────
+
+let fixture = []
+
+async function loadFixture() {
+  try {
+    const res = await fetch('./fixture.json')
+    fixture = await res.json()
+  } catch (e) {
+    setStatus('Failed to load fixture.json: ' + e.message)
+  }
+}
+
+function getScenarioEvents(n) {
+  // Find events between Scenario N and Scenario N+1 markers
+  const scenarioKey = `Scenario ${n}:`
+  const events = []
+  let inScenario = false
+  for (const ev of fixture) {
+    if (ev._scenario) {
+      if (ev._scenario.includes(scenarioKey)) {
+        inScenario = true
+        continue
+      } else if (inScenario) {
+        break  // next scenario started
+      }
+    }
+    if (inScenario) events.push(ev)
+  }
+  return events
+}
+
+function getAllEvents() {
+  return fixture.filter(ev => !ev._comment && !ev._comment2 && !ev._scenario)
+}
+
+let playing = false
+
+async function playEvents(events, label) {
+  if (playing) return
+  playing = true
+  clearRenderer()
+  if (label) {
+    appendBlock(makeDivider(label))
+  }
+  for (const ev of events) {
+    if (!playing) break
+    handleEvent(ev)
+    if (playbackDelay > 0) await sleep(playbackDelay)
+  }
+  playing = false
+  setStatus('Done. ' + events.length + ' events processed.')
+}
+
+async function playAllScenarios() {
+  if (playing) return
+  playing = true
+  clearRenderer()
+  for (let s = 1; s <= 6; s++) {
+    const events = getScenarioEvents(s)
+    if (events.length === 0) continue
+    appendBlock(makeDivider(`Scenario ${s}`))
+    for (const ev of events) {
+      if (!playing) break
+      handleEvent(ev)
+      if (playbackDelay > 0) await sleep(playbackDelay)
+    }
+    if (playbackDelay > 0) await sleep(Math.max(playbackDelay, 600))
+  }
+  playing = false
+  setStatus('All scenarios complete.')
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+function setStatus(text) {
+  document.getElementById('status').textContent = text
+}
+
+// ── Fold controls ──────────────────────────────────────────────────────────
+
+document.querySelectorAll('.fold-controls .fold-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    globalFold = btn.dataset.fold
+    document.querySelectorAll('.fold-controls .fold-btn').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    // Apply to all existing tool blocks
+    scroll.querySelectorAll('[data-fold]').forEach(el => {
+      if (!el.classList.contains('subagent-prompt')) {
+        el.setAttribute('data-fold', globalFold)
+      }
+    })
+  })
+})
+
+document.getElementById('toggle-subagent-prompt').addEventListener('change', e => {
+  subagentPromptVisible = e.target.checked
+  scroll.querySelectorAll('.subagent-prompt').forEach(el => {
+    el.style.display = subagentPromptVisible ? '' : 'none'
+    if (subagentPromptVisible) el.setAttribute('data-fold', 'full')
+  })
+})
+
+document.getElementById('toggle-subagent-activity').addEventListener('change', e => {
+  subagentActivityVisible = e.target.checked
+  // KEY FIX: show/hide already-rendered DOM blocks (not just future events).
+  // The real renderer discards events when toggle is OFF — so no DOM exists to toggle.
+  // This demo builds DOM always; show/hide is pure CSS display.
+  scroll.querySelectorAll('.subagent-activity-block').forEach(el => {
+    el.style.display = subagentActivityVisible ? '' : 'none'
+  })
+})
+
+document.getElementById('speed').addEventListener('input', e => {
+  playbackDelay = Number(e.target.value)
+  document.getElementById('speed-label').textContent = playbackDelay + 'ms'
+})
+
+// ── Button wiring ──────────────────────────────────────────────────────────
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  playing = false
+  clearRenderer()
+  setStatus('Cleared.')
+})
+
+document.getElementById('btn-play-all').addEventListener('click', () => playAllScenarios())
+
+for (let s = 1; s <= 6; s++) {
+  document.getElementById(`btn-play-s${s}`)?.addEventListener('click', () => {
+    const scenarioNames = [
+      '', 'single tool', 'error result', 'multi-tool (parallel)',
+      'text+tool mixed (streaming)', 'subagent nesting', 'activity toggle bug (key scenario)'
+    ]
+    playEvents(getScenarioEvents(s), `Scenario ${s}: ${scenarioNames[s]}`)
+  })
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+
+async function loadFixture() {
+  // Try fetch first (works when served via HTTP); fall back to inline fixture.
+  try {
+    const res = await fetch('./fixture.json')
+    if (res.ok) {
+      fixture = await res.json()
+      return
+    }
+  } catch {}
+  // Inline fixture for file:// protocol (no fetch allowed cross-scheme)
+  fixture = INLINE_FIXTURE
+}
+
+loadFixture().then(() => {
+  setStatus(`Loaded ${fixture.length} fixture entries. Select a scenario.`)
+})
+
+// Handle live text block data attribute for finalize tracking
+// We need to mark the live text block before finalizing it in handleEvent.
+// Patch: mark the live block before nulling it.
+const _origHandleEvent = handleEvent
+
+// Override partial_message to mark live block with data attr
+const _origHandler = handleEvent
+// (No override needed — the data-live-finalized approach is baked into handleEvent above
+//  but the 'assistant' handler needs to mark the block before nulling state.liveTextBlock)
+// This is handled inline: when we finalize state.liveTextBlock in 'assistant', we set
+// data-live-finalized on it before nulling. Let me patch that.
+
+// ── Patch assistant handler to mark live block ──────────────────────────────
+// (Already done in handleEvent above: 'data-live-finalized' set before nulling)
+// Actually the current code sets state.liveTextBlock.style.opacity but doesn't
+// set data-live-finalized. Let me use a different approach: track by a flag.
+
+// Simpler approach: keep a reference to the last finalized text block.
+// Reset this on each new scenario. Updated in handleEvent 'assistant' case.
+// This is handled already by the existingFinalizedLive query — but we need
+// to set the attribute. Let me patch that here:
+
+const origHandle = window.handleEvent // no, it's a closure, not on window
+// Actually handleEvent is already defined as a closure above. The data-live-finalized
+// approach won't work without modifying handleEvent. Let me use a module-level variable.
+
+// Use a module-level lastLiveTextBlock reference (in addition to state.liveTextBlock)
+// Already: state.liveTextBlock tracks the current live block. In 'assistant' case,
+// we set state.liveTextBlock = null after finalizing. We need a separate reference
+// to the finalized block. Let me add it to state:
+// state.finalizedLiveBlock = state.liveTextBlock (before nulling)
+// Then in the text part rendering: check state.finalizedLiveBlock first.
+//
+// Since handleEvent is already written with the data-live-finalized logic,
+// I need to ensure the block gets that attribute. This is done by adding it
+// to the partial_message text handling where we create the live block,
+// and then in assistant we look for it.
+//
+// Actually the simplest correct fix: track lastFinalizedTextBlock in state.
+// But since handleEvent is already written above and can't be modified after,
+// let me just redefine it cleanly here to fix the duplicate text issue.
+
+// ── Redefined correct handleEvent (fixing the text-dedup issue) ─────────────
+window.__handleEventBak = handleEvent // save for reference
+</script>
+
+<script>
+// ── FINAL CORRECT handleEvent (replaces the one above) ─────────────────────
+// Key design principle vs real renderer:
+//   REAL RENDERER (buggy): gates on !getSubagentActivityVisible() and `return`
+//     at lines 437, 491, 518 — events are DISCARDED, no DOM built.
+//     Toggle handler only querySelectorAll existing blocks; nothing to find → no effect.
+//   THIS DEMO (correct): ALWAYS builds DOM for subagent activity blocks,
+//     marks them with class `subagent-activity-block`, sets display:none if toggle OFF.
+//     Toggle handler querySelectorAll('.subagent-activity-block') and flips display.
+//     This makes toggle reversible for events that already streamed through.
+
+function makeActivityBlock(labelText, bodyHtml) {
+  const el = document.createElement('div')
+  el.className = 'block subagent-activity-block'
+  if (!subagentActivityVisible) el.style.display = 'none'
+  el.innerHTML = `<div class="activity-label">${esc(labelText)}</div>${bodyHtml}`
+  return el
+}
+
+function handleEvent(event) {
+  if (!event || typeof event !== 'object') return
+  // Skip pure meta-only entries (no event type)
+  if (!event.type && (event._comment || event._comment2 || event._scenario)) return
+
+  switch (event.type) {
+
+    case 'system': {
+      if (event.subtype === 'init') {
+        const toolCount = Array.isArray(event.tools) ? event.tools.length : '?'
+        const sid = event.session_id ? event.session_id.slice(0, 8) + '…' : '—'
+        appendBlock(makeSystemBlock(`[Session ${sid} · ${toolCount} tools available]`))
+      } else if (event.subtype === 'stderr') {
+        appendBlock(makeSystemBlock(`[stderr: ${event.text}]`))
+      } else if (event.subtype === 'info') {
+        appendBlock(makeSystemBlock(`[${event.text}]`))
+      }
+      break
+    }
+
+    case 'user': {
+      const content = event.message?.content
+      if (!Array.isArray(content)) break
+
+      const parentId = event.parent_tool_use_id
+      if (parentId) {
+        // ── CORRECT APPROACH ──────────────────────────────────────────────────
+        // Build DOM unconditionally. Mark block as .subagent-activity-block.
+        // Set display:none if toggle is currently OFF.
+        // The toggle handler will flip display when user turns it ON later.
+        //
+        // vs REAL RENDERER (claude-block-renderer.js line 437):
+        //   `if (!getSubagentActivityVisible()) return`
+        //   Events are permanently discarded. Toggle has no DOM to act on.
+        for (const c of content) {
+          if (c.type === 'text' && c.text?.trim()) {
+            const block = makeActivityBlock(
+              'subagent input',
+              `<pre>${esc(c.text.slice(0, 2000))}${c.text.length > 2000 ? '\n…' : ''}</pre>`
+            )
+            appendBlock(block)
+          } else if (c.type === 'tool_result') {
+            // Subagent tool_result: inject into existing subagent tool block if any
+            // otherwise create activity block showing the result
+            const toolBlock = scroll.querySelector(`[data-tool-id="${CSS.escape(c.tool_use_id)}"]`)
+            if (toolBlock) {
+              injectToolResult(c.tool_use_id, c.content, !!c.is_error)
+            } else {
+              let text = typeof c.content === 'string' ? c.content :
+                Array.isArray(c.content) ? c.content.filter(x => x.type==='text').map(x=>x.text).join('\n') : '(result)'
+              const block = makeActivityBlock(
+                'subagent tool result',
+                `<pre>${esc((text||'(empty)').slice(0, 2000))}</pre>`
+              )
+              appendBlock(block)
+            }
+          }
+        }
+        break
+      }
+
+      // Normal user event (no parent_tool_use_id)
+      for (const c of content) {
+        if (c.type === 'text' && c.text?.trim()) {
+          appendBlock(makeUserBlock(c.text))
+        } else if (c.type === 'tool_result') {
+          injectToolResult(c.tool_use_id, c.content, !!c.is_error)
+        }
+      }
+      break
+    }
+
+    case 'partial_message': {
+      const msg = event.message
+      if (!msg || !Array.isArray(msg.content)) break
+
+      // Subagent partial_message: same DOM-always pattern.
+      // vs REAL RENDERER line 518: `if (event.parent_tool_use_id && !getSubagentActivityVisible()) return`
+      // Demo: build DOM, hide via display if toggle OFF.
+      const isSubagentPartial = !!event.parent_tool_use_id
+
+      const parts = msg.content
+
+      for (const part of parts) {
+        if (part.type === 'text') {
+          const text = part.text || ''
+          if (!text.trim()) continue
+          if (isSubagentPartial) {
+            // For subagent partial text: create/update a live activity block
+            if (!state.liveActivityBlock) {
+              state.liveActivityBlock = makeActivityBlock('subagent streaming…', '')
+              state.liveActivityBlock.style.opacity = '0.7'
+              appendBlock(state.liveActivityBlock)
+            }
+            state.liveActivityBlock.querySelector('pre')?.remove()
+            const pre = document.createElement('pre')
+            pre.textContent = text.slice(0, 2000)
+            state.liveActivityBlock.appendChild(pre)
+          } else {
+            // Normal partial text
+            if (!state.liveTextBlock) {
+              const el = document.createElement('div')
+              el.className = 'block block-text'
+              el.style.opacity = '0.7'
+              el.dataset.liveBlock = '1'
+              appendBlock(el)
+              state.liveTextBlock = el
+            }
+            state.liveTextBlock.innerHTML = renderMarkdown(text)
+          }
+        } else if (part.type === 'tool_use') {
+          const toolId = part.id
+          if (!toolId) continue
+          if (!state.toolBlocks.has(toolId)) {
+            const isSubagent = part.name === 'Agent' || part.name === 'Task' || part.name === 'TaskCreate'
+            const loadBlock = makeToolBlock(
+              { id: toolId, name: part.name || 'tool', input: null },
+              { loading: true, isSubagent }
+            )
+            // If this tool_use is inside a subagent partial, treat as activity
+            if (isSubagentPartial) {
+              loadBlock.classList.add('subagent-activity-block')
+              if (!subagentActivityVisible) loadBlock.style.display = 'none'
+            }
+            appendBlock(loadBlock)
+            state.toolBlocks.set(toolId, loadBlock)
+          }
+        }
+      }
+      break
+    }
+
+    case 'assistant': {
+      // ── CORRECT APPROACH ──────────────────────────────────────────────────
+      // Build DOM unconditionally. Mark subagent assistant blocks as activity blocks.
+      // vs REAL RENDERER line 491:
+      //   `if (event.parent_tool_use_id && !getSubagentActivityVisible()) return`
+      //   The entire subagent's assistant message is dropped. Toggle = no-op.
+
+      const isSubagentAssistant = !!event.parent_tool_use_id
+
+      const msg = event.message
+      if (!msg || !Array.isArray(msg.content)) break
+
+      // Finalize live blocks
+      if (isSubagentAssistant) {
+        if (state.liveActivityBlock) {
+          state.liveActivityBlock.style.opacity = ''
+          state.liveActivityBlock = null
+        }
+      } else {
+        const liveBlock = state.liveTextBlock
+        if (liveBlock) {
+          liveBlock.style.opacity = ''
+          liveBlock.dataset.liveBlock = ''
+        }
+        // Remove unpaired loading placeholders
+        const finalToolIds = new Set(msg.content.filter(p => p.type === 'tool_use').map(p => p.id))
+        for (const [toolId, block] of state.toolBlocks.entries()) {
+          if (finalToolIds.has(toolId)) {
+            const outputDiv = block.querySelector('.tool-output')
+            if (outputDiv && outputDiv.innerHTML.trim() === '') {
+              if (block.parentNode) block.parentNode.removeChild(block)
+              state.toolBlocks.delete(toolId)
+            }
+          }
+        }
+        state.liveTextBlock = null
+
+        // Render final content parts (main agent)
+        for (const part of msg.content) {
+          if (part.type === 'text') {
+            if (!part.text?.trim()) continue
+            if (liveBlock && liveBlock.parentNode) {
+              liveBlock.innerHTML = renderMarkdown(part.text)
+            } else {
+              appendBlock(makeTextBlock(part.text))
+            }
+          } else if (part.type === 'tool_use') {
+            const isSubagent = part.name === 'Agent' || part.name === 'Task' || part.name === 'TaskCreate'
+            const existingBlock = state.toolBlocks.get(part.id)
+            if (existingBlock) {
+              const fullBlock = makeToolBlock(part, { loading: false, isSubagent })
+              if (existingBlock.parentNode) existingBlock.parentNode.replaceChild(fullBlock, existingBlock)
+              state.toolBlocks.set(part.id, fullBlock)
+            } else {
+              const toolBlock = makeToolBlock(part, { loading: false, isSubagent })
+              appendBlock(toolBlock)
+              state.toolBlocks.set(part.id, toolBlock)
+            }
+          }
+        }
+        break
+      }
+
+      // Subagent assistant: render each part as activity block
+      for (const part of msg.content) {
+        if (part.type === 'text') {
+          if (!part.text?.trim()) continue
+          const block = makeActivityBlock(
+            'subagent response',
+            `<div style="line-height:1.5">${renderMarkdown(part.text)}</div>`
+          )
+          appendBlock(block)
+        } else if (part.type === 'tool_use') {
+          const isSubagentTool = part.name === 'Agent' || part.name === 'Task' || part.name === 'TaskCreate'
+          const toolBlock = makeToolBlock(part, { loading: false, isSubagent: isSubagentTool })
+          toolBlock.classList.add('subagent-activity-block')
+          if (!subagentActivityVisible) toolBlock.style.display = 'none'
+          appendBlock(toolBlock)
+          state.toolBlocks.set(part.id, toolBlock)
+        }
+      }
+      break
+    }
+
+    case 'result': {
+      if (state.liveTextBlock) {
+        state.liveTextBlock.style.opacity = ''
+        state.liveTextBlock = null
+      }
+      if (state.liveActivityBlock) {
+        state.liveActivityBlock.style.opacity = ''
+        state.liveActivityBlock = null
+      }
+      if (event.subtype === 'success' || event.subtype === 'error_max_turns') {
+        if (event.usage || event.total_cost_usd) {
+          appendBlock(makeUsageBlock(event.usage, event.total_cost_usd))
+        }
+      } else if (event.subtype === 'error') {
+        appendBlock(makeSystemBlock(`[Error: ${event.error?.message || 'unknown error'}]`))
+      }
+      break
+    }
+
+    case 'rate_limit_event': {
+      const info = event.rate_limit_info || {}
+      const msg2 = info.retryAfterMs
+        ? `Rate limited — retry in ${(info.retryAfterMs / 1000).toFixed(0)}s`
+        : 'Rate limit warning'
+      const el = makeSystemBlock(`[${msg2}]`)
+      el.style.color = '#f59e0b'
+      appendBlock(el)
+      break
+    }
+  }
+}
+</script>
+</body>
+</html>

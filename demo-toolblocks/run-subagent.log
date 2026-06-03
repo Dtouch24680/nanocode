@@ -1,0 +1,49 @@
+=== run-subagent.log: Subagent Visibility Demo verification ===
+Date: Wed Jun  3 17:21:48 CST 2026
+
+=== Step 1: Move evidence PNGs from root ===
+ls: cannot access '/storage/home/zhiningjiao/code/nanocode/*.png': No such file or directory
+OK - no PNGs in root
+
+=== Step 2: INLINE_FIXTURE validation ===
+INLINE_FIXTURE entries: [33m50[39m
+Scenario 6 found: PASS
+
+=== Step 3: fixture.json validation ===
+fixture.json entries: 50
+Scenario 6 in fixture.json: PASS
+
+=== Step 4: DOM-always activity test ===
+Verified via browser:
+  - Played Scenario 6 with activity toggle OFF
+  - querySelectorAll('.subagent-activity-block').length = 3 (DOM exists, display:none)
+  - Toggled activity ON -> 3 blocks appeared immediately (no event replay)
+  - display values after toggle: empty (visible)
+
+=== Step 5: Screenshot list ===
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s5-prompt-visible.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s6-activity-off.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s6-activity-on.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s6-initial.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s6-prompt-off.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s6-prompt-on-again.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/s6-prompt-on.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-after-close.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-after-tooluse.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-before-send.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-claude1-tab.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-claude1.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-esc.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-initial.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-multitool-final.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-multitool-scroll.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-multitool.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-multitool2.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-project.png
+/storage/home/zhiningjiao/code/nanocode/demo-toolblocks/screenshot-workspace.png
+
+=== RESULT ===
+PASS - Both bugs reproduced and fixed in demo
+  Bug E: subagent-prompt default visible (subagent blocks get data-fold=full)
+  Bug F: activity toggle events discarded at event layer, switch has no DOM to act on
+  Demo fix: build DOM always, control via display:none, toggle handler acts on existing DOM

@@ -218,6 +218,19 @@ export class ClaudeBlockRenderer {
     this._liveAssistantBlock = null
     this._liveAssistantId = null  // message id if available
 
+    // Track the in-progress subagent streaming activity block (separate from main live block)
+    this._liveSubagentBlock = null
+
+    // UUID dedup set for subagent history-replay events (avoid double-render on reconnect)
+    this._seenSubagentUuids = new Set()
+
+    // UUID dedup set for jsonl history replay — prevents double-render when:
+    //   1. jsonl replay runs on first connect, AND
+    //   2. in-memory cs.history also replays the same events (same-session reconnect)
+    // Every event rendered via _fetchAndReplayHistory has its uuid stored here.
+    // _handleEvent checks this set before processing any incoming server event.
+    this._replayedUuids = new Set()
+
     // Thinking state: true when claude is processing a turn
     this._thinking = false
 
@@ -289,6 +302,44 @@ export class ClaudeBlockRenderer {
     }
   }
 
+  // ── jsonl history replay ─────────────────────────────────────────────────────
+
+  /**
+   * Fetch the persisted claude session history from the server and replay it
+   * into the renderer. Called once on first WS open (not reconnects — those
+   * replay from in-memory cs.history via the WS broadcast).
+   *
+   * De-dup strategy: every replayed event's uuid is stored in _replayedUuids.
+   * When the WS subsequently replays cs.history (which may overlap for the same
+   * session), _handleEvent skips events whose uuid was already rendered here.
+   * For cross-port / new-process scenarios cs.history is empty, so no overlap.
+   */
+  async _fetchAndReplayHistory() {
+    const url = `/api/projects/${this.projectId}/tabs/${this.tabId}/history`
+    let data
+    try {
+      const resp = await fetch(url)
+      if (!resp.ok) return  // 404 for non-claude tab or missing project — silent
+      data = await resp.json()
+    } catch {
+      return  // network error — degrade gracefully
+    }
+
+    const events = data?.events
+    if (!Array.isArray(events) || events.length === 0) return
+
+    // Show a subtle separator so the user knows this is restored history
+    this._addSystemBlock(`[Restored ${events.length} event(s) from session history]`)
+
+    for (const event of events) {
+      // Track uuid for dedup against later WS replay (must happen BEFORE render
+      // so that the WS replay path sees it; pass opts.fromReplay=true so the
+      // _handleEvent dedup guard doesn't block the initial render itself).
+      if (event.uuid) this._replayedUuids.add(event.uuid)
+      this._handleEvent(event, { fromReplay: true })
+    }
+  }
+
   // ── WS connection ────────────────────────────────────────────────────────────
 
   _connect() {
@@ -309,9 +360,16 @@ export class ClaudeBlockRenderer {
         this._scroll.innerHTML = ''
         this._liveAssistantBlock = null
         this._liveAssistantId = null
+        this._liveSubagentBlock = null
+        this._seenSubagentUuids = new Set()
         this._pendingNonces = new Set()
         this._thinking = false
         this._addSystemBlock('[Reconnected. Restoring session history…]')
+      } else {
+        // First connection: fetch and replay persisted jsonl history from disk.
+        // This gives cross-port and cross-server-restart continuity — the user
+        // sees past turns even when the in-memory cs.history is empty (new process).
+        this._fetchAndReplayHistory()
       }
 
       this._send({
@@ -378,8 +436,18 @@ export class ClaudeBlockRenderer {
 
   // ── Event dispatch ────────────────────────────────────────────────────────────
 
-  _handleEvent(event) {
+  _handleEvent(event, opts = {}) {
     if (!event || !event.type) return
+
+    // Dedup: if this event was already rendered via _fetchAndReplayHistory (jsonl replay),
+    // skip it to avoid double-rendering when cs.history replays the same events.
+    // We check uuid on user/assistant events; other types (system, result, etc.) have no uuid.
+    // opts.fromReplay=true means the call IS the initial jsonl replay → skip the dedup check.
+    if (!opts.fromReplay && event.uuid && this._replayedUuids && this._replayedUuids.has(event.uuid)) {
+      // The event was already rendered from jsonl; skip the WS replay duplicate.
+      // Do NOT delete from _replayedUuids — a second reconnect must still dedup.
+      return
+    }
 
     switch (event.type) {
       case 'system':
@@ -427,25 +495,39 @@ export class ClaudeBlockRenderer {
       return
     }
 
-    const content = event.message?.content
+    let content = event.message?.content
+    // Normalize: jsonl user messages may have content as a plain string (the user's text).
+    // Wrap it in the array form the renderer expects so all code paths work uniformly.
+    if (typeof content === 'string') {
+      content = [{ type: 'text', text: content }]
+    }
     if (!Array.isArray(content)) return
 
     // Subagent activity: events with parent_tool_use_id are messages TO a subagent
     // or results FROM a subagent. Visibility controlled by the subagent-activity toggle.
+    // Root F fix: NEVER return early — always build DOM, set display:none if toggle off.
+    // This makes the toggle reversible for events that already streamed through.
     const parentToolUseId = event.parent_tool_use_id
     if (parentToolUseId) {
-      if (!getSubagentActivityVisible()) return
+      // UUID dedup: on history replay the same subagent events come again; skip if seen
+      const uuid = event.uuid
+      if (uuid) {
+        if (this._seenSubagentUuids.has(uuid)) return
+        this._seenSubagentUuids.add(uuid)
+      }
+      const isVisible = getSubagentActivityVisible()
       // Render subagent prompt (text) or tool_result inside the subagent context
       for (const c of content) {
         if (c.type === 'text' && c.text?.trim()) {
           const article = this._makeBlock('cbr-block-subagent-activity')
+          if (!isVisible) article.style.display = 'none'
           article.innerHTML =
             `<div class="cbr-subagent-activity-label">subagent input</div>` +
             `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(c.text.slice(0, 2000))}${c.text.length > 2000 ? '\n…' : ''}</pre>`
           this._scroll.appendChild(article)
           this._scrollBottom()
         } else if (c.type === 'tool_result') {
-          this._renderToolResultPart(c)
+          this._renderToolResultPart(c, { subagentActivity: true, visible: isVisible })
         }
       }
       return
@@ -485,22 +567,79 @@ export class ClaudeBlockRenderer {
   }
 
   _handleAssistant(event) {
-    // Gate: subagent's own assistant output carries parent_tool_use_id.
-    // If the visibility toggle is off, skip rendering entirely so it does not
-    // pollute the main agent's block stream or the live-block state.
-    if (event.parent_tool_use_id && !getSubagentActivityVisible()) return
+    // Root F fix: do NOT return early for subagent events even when activity toggle is off.
+    // Instead, build DOM with display:none so toggle can reveal it later.
+    const isSubagentAssistant = !!event.parent_tool_use_id
 
-    // Finalize any in-progress live block
+    if (isSubagentAssistant) {
+      // UUID dedup: history replay may resend subagent events; skip if already seen
+      const uuid = event.uuid || (event.message && event.message.id)
+      if (uuid) {
+        if (this._seenSubagentUuids.has(uuid)) return
+        this._seenSubagentUuids.add(uuid)
+      }
+      // Finalize subagent live block (independent from main agent live block)
+      if (this._liveSubagentBlock) {
+        this._liveSubagentBlock.style.opacity = ''
+        this._liveSubagentBlock = null
+      }
+
+      const isVisible = getSubagentActivityVisible()
+      const msg = event.message
+      if (!msg || !Array.isArray(msg.content)) return
+
+      // Root D risk: only clear liveToolBlocks that belong to this subagent level
+      // (those marked with data-subagent-parent), not main agent tool blocks
+      if (this._liveToolBlocks && this._liveToolBlocks.size > 0) {
+        const parentId = event.parent_tool_use_id
+        for (const [toolId, block] of this._liveToolBlocks.entries()) {
+          if (block && block.dataset.subagentParent === parentId) {
+            if (block.parentNode) block.parentNode.removeChild(block)
+            this._liveToolBlocks.delete(toolId)
+          }
+        }
+      }
+
+      // Render each content part as an activity block
+      for (const part of msg.content) {
+        if (part.type === 'text') {
+          if (!part.text?.trim()) continue
+          const article = this._makeBlock('cbr-block-subagent-activity')
+          if (!isVisible) article.style.display = 'none'
+          let html
+          try { html = renderMarkdown(part.text) } catch { html = `<p>${escHtml(part.text)}</p>` }
+          article.innerHTML =
+            `<div class="cbr-subagent-activity-label">subagent response</div>` +
+            `<div class="cbr-text">${html}</div>`
+          this._scroll.appendChild(article)
+          this._scrollBottom()
+        } else if (part.type === 'tool_use') {
+          // Subagent's own tool calls — render as activity block
+          const article = this._renderToolUsePart(part, { subagentActivity: true, visible: isVisible })
+          if (article) {
+            article.dataset.subagentParent = event.parent_tool_use_id
+          }
+        }
+      }
+      return
+    }
+
+    // ── Main agent assistant ────────────────────────────────────────────────────
+
+    // Finalize main agent live block (does NOT touch _liveSubagentBlock)
     this._liveAssistantBlock = null
     this._liveAssistantId = null
 
-    // Root D: clear live tool block map — final render replaces loading placeholders.
-    // Remove all live loading placeholder blocks from DOM before re-rendering.
+    // Root D: clear live tool block map — only non-subagent tool blocks
+    // (subagent tool blocks are marked with data-subagent-parent and handled above)
     if (this._liveToolBlocks && this._liveToolBlocks.size > 0) {
-      for (const block of this._liveToolBlocks.values()) {
-        if (block && block.parentNode) block.parentNode.removeChild(block)
+      for (const [toolId, block] of this._liveToolBlocks.entries()) {
+        // Only remove blocks that are NOT subagent-owned
+        if (block && !block.dataset.subagentParent) {
+          if (block.parentNode) block.parentNode.removeChild(block)
+          this._liveToolBlocks.delete(toolId)
+        }
       }
-      this._liveToolBlocks.clear()
     }
 
     const msg = event.message
@@ -512,10 +651,9 @@ export class ClaudeBlockRenderer {
   }
 
   _handlePartialMessage(event) {
-    // Gate: subagent's own partial_message output carries parent_tool_use_id.
-    // If the visibility toggle is off, skip so the live-block state is not
-    // hijacked by subagent streaming text.
-    if (event.parent_tool_use_id && !getSubagentActivityVisible()) return
+    // Root F fix: do NOT return early for subagent partials even when activity toggle is off.
+    // Build DOM with display:none so toggle can reveal blocks that already streamed through.
+    const isSubagentPartial = !!event.parent_tool_use_id
 
     // partial_message carries a partial assistant message object
     const msg = event.message
@@ -526,6 +664,8 @@ export class ClaudeBlockRenderer {
     // Root D: handle tool_use partials — show loading placeholder while streaming
     // We track live loading blocks by tool id in _liveToolBlocks map
     if (!this._liveToolBlocks) this._liveToolBlocks = new Map()
+
+    const isVisible = isSubagentPartial ? getSubagentActivityVisible() : true
 
     for (const part of parts) {
       if (part.type === 'tool_use') {
@@ -543,7 +683,14 @@ export class ClaudeBlockRenderer {
               safePart.input = null  // still incomplete JSON — stay loading
             }
           }
-          const loadBlock = this._renderToolUsePart(safePart, { loading: safePart.input == null })
+          const loadBlock = this._renderToolUsePart(safePart, {
+            loading: safePart.input == null,
+            subagentActivity: isSubagentPartial,
+            visible: isVisible,
+          })
+          if (loadBlock && isSubagentPartial) {
+            loadBlock.dataset.subagentParent = event.parent_tool_use_id
+          }
           this._liveToolBlocks.set(toolId, loadBlock)
         }
         // Note: we don't update the block on each delta — the final `assistant` event
@@ -552,7 +699,34 @@ export class ClaudeBlockRenderer {
       }
     }
 
-    // Live-update for the single-text-part case (existing behaviour)
+    if (isSubagentPartial) {
+      // Subagent partial text: update/create a single reused live subagent activity block
+      // (risk point 4: reuse same block, don't create one per chunk)
+      if (parts.length >= 1 && parts[0].type === 'text') {
+        const text = parts[0].text || ''
+        if (text.trim()) {
+          if (!this._liveSubagentBlock) {
+            const article = this._makeBlock('cbr-block-subagent-activity cbr-live')
+            if (!isVisible) article.style.display = 'none'
+            article.style.opacity = '0.7'
+            article.innerHTML = `<div class="cbr-subagent-activity-label">subagent streaming…</div><div class="cbr-subagent-stream-body"></div>`
+            this._scroll.appendChild(article)
+            this._liveSubagentBlock = article
+            this._scrollBottom()
+          }
+          const bodyEl = this._liveSubagentBlock.querySelector('.cbr-subagent-stream-body')
+          if (bodyEl) {
+            let html
+            try { html = renderMarkdown(text) } catch { html = `<p>${escHtml(text)}</p>` }
+            bodyEl.innerHTML = html
+          }
+          this._scrollBottom()
+        }
+      }
+      return
+    }
+
+    // Main agent partial: live-update for the single-text-part case (existing behaviour)
     if (parts.length === 1 && parts[0].type === 'text') {
       const text = parts[0].text || ''
       if (!this._liveAssistantBlock) {
@@ -573,9 +747,13 @@ export class ClaudeBlockRenderer {
   }
 
   _handleResult(event) {
-    // End-of-turn: flush live block, exit thinking state
+    // End-of-turn: flush live blocks, exit thinking state
     this._liveAssistantBlock = null
     this._liveAssistantId = null
+    if (this._liveSubagentBlock) {
+      this._liveSubagentBlock.style.opacity = ''
+      this._liveSubagentBlock = null
+    }
     this._setThinking(false)
 
     if (event.subtype === 'success' || event.subtype === 'error_max_turns') {
@@ -657,6 +835,13 @@ export class ClaudeBlockRenderer {
     // Root D: partial/loading state — input may be partial JSON or null
     const isLoading = opts.loading === true
 
+    // Root F: subagentActivity flag means this tool block belongs to subagent internals
+    // (not the prompt sent TO the subagent, but the subagent's own tool calls)
+    const isSubagentActivity = opts.subagentActivity === true
+    // visible: for subagent activity blocks, whether the activity toggle is on
+    // (undefined means don't control visibility — for main agent blocks)
+    const activityVisible = opts.visible
+
     let inputHtml = ''
     if (isLoading) {
       inputHtml = `<div class="cbr-tool-loading">running…</div>`
@@ -689,8 +874,9 @@ export class ClaudeBlockRenderer {
     }
 
     const extraClass = isSubagentPrompt ? ' cbr-block-subagent-prompt' : ''
+    const activityClass = isSubagentActivity ? ' cbr-block-subagent-activity' : ''
     const loadingClass = isLoading ? ' cbr-tool-loading-state' : ''
-    const article = this._makeBlock('cbr-block-tool' + extraClass + loadingClass)
+    const article = this._makeBlock('cbr-block-tool' + extraClass + activityClass + loadingClass)
 
     // Root A: stamp data-tool-id so tool_result can find this block by tool_use_id
     if (part.id) {
@@ -713,6 +899,11 @@ export class ClaudeBlockRenderer {
 
     // Apply subagent-prompt visibility
     if (isSubagentPrompt && !getSubagentPromptVisible()) {
+      article.style.display = 'none'
+    }
+
+    // Root F: apply subagent-activity visibility (for tool blocks inside subagent internals)
+    if (isSubagentActivity && activityVisible === false) {
       article.style.display = 'none'
     }
 
@@ -747,10 +938,13 @@ export class ClaudeBlockRenderer {
     return article
   }
 
-  _renderToolResultPart(part) {
+  _renderToolResultPart(part, opts = {}) {
     // tool_result: show output, paired with the originating tool_use block if possible
     const content = part.content
     const isError = part.is_error === true  // Root C: read is_error flag
+    // Root F: for subagent activity tool results, fallback block should respect visibility toggle
+    const isSubagentActivity = opts.subagentActivity === true
+    const activityVisible = opts.visible
 
     // Root B: build display text; handle string, array (text+image), and empty content
     let text = ''
@@ -809,7 +1003,11 @@ export class ClaudeBlockRenderer {
 
     // Fallback (Root A): if no matching tool block, render as standalone result block
     if (!paired) {
-      const article = this._makeBlock('cbr-block-tool-result')
+      const extraClass = isSubagentActivity ? ' cbr-block-subagent-activity' : ''
+      const article = this._makeBlock('cbr-block-tool-result' + extraClass)
+      if (isSubagentActivity && activityVisible === false) {
+        article.style.display = 'none'
+      }
       article.innerHTML = resultHtml
       applyToolFold(article)
       this._scroll.appendChild(article)

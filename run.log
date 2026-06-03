@@ -1,76 +1,57 @@
 
-Opening http://10.18.8.55:3001 ...
-  Screenshot: 01_initial.png
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
 
-[Setup] Injecting synthetic bash tool block...
-  cbr-scroll present: False
-  Container candidates: [None, None, None]
-  Scroll container class: NOT FOUND
-  WARNING: No scroll container found - injecting into body as fallback
-  Inject result: {'found': True}
-
-[Test 1] Full mode shows input body + output details
-  ✓ PASS: Test block injected
-  ✓ PASS: Initial data-fold is 'full'
-  ✓ PASS: Tool body visible in full mode
-  ✓ PASS: Tool output visible in full mode (has content)
-  Screenshot: 02_full_mode.png
-
-[Test 2] Click cycles: full → header → line → full
-  ✓ PASS: State 0 = full
-  ✓ PASS: After click 1: header
-  Screenshot: 03_header_mode.png
-  ✓ PASS: After click 2: line
-  Screenshot: 04_line_mode.png
-
-[Test 3] From 'line' state, clicking restores to 'full'
-  ✓ PASS: In line state before re-expand
-  ✓ PASS: Card hidden in line mode
-  ✓ PASS: After click 3 from line: cycles to full
-  Screenshot: 05_restored_full.png
-  ✓ PASS: Body visible after restore from line
-  ✓ PASS: Output visible after restore from line
-
-[Test 4] Settings change (setToolFoldLevel) applies to all blocks
-  ✓ PASS: After setToolFoldLevel('header'): block is header
-  Screenshot: 06_settings_header.png
-  ✓ PASS: After setToolFoldLevel('full'): block is full
-  ✓ PASS: After setToolFoldLevel('line'): block is line
-  Screenshot: 07_settings_line.png
-  ✓ PASS: From settings-forced 'line', click cycles to 'full'
-  Screenshot: 08_click_out_of_settings_line.png
-
-[Test CSS] Verify computed styles match fold state
-  ✓ PASS: data-fold=full: body display=block
-  ✓ PASS: data-fold=full: output display=block
-  ✓ PASS: data-fold=header: body display=none
-  ✓ PASS: data-fold=header: output display=none
-  ✓ PASS: data-fold=line: card display=none
-  ✓ PASS: data-fold=line: article itself NOT display:none (clickable)
-  Screenshot: 09_final.png
-
-==================================================
-RESULTS: 22 PASS / 0 FAIL
-==================================================
-  PASS: Test block injected
-  PASS: Initial data-fold is 'full'
-  PASS: Tool body visible in full mode
-  PASS: Tool output visible in full mode (has content)
-  PASS: State 0 = full
-  PASS: After click 1: header
-  PASS: After click 2: line
-  PASS: In line state before re-expand
-  PASS: Card hidden in line mode
-  PASS: After click 3 from line: cycles to full
-  PASS: Body visible after restore from line
-  PASS: Output visible after restore from line
-  PASS: After setToolFoldLevel('header'): block is header
-  PASS: After setToolFoldLevel('full'): block is full
-  PASS: After setToolFoldLevel('line'): block is line
-  PASS: From settings-forced 'line', click cycles to 'full'
-  PASS: data-fold=full: body display=block
-  PASS: data-fold=full: output display=block
-  PASS: data-fold=header: body display=none
-  PASS: data-fold=header: output display=none
-  PASS: data-fold=line: card display=none
-  PASS: data-fold=line: article itself NOT display:none (clickable)
+TAP version 13
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.242092
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.499603
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.551345
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.617798
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 0.361307
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 1.333941
+      type: 'test'
+      ...
+    1..6
+ok 1 - store
+  ---
+  duration_ms: 6.903707
+  type: 'suite'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 88.468192

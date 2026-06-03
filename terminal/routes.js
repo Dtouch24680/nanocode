@@ -3,7 +3,7 @@
 import { Router } from 'express'
 import { execFile, spawn } from 'node:child_process'
 import { platform } from 'node:os'
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { resolve, relative, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -146,6 +146,46 @@ export function createTerminalRoutes(store) {
     res.json(store.listTabs(req.params.id))
   })
 
+  /**
+   * GET /api/projects/:id/most-recent-claude-tab
+   *
+   * Returns the claude tab whose session jsonl has the most recent mtime, or
+   * null if no claude tabs exist / no jsonl files found. Used by the frontend
+   * to auto-select the most recently active claude tab when entering a workspace.
+   *
+   * Response: { tabId: string | null }
+   */
+  router.get('/api/projects/:id/most-recent-claude-tab', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+
+    const tabs = store.listTabs(req.params.id).filter((t) => t.type === 'claude')
+    if (!tabs.length) return res.json({ tabId: null })
+
+    const projectDir = cwdToClaudeProjectDir(project.cwd)
+    let bestTabId = null
+    let bestMtime = 0
+
+    for (const tab of tabs) {
+      if (!tab.claudeSessionId) continue
+      const jsonlPath = join(projectDir, `${tab.claudeSessionId}.jsonl`)
+      try {
+        if (existsSync(jsonlPath)) {
+          const st = statSync(jsonlPath)
+          if (st.mtimeMs > bestMtime) {
+            bestMtime = st.mtimeMs
+            bestTabId = tab.id
+          }
+        }
+      } catch {}
+    }
+
+    // If no matching jsonl found for any tab, fall back to first claude tab
+    if (!bestTabId && tabs.length > 0) bestTabId = tabs[0].id
+
+    res.json({ tabId: bestTabId })
+  })
+
   router.post('/api/projects/:id/tabs', (req, res) => {
     const project = store.getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'project not found' })
@@ -244,6 +284,194 @@ export function createTerminalRoutes(store) {
       if (err.code === 'EACCES') return res.status(403).json({ error: 'permission denied' })
       res.status(500).json({ error: err.message })
     }
+  })
+
+  // ── Claude history replay from ~/.claude/projects/<cwd-encoded>/<sessionId>.jsonl ──────
+  //
+  // Encoding rule (verified empirically): replace every '/' in the cwd with '-'.
+  // e.g. /storage/home/user/code/nanocode → -storage-home-user-code-nanocode
+  //
+  // jsonl rows with type 'user' or 'assistant' map 1:1 to renderer events:
+  //   - 'user' row → {type:'user', message:{role:'user',content:[...]}, uuid, parent_tool_use_id}
+  //   - 'assistant' row → {type:'assistant', message:{role:'assistant',content:[...]}, uuid, parent_tool_use_id}
+  //   - all other types (queue-operation, attachment, last-prompt, mode) → skip
+  //
+  // Multiple 'assistant' rows for same turn (streaming): only the LAST one for each
+  // chain uuid is the complete message. We de-dup by keeping the last assistant
+  // row seen for each requestId (or uuid if no requestId).
+
+  function cwdToClaudeProjectDir(cwd) {
+    const encoded = cwd.replace(/\//g, '-')
+    return join(home, '.claude', 'projects', encoded)
+  }
+
+  /**
+   * Parse a jsonl session file into renderer-compatible events.
+   * Returns an array of {type, message, uuid, parent_tool_use_id} objects.
+   *
+   * Strategy for multiple assistant rows per turn:
+   * Claude CLI streams assistant messages incrementally and writes each delta
+   * as a new jsonl row. The final row for a given requestId has the complete
+   * content. We collect all assistant rows, then for each requestId keep only
+   * the last (most complete) one. This avoids rendering duplicate/partial text.
+   */
+  function parseJsonlHistory(jsonlPath) {
+    let content
+    try {
+      content = readFileSync(jsonlPath, 'utf-8')
+    } catch {
+      return []
+    }
+
+    const lines = content.split('\n').filter((l) => l.trim())
+    const events = []
+
+    // Collect all rows first
+    const rawRows = []
+    for (const line of lines) {
+      let row
+      try { row = JSON.parse(line) } catch { continue }
+      rawRows.push(row)
+    }
+
+    // De-duplicate assistant rows: for each requestId (streaming session),
+    // keep only the last row (most complete). Rows without requestId are kept as-is.
+    // We process in order and overwrite by requestId.
+    const assistantByRequestId = new Map()  // requestId → row
+    const assistantNoRequestId = []  // rows without requestId (not streaming)
+    const processedUuids = new Set()
+
+    for (const row of rawRows) {
+      if (row.type !== 'assistant') continue
+      const rid = row.requestId
+      if (rid) {
+        assistantByRequestId.set(rid, row)  // overwrite → last wins
+      } else {
+        assistantNoRequestId.push(row)
+      }
+    }
+
+    // Build the final event list in document order
+    // We want: user rows interleaved with the de-duped assistant rows, in original order.
+    // Walk rawRows; for assistant rows with requestId, only emit when it's the LAST
+    // occurrence of that requestId (i.e., when we reach the row we stored in the map).
+    for (const row of rawRows) {
+      if (row.type === 'user') {
+        const msg = row.message
+        if (!msg || !msg.content) continue
+        // Skip tool-result-only rows where content is system/hook noise
+        // (pure tool results are still useful — render them)
+        events.push({
+          type: 'user',
+          message: msg,
+          uuid: row.uuid || null,
+          parent_tool_use_id: row.parent_tool_use_id || null,
+        })
+      } else if (row.type === 'assistant') {
+        const msg = row.message
+        if (!msg || !Array.isArray(msg.content)) continue
+        const rid = row.requestId
+        if (rid) {
+          // Only emit the last row for this requestId
+          if (assistantByRequestId.get(rid) !== row) continue
+        }
+        events.push({
+          type: 'assistant',
+          message: msg,
+          uuid: row.uuid || null,
+          parent_tool_use_id: row.parent_tool_use_id || null,
+        })
+      }
+      // Skip: queue-operation, attachment, last-prompt, mode, etc.
+    }
+
+    return events
+  }
+
+  /**
+   * Find the most-recently-modified .jsonl in a project directory.
+   * Returns { path, sessionId } or null.
+   */
+  function findNewestJsonl(projectDir) {
+    if (!existsSync(projectDir)) return null
+    let best = null
+    let bestMtime = 0
+    try {
+      const entries = readdirSync(projectDir)
+      for (const entry of entries) {
+        if (!entry.endsWith('.jsonl')) continue
+        const fullPath = join(projectDir, entry)
+        try {
+          const st = statSync(fullPath)
+          if (st.mtimeMs > bestMtime) {
+            bestMtime = st.mtimeMs
+            best = { path: fullPath, sessionId: entry.replace(/\.jsonl$/, '') }
+          }
+        } catch {}
+      }
+    } catch {}
+    return best
+  }
+
+  /**
+   * GET /api/projects/:id/tabs/:tabId/history
+   *
+   * Returns the replay history for a claude tab by reading the session's jsonl.
+   * Falls back to the newest jsonl if the tab's session file is missing.
+   * If the fallback is used, the response includes the resolved sessionId so
+   * the client (and server) can update the tab's claudeSessionId for --resume alignment.
+   *
+   * Response: { events: [{type, message, uuid, parent_tool_use_id}], sessionId, fallback: bool }
+   */
+  router.get('/api/projects/:id/tabs/:tabId/history', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+    const tab = store.getTab ? store.getTab(req.params.id, req.params.tabId) : null
+    if (!tab || tab.type !== 'claude') {
+      return res.status(404).json({ error: 'claude tab not found' })
+    }
+
+    const projectDir = cwdToClaudeProjectDir(project.cwd)
+    const sessionId = tab.claudeSessionId
+    const jsonlPath = sessionId ? join(projectDir, `${sessionId}.jsonl`) : null
+
+    let resolvedPath = null
+    let resolvedSessionId = sessionId
+    let fallback = false
+
+    if (jsonlPath && existsSync(jsonlPath)) {
+      resolvedPath = jsonlPath
+    } else {
+      // Fallback: find newest jsonl in this project's directory
+      const newest = findNewestJsonl(projectDir)
+      if (newest) {
+        resolvedPath = newest.path
+        resolvedSessionId = newest.sessionId
+        fallback = true
+        // Update the store so --resume uses the right session
+        if (store.updateTabMetadata && resolvedSessionId !== sessionId) {
+          store.updateTabMetadata(req.params.id, req.params.tabId, {
+            claudeSessionId: resolvedSessionId,
+          })
+          // Also update the in-memory claudeSessions map if the session exists
+          const sessionKey = `${req.params.id}:claude:${req.params.tabId}`
+          const cs = claudeSessions.get(sessionKey)
+          if (cs) {
+            cs.claudeSessionId = resolvedSessionId
+            cs.turnCount = 0  // reset so next turn uses --session-id not --resume with wrong id
+          }
+        }
+        console.log(`[history:fallback] tab=${req.params.tabId} using newest jsonl: ${resolvedSessionId}`)
+      }
+    }
+
+    if (!resolvedPath) {
+      return res.json({ events: [], sessionId: resolvedSessionId, fallback })
+    }
+
+    const events = parseJsonlHistory(resolvedPath)
+    console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
+    res.json({ events, sessionId: resolvedSessionId, fallback })
   })
 
   const IS_WIN = platform() === 'win32'

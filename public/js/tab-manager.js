@@ -312,13 +312,40 @@ export class TabManager {
       if (this.tabs.length) this.setActive(this.tabs[0].id)
       else this._renderStrip()
     } else if (!this.activeId && this.tabs.length) {
-      // First-time activation: prefer the last-active for this device.
+      // First-time activation: prefer the last-active for this device, or the
+      // most-recently-active claude tab (by jsonl mtime) for cross-port resume.
       const remembered = loadActiveId(this.projectId)
-      const target = (remembered && serverById.has(remembered)) ? remembered : this.tabs[0].id
-      this.setActive(target)
+      if (remembered && serverById.has(remembered)) {
+        this.setActive(remembered)
+      } else {
+        // No remembered tab for this device: auto-select the most recently active
+        // claude tab by querying the server (jsonl mtime). Falls back to tabs[0].
+        this._autoSelectMostRecentClaudeTab(serverById)
+      }
     } else {
       this._renderStrip()
     }
+  }
+
+  /**
+   * Query /api/projects/:id/most-recent-claude-tab and activate that tab.
+   * Falls back to tabs[0] if the API fails or returns null.
+   * Only called on first-time activation (no remembered tab for this device).
+   */
+  async _autoSelectMostRecentClaudeTab(serverById) {
+    let tabId = null
+    try {
+      const resp = await fetch(`/api/projects/${this.projectId}/most-recent-claude-tab`)
+      if (resp.ok) {
+        const data = await resp.json()
+        tabId = data?.tabId || null
+      }
+    } catch {}
+
+    // Pick the API result if it's valid, else fall back to first tab
+    const target = (tabId && serverById.has(tabId)) ? tabId : this.tabs[0]?.id
+    if (target) this.setActive(target)
+    else this._renderStrip()
   }
 
   // --- Internals ---

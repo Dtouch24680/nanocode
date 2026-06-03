@@ -76,88 +76,105 @@ test('Set activity to true → getSubagentActivityVisible() returns true', () =>
   assert(t.getSubagentActivityVisible() === true, 'Expected true after setting')
 })
 
-// Test event gating logic
-test('_handleUserEvent gates parent_tool_use_id events when activity=false', () => {
+// Test Root F: new behavior — DOM always built, display:none when toggle off (not gated/discarded)
+test('_handleUserEvent: subagent events always get DOM built (display:none when toggle off)', () => {
   const rendered = []
   const ls = makeStorage()
   const t = makeToggles(ls)
   // activity is off by default
-  
+
   function handleUserEvent(event) {
     const parentToolUseId = event.parent_tool_use_id
     if (parentToolUseId) {
-      if (!t.getSubagentActivityVisible()) return // gate
-      rendered.push({ type: 'subagent-activity' })
+      // Root F new behavior: always build DOM, set display:none if toggle off
+      const isVisible = t.getSubagentActivityVisible()
+      rendered.push({ type: 'subagent-activity', visible: isVisible })
       return
     }
     // normal
     rendered.push({ type: 'normal-user' })
   }
-  
-  // Subagent activity event (activity off) → should be gated
+
+  // Subagent activity event (activity off) → DOM built but hidden
   handleUserEvent({ type: 'user', parent_tool_use_id: 'parent123', message: { content: [] } })
-  assert(rendered.length === 0, 'Subagent activity should be gated when toggle off')
-  
-  // Normal user event → should render
+  assert(rendered.length === 1, 'Subagent activity DOM should be built even when toggle off')
+  assert(rendered[0].visible === false, 'Block should be hidden (display:none) when toggle off')
+
+  // Normal user event → should render visible
   handleUserEvent({ type: 'user', message: { content: [] } })
-  assert(rendered.length === 1, 'Normal user event should render')
+  assert(rendered.length === 2, 'Normal user event should render')
+  assert(rendered[1].type === 'normal-user', 'Should be normal user type')
 })
 
-test('_handleUserEvent shows subagent events when activity=true', () => {
+test('_handleUserEvent: subagent events built and visible when activity=true', () => {
   const rendered = []
   const ls = makeStorage()
   const t = makeToggles(ls)
   t.setSubagentActivityVisible(true)
-  
+
   function handleUserEvent(event) {
     const parentToolUseId = event.parent_tool_use_id
     if (parentToolUseId) {
-      if (!t.getSubagentActivityVisible()) return
-      rendered.push({ type: 'subagent-activity' })
+      const isVisible = t.getSubagentActivityVisible()
+      rendered.push({ type: 'subagent-activity', visible: isVisible })
       return
     }
     rendered.push({ type: 'normal-user' })
   }
-  
+
   handleUserEvent({ type: 'user', parent_tool_use_id: 'parent123', message: { content: [] } })
   assert(rendered.length === 1, 'Subagent activity should render when toggle on')
+  assert(rendered[0].visible === true, 'Block should be visible when toggle on')
 })
 
-test('_handleAssistant gates parent_tool_use_id events when activity=false', () => {
+test('_handleAssistant: subagent events always built, not discarded (Root F)', () => {
   const rendered = []
   const ls = makeStorage()
   const t = makeToggles(ls)
   // activity off by default
-  
+
   function handleAssistant(event) {
-    if (event.parent_tool_use_id && !t.getSubagentActivityVisible()) return
-    rendered.push({ type: 'assistant' })
+    if (event.parent_tool_use_id) {
+      // Root F: build DOM regardless, set display:none based on toggle
+      const isVisible = t.getSubagentActivityVisible()
+      rendered.push({ type: 'subagent-assistant', visible: isVisible })
+      return
+    }
+    rendered.push({ type: 'main-assistant' })
   }
-  
-  // Subagent assistant event → gated
+
+  // Subagent assistant event → DOM built, hidden
   handleAssistant({ parent_tool_use_id: 'parent123', message: { content: [] } })
-  assert(rendered.length === 0, 'Subagent assistant should be gated')
-  
-  // Main agent assistant → rendered
+  assert(rendered.length === 1, 'Subagent assistant DOM should be built (Root F fix)')
+  assert(rendered[0].visible === false, 'Should be hidden when toggle off')
+
+  // Main agent assistant → rendered visible
   handleAssistant({ parent_tool_use_id: null, message: { content: [] } })
-  assert(rendered.length === 1, 'Main agent assistant should render')
+  assert(rendered.length === 2, 'Main agent assistant should render')
+  assert(rendered[1].type === 'main-assistant', 'Main assistant type correct')
 })
 
-test('_handlePartialMessage gates subagent partials when activity=false', () => {
+test('_handlePartialMessage: subagent partials always processed (Root F)', () => {
   const rendered = []
   const ls = makeStorage()
   const t = makeToggles(ls)
-  
+
   function handlePartialMessage(event) {
-    if (event.parent_tool_use_id && !t.getSubagentActivityVisible()) return
-    rendered.push({ type: 'partial' })
+    if (event.parent_tool_use_id) {
+      // Root F: build DOM, set visibility from toggle
+      const isVisible = t.getSubagentActivityVisible()
+      rendered.push({ type: 'subagent-partial', visible: isVisible })
+      return
+    }
+    rendered.push({ type: 'main-partial' })
   }
-  
+
   handlePartialMessage({ parent_tool_use_id: 'pid', message: { content: [] } })
-  assert(rendered.length === 0, 'Subagent partial should be gated')
-  
+  assert(rendered.length === 1, 'Subagent partial DOM built (Root F fix — no longer discarded)')
+  assert(rendered[0].visible === false, 'Should be hidden when toggle off')
+
   handlePartialMessage({ parent_tool_use_id: undefined, message: { content: [] } })
-  assert(rendered.length === 1, 'Main agent partial should render')
+  assert(rendered.length === 2, 'Main agent partial should render')
 })
 
 // Test subagent-prompt toggle gates Agent/Task tool_use blocks
