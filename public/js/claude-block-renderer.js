@@ -708,7 +708,7 @@ export class ClaudeBlockRenderer {
       `</button>` +
       `</div>` +
       `<div class="cbr-tool-body">${inputHtml}</div>` +
-      `<div class="cbr-tool-output" style="display:none"></div>` +
+      `<div class="cbr-tool-output"></div>` +
       `</div>`
 
     // Apply subagent-prompt visibility
@@ -716,17 +716,22 @@ export class ClaudeBlockRenderer {
       article.style.display = 'none'
     }
 
-    // Clicking the header (or fold button) manually toggles between full↔header
-    const header = article.querySelector('.cbr-tool-header')
-    if (header) {
-      header.style.cursor = 'pointer'
-      header.addEventListener('click', () => {
-        const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-        // local per-block toggle: full→header→full (single block, not global)
-        const next = cur === 'full' ? 'header' : 'full'
-        article.setAttribute('data-fold', next)
-      })
-    }
+    // Clicking anywhere on the article (including the ::before stripe in line mode)
+    // cycles through all three fold states: full → header → line → full.
+    // The handler lives on the article root so it is ALWAYS reachable even when
+    // the inner card is hidden (line state).
+    article.style.cursor = 'pointer'
+    article.addEventListener('click', (e) => {
+      // Suppress if the user is clicking a copy button or interactive element
+      // inside the card (but still allow clicks on the fold button or header).
+      const target = e.target
+      if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
+      const cur = article.getAttribute('data-fold') || getToolFoldLevel()
+      // Cycle: full → header → line → full
+      const idx = TOOL_FOLD_LEVELS.indexOf(cur)
+      const next = TOOL_FOLD_LEVELS[(idx + 1) % TOOL_FOLD_LEVELS.length]
+      article.setAttribute('data-fold', next)
+    })
     // Subagent-prompt blocks: always start at 'full' so the prompt text is
     // visible even when the global tool-fold level is 'header' or 'line'.
     // Without this the user enables the toggle and the block appears but the
@@ -793,7 +798,7 @@ export class ClaudeBlockRenderer {
         const outputDiv = toolBlock.querySelector('.cbr-tool-output')
         if (outputDiv) {
           outputDiv.innerHTML = resultHtml
-          outputDiv.style.display = ''
+          // No inline display override needed — CSS controls visibility via data-fold
           // Add error border to the whole tool block if is_error
           if (isError) toolBlock.classList.add('cbr-tool-block--error')
           attachCopyHandlers(outputDiv)

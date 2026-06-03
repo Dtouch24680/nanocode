@@ -2734,24 +2734,36 @@ body.workspace-active .landing-overlay { display: none; }
   transition: transform var(--duration-fast);
 }
 
-/* line — collapse to a single accent stripe, header hidden */
+/* line — collapse to a single accent stripe, card hidden but article stays
+   in the layout so the ::before stripe and the article itself remain
+   clickable (needed to cycle back to full/header). */
 .cbr-block-tool[data-fold="line"],
 .cbr-block-tool-result[data-fold="line"] {
   min-height: 0 !important;
   overflow: hidden;
+  /* Give the stripe area a minimum tap target height */
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .cbr-block-tool[data-fold="line"] .cbr-tool-card,
 .cbr-block-tool-result[data-fold="line"] .cbr-tool-result {
+  /* Hide visually but keep article layout so click target (::before stripe) works */
   display: none;
 }
 .cbr-block-tool[data-fold="line"]::before,
 .cbr-block-tool-result[data-fold="line"]::before {
   content: '';
   display: block;
-  height: 3px;
+  height: 6px;
   background: var(--primary);
   border-radius: var(--radius-sm);
   opacity: 0.4;
+  cursor: pointer;
+}
+/* Ensure the article itself has a visible/clickable area when folded to line */
+.cbr-block-tool[data-fold="line"],
+.cbr-block-tool-result[data-fold="line"] {
+  min-height: 6px;
 }
 
 /* Tool result (compact) */
@@ -2780,6 +2792,14 @@ body.workspace-active .landing-overlay { display: none; }
 /* ── Tool output (paired result injected into tool_use block) ───── */
 .cbr-tool-output {
   border-top: 1px solid var(--border);
+}
+/* Hide output area when no result has arrived yet (empty div).
+   This replaces the old inline style="display:none" hack so that CSS
+   fold-level rules can properly override visibility without inline-style
+   specificity fights. */
+.cbr-tool-output:empty {
+  display: none !important;
+  border-top: none;
 }
 
 .cbr-tool-output .cbr-tool-result {

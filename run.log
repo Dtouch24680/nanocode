@@ -1,625 +1,76 @@
 
-> nanocode@1.2.4 test
-> node --test server/tests/*.test.js
+Opening http://10.18.8.55:3001 ...
+  Screenshot: 01_initial.png
 
-TAP version 13
-# Subtest: store
-    # Subtest: creates and fetches projects
-    ok 1 - creates and fetches projects
-      ---
-      duration_ms: 2.194688
-      type: 'test'
-      ...
-    # Subtest: lists projects in creation order
-    ok 2 - lists projects in creation order
-      ---
-      duration_ms: 0.481102
-      type: 'test'
-      ...
-    # Subtest: upserts settings and returns the full settings map
-    ok 3 - upserts settings and returns the full settings map
-      ---
-      duration_ms: 0.551985
-      type: 'test'
-      ...
-    # Subtest: removes a project cleanly
-    ok 4 - removes a project cleanly
-      ---
-      duration_ms: 0.629449
-      type: 'test'
-      ...
-    # Subtest: creates a remote project with SSH fields
-    ok 5 - creates a remote project with SSH fields
-      ---
-      duration_ms: 0.354696
-      type: 'test'
-      ...
-    # Subtest: creates a local project with null SSH fields
-    ok 6 - creates a local project with null SSH fields
-      ---
-      duration_ms: 0.294913
-      type: 'test'
-      ...
-    1..6
-ok 1 - store
-  ---
-  duration_ms: 6.810434
-  type: 'suite'
-  ...
-1..1
-# tests 6
-# suites 1
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 77.01122
-=== Queue Integration Test ===
-Server: http://10.18.8.55:3088
-Created project: 9a48adfa-7bb3-4d5c-90a3-1731e4778728
-Created tab: 9afcf75f
-[client] Sending first message
-[client] Sending second message (may be busy)
-[client] Result #1 received (subtype=success)
-[client] Result #2 received (subtype=success)
+[Setup] Injecting synthetic bash tool block...
+  cbr-scroll present: False
+  Container candidates: [None, None, None]
+  Scroll container class: NOT FOUND
+  WARNING: No scroll container found - injecting into body as fallback
+  Inject result: {'found': True}
 
---- Results ---
-Total events: 39
-Result events: 2
-Queued events: 1
-Old drop-message appearances: 0
-Stderr events: (none)
-PASS: No drop message (queue correctly swallowed it)
-PASS: 2 result events — both turns completed
-PASS: Got 1 queued event(s) — message was enqueued while busy
-  queued text: Message queued (position 1). Will run after current turn.
+[Test 1] Full mode shows input body + output details
+  ✓ PASS: Test block injected
+  ✓ PASS: Initial data-fold is 'full'
+  ✓ PASS: Tool body visible in full mode
+  ✓ PASS: Tool output visible in full mode (has content)
+  Screenshot: 02_full_mode.png
 
-=== ALL ASSERTIONS PASS ===
+[Test 2] Click cycles: full → header → line → full
+  ✓ PASS: State 0 = full
+  ✓ PASS: After click 1: header
+  Screenshot: 03_header_mode.png
+  ✓ PASS: After click 2: line
+  Screenshot: 04_line_mode.png
 
-> nanocode@1.2.4 test
-> node --test server/tests/*.test.js
+[Test 3] From 'line' state, clicking restores to 'full'
+  ✓ PASS: In line state before re-expand
+  ✓ PASS: Card hidden in line mode
+  ✓ PASS: After click 3 from line: cycles to full
+  Screenshot: 05_restored_full.png
+  ✓ PASS: Body visible after restore from line
+  ✓ PASS: Output visible after restore from line
 
-TAP version 13
-# Subtest: store
-    # Subtest: creates and fetches projects
-    ok 1 - creates and fetches projects
-      ---
-      duration_ms: 2.265742
-      type: 'test'
-      ...
-    # Subtest: lists projects in creation order
-    ok 2 - lists projects in creation order
-      ---
-      duration_ms: 0.500243
-      type: 'test'
-      ...
-    # Subtest: upserts settings and returns the full settings map
-    ok 3 - upserts settings and returns the full settings map
-      ---
-      duration_ms: 0.549964
-      type: 'test'
-      ...
-    # Subtest: removes a project cleanly
-    ok 4 - removes a project cleanly
-      ---
-      duration_ms: 0.622508
-      type: 'test'
-      ...
-    # Subtest: creates a remote project with SSH fields
-    ok 5 - creates a remote project with SSH fields
-      ---
-      duration_ms: 0.366757
-      type: 'test'
-      ...
-    # Subtest: creates a local project with null SSH fields
-    ok 6 - creates a local project with null SSH fields
-      ---
-      duration_ms: 1.207604
-      type: 'test'
-      ...
-    1..6
-ok 1 - store
-  ---
-  duration_ms: 6.70464
-  type: 'suite'
-  ...
-1..1
-# tests 6
-# suites 1
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 88.784595
-=== Queue Integration Test ===
-Server: http://10.18.8.55:3088
-Created project: 70b4083a-78e6-4a2d-89c3-00dc6411436f
-Created tab: f1d7ce62
-[client] Sending first message
-[client] Sending second message (may be busy)
-[client] Result #1 received (subtype=success)
-[client] Result #2 received (subtype=success)
+[Test 4] Settings change (setToolFoldLevel) applies to all blocks
+  ✓ PASS: After setToolFoldLevel('header'): block is header
+  Screenshot: 06_settings_header.png
+  ✓ PASS: After setToolFoldLevel('full'): block is full
+  ✓ PASS: After setToolFoldLevel('line'): block is line
+  Screenshot: 07_settings_line.png
+  ✓ PASS: From settings-forced 'line', click cycles to 'full'
+  Screenshot: 08_click_out_of_settings_line.png
 
---- Results ---
-Total events: 40
-Result events: 2
-Queued events: 1
-Old drop-message appearances: 0
-Stderr events: (none)
-PASS: No drop message (queue correctly swallowed it)
-PASS: 2 result events — both turns completed
-PASS: Got 1 queued event(s) — message was enqueued while busy
-  queued text: Message queued (position 1). Will run after current turn.
+[Test CSS] Verify computed styles match fold state
+  ✓ PASS: data-fold=full: body display=block
+  ✓ PASS: data-fold=full: output display=block
+  ✓ PASS: data-fold=header: body display=none
+  ✓ PASS: data-fold=header: output display=none
+  ✓ PASS: data-fold=line: card display=none
+  ✓ PASS: data-fold=line: article itself NOT display:none (clickable)
+  Screenshot: 09_final.png
 
-=== ALL ASSERTIONS PASS ===
-
-> nanocode@1.2.4 test
-> node --test server/tests/*.test.js
-
-TAP version 13
-# Subtest: store
-    # Subtest: creates and fetches projects
-    ok 1 - creates and fetches projects
-      ---
-      duration_ms: 2.21286
-      type: 'test'
-      ...
-    # Subtest: lists projects in creation order
-    ok 2 - lists projects in creation order
-      ---
-      duration_ms: 0.481832
-      type: 'test'
-      ...
-    # Subtest: upserts settings and returns the full settings map
-    ok 3 - upserts settings and returns the full settings map
-      ---
-      duration_ms: 0.559316
-      type: 'test'
-      ...
-    # Subtest: removes a project cleanly
-    ok 4 - removes a project cleanly
-      ---
-      duration_ms: 0.627278
-      type: 'test'
-      ...
-    # Subtest: creates a remote project with SSH fields
-    ok 5 - creates a remote project with SSH fields
-      ---
-      duration_ms: 0.365836
-      type: 'test'
-      ...
-    # Subtest: creates a local project with null SSH fields
-    ok 6 - creates a local project with null SSH fields
-      ---
-      duration_ms: 1.446065
-      type: 'test'
-      ...
-    1..6
-ok 1 - store
-  ---
-  duration_ms: 6.913312
-  type: 'suite'
-  ...
-1..1
-# tests 6
-# suites 1
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 85.699437
-Main page status: [33m200[39m
-After radio change to full: [1mnull[22m
-After radio change to line (no Save): [1mnull[22m
-subagent-prompt-visible after uncheck (no Save): [1mnull[22m
-subagent-activity-visible after check (no Save): [1mnull[22m
-FAIL: expected cbr_tool_fold_level=full, got [1mnull[22m
-FAIL: expected cbr_tool_fold_level=line, got [1mnull[22m
-FAIL: expected cbr_subagent_prompt_visible=false, got [1mnull[22m
-FAIL: expected cbr_subagent_activity_visible=true, got [1mnull[22m
-Title: Nanocode
-Elements: fold: [33mtrue[39m prompt: [33mtrue[39m activity: [33mtrue[39m
-After radio change to full (no Save): full
-After radio change to line (no Save): line
-cbr_subagent_prompt after uncheck (no Save): false
-cbr_subagent_activity after check (no Save): true
-ALL PASS: change listeners fire setXxx without clicking Save
-node:internal/process/promises:394
-    triggerUncaughtException(err, true /* fromPromise */);
-    ^
-
-page.goto: Timeout 30000ms exceeded.
-Call log:
-[2m  - navigating to "http://10.18.8.55:3099/", waiting until "networkidle"[22m
-
-    at /tmp/test_persist.mjs:10:14 {
-  name: [32m'TimeoutError'[39m
-}
-
-Node.js v22.22.0
-node:internal/process/promises:394
-    triggerUncaughtException(err, true /* fromPromise */);
-    ^
-
-page.goto: Timeout 30000ms exceeded.
-Call log:
-[2m  - navigating to "http://10.18.8.55:3099/", waiting until "networkidle"[22m
-
-    at /tmp/test_persist.mjs:10:14 {
-  name: [32m'TimeoutError'[39m
-}
-
-Node.js v22.22.0
-After loadToolFoldSettings with stored=header, checked radio: [1mnull[22m
-After change→line, localStorage cbr_tool_fold: line
-FAIL loadToolFoldSettings restore, got [1mnull[22m
-
-> nanocode@1.2.4 test
-> node --test server/tests/*.test.js
-
-TAP version 13
-# Subtest: store
-    # Subtest: creates and fetches projects
-    ok 1 - creates and fetches projects
-      ---
-      duration_ms: 2.202263
-      type: 'test'
-      ...
-    # Subtest: lists projects in creation order
-    ok 2 - lists projects in creation order
-      ---
-      duration_ms: 0.503783
-      type: 'test'
-      ...
-    # Subtest: upserts settings and returns the full settings map
-    ok 3 - upserts settings and returns the full settings map
-      ---
-      duration_ms: 0.556466
-      type: 'test'
-      ...
-    # Subtest: removes a project cleanly
-    ok 4 - removes a project cleanly
-      ---
-      duration_ms: 0.705053
-      type: 'test'
-      ...
-    # Subtest: creates a remote project with SSH fields
-    ok 5 - creates a remote project with SSH fields
-      ---
-      duration_ms: 0.363507
-      type: 'test'
-      ...
-    # Subtest: creates a local project with null SSH fields
-    ok 6 - creates a local project with null SSH fields
-      ---
-      duration_ms: 1.28437
-      type: 'test'
-      ...
-    1..6
-ok 1 - store
-  ---
-  duration_ms: 6.809019
-  type: 'suite'
-  ...
-1..1
-# tests 6
-# suites 1
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 84.670401
-# Subtest: system-mode worker lifecycle
-    # Subtest: worker registration appears in /__test__/registry
-    ok 1 - worker registration appears in /__test__/registry
-      ---
-      duration_ms: 28.251652
-      type: 'test'
-      ...
-    # Subtest: peer-cred mismatch is rejected by the router during register
-    ok 2 - peer-cred mismatch is rejected by the router during register
-      ---
-      duration_ms: 230.993594
-      type: 'test'
-      ...
-    # Subtest: worker is reaped after idle timeout; subsequent request 401s
-    ok 3 - worker is reaped after idle timeout; subsequent request 401s
-      ---
-      duration_ms: 827.714891
-      type: 'test'
-      ...
-    # Subtest: second `nanocode login` while worker is alive re-uses the existing worker
-    ok 4 - second `nanocode login` while worker is alive re-uses the existing worker
-      ---
-      duration_ms: 17.10428
-      type: 'test'
-      ...
-    1..4
-ok 6 - system-mode worker lifecycle
-  ---
-  duration_ms: 1575.454822
-  type: 'suite'
-  ...
-1..6
-# tests 36
-# suites 6
-# pass 30
-# fail 0
-# cancelled 0
-# skipped 6
-# todo 0
-# duration_ms 1662.100034
-
-> nanocode@1.2.4 test
-> node --test server/tests/*.test.js
-
-TAP version 13
-# Subtest: store
-    # Subtest: creates and fetches projects
-    ok 1 - creates and fetches projects
-      ---
-      duration_ms: 2.202117
-      type: 'test'
-      ...
-    # Subtest: lists projects in creation order
-    ok 2 - lists projects in creation order
-      ---
-      duration_ms: 0.491994
-      type: 'test'
-      ...
-    # Subtest: upserts settings and returns the full settings map
-    ok 3 - upserts settings and returns the full settings map
-      ---
-      duration_ms: 0.563928
-      type: 'test'
-      ...
-    # Subtest: removes a project cleanly
-    ok 4 - removes a project cleanly
-      ---
-      duration_ms: 0.6226
-      type: 'test'
-      ...
-    # Subtest: creates a remote project with SSH fields
-    ok 5 - creates a remote project with SSH fields
-      ---
-      duration_ms: 0.354967
-      type: 'test'
-      ...
-    # Subtest: creates a local project with null SSH fields
-    ok 6 - creates a local project with null SSH fields
-      ---
-      duration_ms: 1.359386
-      type: 'test'
-      ...
-    1..6
-ok 1 - store
-  ---
-  duration_ms: 6.830212
-  type: 'suite'
-  ...
-1..1
-# tests 6
-# suites 1
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 81.623338
-Harness status: Harness ready. Tool blocks: 2, Tool result blocks: 2
-
-Blocks rendered: tool=2, tool_result=2
-  PASS: At least 1 tool_use block rendered
-  PASS: At least 1 tool_result block rendered
-
-=== Testing FULL level ===
-Full styles: [
-  {
-    "kind": "tool",
-    "index": 0,
-    "dataFold": "full",
-    "blockDisplay": "block",
-    "bodyDisplay": "block",
-    "cardDisplay": "flex",
-    "bodyContent": "jsonCopy{\n  \"command\": \"find /storage/home/zhining"
-  },
-  {
-    "kind": "tool",
-    "index": 1,
-    "dataFold": "full",
-    "blockDisplay": "block",
-    "bodyDisplay": "block",
-    "cardDisplay": "flex",
-    "bodyContent": "jsonCopy{\n  \"file_path\": \"/storage/home/zhiningjia"
-  },
-  {
-    "kind": "tool_result",
-    "index": 0,
-    "dataFold": "full",
-    "blockDisplay": "block",
-    "resultDisplay": "block",
-    "resultContent": "/storage/home/zhiningjiao/code/nanocode/public/js/"
-  },
-  {
-    "kind": "tool_result",
-    "index": 1,
-    "dataFold": "full",
-    "blockDisplay": "block",
-    "resultDisplay": "block",
-    "resultContent": "/* CSS content here */\n.cbr-block-tool { backgroun"
-  }
-]
-  PASS: Tool[0] data-fold is 'full'
-  PASS: Tool[0] .cbr-tool-body visible (not none) at full
-  PASS: Tool[0] .cbr-tool-body has content at full
-  PASS: Tool[1] data-fold is 'full'
-  PASS: Tool[1] .cbr-tool-body visible (not none) at full
-  PASS: Tool[1] .cbr-tool-body has content at full
-  PASS: ToolResult[0] data-fold is 'full'
-  PASS: ToolResult[0] .cbr-tool-result visible at full
-  PASS: ToolResult[0] has text content at full
-  PASS: ToolResult[1] data-fold is 'full'
-  PASS: ToolResult[1] .cbr-tool-result visible at full
-  PASS: ToolResult[1] has text content at full
-
-=== Testing HEADER level ===
-Header styles: [
-  {
-    "kind": "tool",
-    "index": 0,
-    "dataFold": "header",
-    "blockDisplay": "block",
-    "bodyDisplay": "none",
-    "cardDisplay": "flex",
-    "bodyContent": "jsonCopy{\n  \"command\": \"find /storage/home/zhining"
-  },
-  {
-    "kind": "tool",
-    "index": 1,
-    "dataFold": "header",
-    "blockDisplay": "block",
-    "bodyDisplay": "none",
-    "cardDisplay": "flex",
-    "bodyContent": "jsonCopy{\n  \"file_path\": \"/storage/home/zhiningjia"
-  },
-  {
-    "kind": "tool_result",
-    "index": 0,
-    "dataFold": "header",
-    "blockDisplay": "block",
-    "resultDisplay": "none",
-    "resultContent": "/storage/home/zhiningjiao/code/nanocode/public/js/"
-  },
-  {
-    "kind": "tool_result",
-    "index": 1,
-    "dataFold": "header",
-    "blockDisplay": "block",
-    "resultDisplay": "none",
-    "resultContent": "/* CSS content here */\n.cbr-block-tool { backgroun"
-  }
-]
-  PASS: Tool[0] data-fold is 'header'
-  PASS: Tool[0] .cbr-tool-body hidden (none) at header
-  PASS: Tool[0] block itself visible at header
-  PASS: Tool[1] data-fold is 'header'
-  PASS: Tool[1] .cbr-tool-body hidden (none) at header
-  PASS: Tool[1] block itself visible at header
-  PASS: ToolResult[0] data-fold is 'header'
-  PASS: ToolResult[0] .cbr-tool-result hidden at header
-  PASS: ToolResult[1] data-fold is 'header'
-  PASS: ToolResult[1] .cbr-tool-result hidden at header
-
-=== Testing LINE level ===
-Line styles: [
-  {
-    "kind": "tool",
-    "index": 0,
-    "dataFold": "line",
-    "blockDisplay": "block",
-    "bodyDisplay": "block",
-    "cardDisplay": "none",
-    "bodyContent": "jsonCopy{\n  \"command\": \"find /storage/home/zhining"
-  },
-  {
-    "kind": "tool",
-    "index": 1,
-    "dataFold": "line",
-    "blockDisplay": "block",
-    "bodyDisplay": "block",
-    "cardDisplay": "none",
-    "bodyContent": "jsonCopy{\n  \"file_path\": \"/storage/home/zhiningjia"
-  },
-  {
-    "kind": "tool_result",
-    "index": 0,
-    "dataFold": "line",
-    "blockDisplay": "block",
-    "resultDisplay": "none",
-    "resultContent": "/storage/home/zhiningjiao/code/nanocode/public/js/"
-  },
-  {
-    "kind": "tool_result",
-    "index": 1,
-    "dataFold": "line",
-    "blockDisplay": "block",
-    "resultDisplay": "none",
-    "resultContent": "/* CSS content here */\n.cbr-block-tool { backgroun"
-  }
-]
-  PASS: Tool[0] data-fold is 'line'
-  PASS: Tool[0] .cbr-tool-card hidden at line
-  PASS: Tool[1] data-fold is 'line'
-  PASS: Tool[1] .cbr-tool-card hidden at line
-  PASS: ToolResult[0] data-fold is 'line'
-  PASS: ToolResult[0] .cbr-tool-result hidden at line
-  PASS: ToolResult[1] data-fold is 'line'
-  PASS: ToolResult[1] .cbr-tool-result hidden at line
-
-=== Testing switch back to FULL (verifies no stuck state) ===
-  PASS: Tool[0] body visible again after switching back to full
-  PASS: Tool[1] body visible again after switching back to full
-  PASS: ToolResult[0] result visible again after switching back to full
-  PASS: ToolResult[1] result visible again after switching back to full
-
-Screenshot saved: qa-test/fold-header-screenshot.png
-Screenshot saved: qa-test/fold-line-screenshot.png
-Screenshot saved: qa-test/fold-full-screenshot.png
-
-============================================================
-Results: PASS=36 FAIL=0
-============================================================
-
-Evidence:
-  PASS: At least 1 tool_use block rendered
-  PASS: At least 1 tool_result block rendered
-  PASS: Tool[0] data-fold is 'full' | got: full
-  PASS: Tool[0] .cbr-tool-body visible (not none) at full | got: block
-  PASS: Tool[0] .cbr-tool-body has content at full | got: "jsonCopy{
-  "command": "find /storage/home/zhining"
-  PASS: Tool[1] data-fold is 'full' | got: full
-  PASS: Tool[1] .cbr-tool-body visible (not none) at full | got: block
-  PASS: Tool[1] .cbr-tool-body has content at full | got: "jsonCopy{
-  "file_path": "/storage/home/zhiningjia"
-  PASS: ToolResult[0] data-fold is 'full' | got: full
-  PASS: ToolResult[0] .cbr-tool-result visible at full | got: block
-  PASS: ToolResult[0] has text content at full | got: "/storage/home/zhiningjiao/code/nanocode/public/js/"
-  PASS: ToolResult[1] data-fold is 'full' | got: full
-  PASS: ToolResult[1] .cbr-tool-result visible at full | got: block
-  PASS: ToolResult[1] has text content at full | got: "/* CSS content here */
-.cbr-block-tool { backgroun"
-  PASS: Tool[0] data-fold is 'header' | got: header
-  PASS: Tool[0] .cbr-tool-body hidden (none) at header | got: none
-  PASS: Tool[0] block itself visible at header | got: block
-  PASS: Tool[1] data-fold is 'header' | got: header
-  PASS: Tool[1] .cbr-tool-body hidden (none) at header | got: none
-  PASS: Tool[1] block itself visible at header | got: block
-  PASS: ToolResult[0] data-fold is 'header' | got: header
-  PASS: ToolResult[0] .cbr-tool-result hidden at header | got: none
-  PASS: ToolResult[1] data-fold is 'header' | got: header
-  PASS: ToolResult[1] .cbr-tool-result hidden at header | got: none
-  PASS: Tool[0] data-fold is 'line' | got: line
-  PASS: Tool[0] .cbr-tool-card hidden at line | got: none
-  PASS: Tool[1] data-fold is 'line' | got: line
-  PASS: Tool[1] .cbr-tool-card hidden at line | got: none
-  PASS: ToolResult[0] data-fold is 'line' | got: line
-  PASS: ToolResult[0] .cbr-tool-result hidden at line | got: none
-  PASS: ToolResult[1] data-fold is 'line' | got: line
-  PASS: ToolResult[1] .cbr-tool-result hidden at line | got: none
-  PASS: Tool[0] body visible again after switching back to full | got: block
-  PASS: Tool[1] body visible again after switching back to full | got: block
-  PASS: ToolResult[0] result visible again after switching back to full | got: block
-  PASS: ToolResult[1] result visible again after switching back to full | got: block
-=== Testing fold switching on real 3001 page ===
-1. Current state: {"localStorage":"full","blockCount":2,"blocks":[{"class":"cbr-block-tool","dataFold":"full","bodyDisplay":"block"},{"class":"cbr-block-tool-result","dataFold":"full","bodyDisplay":"block"}]}
-2. After switch to header: {"localStorage":"header","blockCount":2,"blocks":[{"class":"cbr-block-tool","dataFold":"header","bodyDisplay":"none"},{"class":"cbr-block-tool-result","dataFold":"header","bodyDisplay":"none"}]}
-PASS: header fold hides body
-3. After switch to line: {"localStorage":"line","dataFold":"line","cardDisplay":"none","articleH":"5px"}
-PASS: line fold hides card
-4. After switch back to full: {"localStorage":"full","dataFold":"full","bodyDisplay":"block"}
-PASS: full fold shows body
-=== Real 3001 page fold test complete ===
+==================================================
+RESULTS: 22 PASS / 0 FAIL
+==================================================
+  PASS: Test block injected
+  PASS: Initial data-fold is 'full'
+  PASS: Tool body visible in full mode
+  PASS: Tool output visible in full mode (has content)
+  PASS: State 0 = full
+  PASS: After click 1: header
+  PASS: After click 2: line
+  PASS: In line state before re-expand
+  PASS: Card hidden in line mode
+  PASS: After click 3 from line: cycles to full
+  PASS: Body visible after restore from line
+  PASS: Output visible after restore from line
+  PASS: After setToolFoldLevel('header'): block is header
+  PASS: After setToolFoldLevel('full'): block is full
+  PASS: After setToolFoldLevel('line'): block is line
+  PASS: From settings-forced 'line', click cycles to 'full'
+  PASS: data-fold=full: body display=block
+  PASS: data-fold=full: output display=block
+  PASS: data-fold=header: body display=none
+  PASS: data-fold=header: output display=none
+  PASS: data-fold=line: card display=none
+  PASS: data-fold=line: article itself NOT display:none (clickable)
