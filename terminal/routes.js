@@ -450,9 +450,15 @@ export function createTerminalRoutes(store) {
    */
   function runClaudeTurn(cs, userText, sessionKey, cwd) {
     if (cs.busy) {
-      // Queue not implemented: just surface an error
-      const errEvent = { type: 'system', subtype: 'stderr', text: 'Previous turn still running, please wait.' }
-      claudeBroadcast(cs, errEvent)
+      // Enqueue instead of discarding. Broadcast a 'queued' system event so the
+      // client can show visual feedback (e.g. "message queued — will run next").
+      if (!Array.isArray(cs.queue)) cs.queue = []  // defensive: backfill if session was created before queue field
+      cs.queue.push(userText)
+      const queuedEvent = {
+        type: 'system', subtype: 'queued',
+        text: `Message queued (position ${cs.queue.length}). Will run after current turn.`,
+      }
+      claudeBroadcast(cs, queuedEvent)
       return
     }
     cs.busy = true
@@ -519,11 +525,30 @@ export function createTerminalRoutes(store) {
       cs.currentProc = null
       // Broadcast a synthetic 'result' event so the frontend knows the turn ended
       // (needed for the thinking-state UI to reset even on interrupt/error)
-      const doneEvent = { type: 'result', subtype: signal === 'SIGINT' ? 'interrupted' : 'success' }
+      const wasInterrupted = signal === 'SIGINT'
+      const doneEvent = { type: 'result', subtype: wasInterrupted ? 'interrupted' : 'success' }
       claudeBroadcast(cs, doneEvent)
-      if (code !== 0 && code != null && signal !== 'SIGINT') {
+      if (code !== 0 && code != null && !wasInterrupted) {
         const event = { type: 'system', subtype: 'stderr', text: `claude exited with code ${code}` }
         claudeBroadcast(cs, event)
+      }
+
+      // Queue drain: on interrupt we discard queued messages because the user
+      // signalled they want to change direction. On normal/error exit we run the
+      // next queued turn.
+      if (!Array.isArray(cs.queue)) cs.queue = []  // defensive backfill
+      if (wasInterrupted) {
+        if (cs.queue.length > 0) {
+          const discarded = cs.queue.length
+          cs.queue = []
+          const ev = { type: 'system', subtype: 'info', text: `Queue cleared (${discarded} pending message${discarded > 1 ? 's' : ''} discarded after interrupt).` }
+          claudeBroadcast(cs, ev)
+        }
+      } else if (cs.queue.length > 0) {
+        const nextText = cs.queue.shift()
+        console.log(`[claude:queue] sessionKey=${sessionKey} running queued turn, ${cs.queue.length} remaining`)
+        // Small tick to avoid re-entrancy issues (exit handler → runClaudeTurn synchronously)
+        setImmediate(() => runClaudeTurn(cs, nextText, sessionKey, cwd))
       }
     })
 
@@ -534,6 +559,12 @@ export function createTerminalRoutes(store) {
       claudeBroadcast(cs, doneEvent)
       const event = { type: 'system', subtype: 'spawn_error', text: err.message }
       claudeBroadcast(cs, event)
+      // On spawn error, still drain the queue so queued messages are not lost
+      if (cs.queue.length > 0) {
+        const nextText = cs.queue.shift()
+        console.log(`[claude:queue] sessionKey=${sessionKey} running queued turn after spawn error, ${cs.queue.length} remaining`)
+        setImmediate(() => runClaudeTurn(cs, nextText, sessionKey, cwd))
+      }
     })
   }
 
@@ -573,6 +604,12 @@ export function createTerminalRoutes(store) {
         turnCount: 0,
         cwd: project.cwd,
         currentProc: null,
+        // FIFO queue for messages arriving while busy.
+        // On interrupt (SIGINT) we clear the queue — an interrupted turn means
+        // the user wants to change direction, so stale queued messages are
+        // discarded. On normal exit, each queued item is shifted off and run
+        // in order so the user's messages are never lost.
+        queue: [],
       }
       claudeSessions.set(sessionKey, cs)
     }

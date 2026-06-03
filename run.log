@@ -7,43 +7,43 @@ TAP version 13
     # Subtest: creates and fetches projects
     ok 1 - creates and fetches projects
       ---
-      duration_ms: 2.265595
+      duration_ms: 2.194688
       type: 'test'
       ...
     # Subtest: lists projects in creation order
     ok 2 - lists projects in creation order
       ---
-      duration_ms: 0.472438
+      duration_ms: 0.481102
       type: 'test'
       ...
     # Subtest: upserts settings and returns the full settings map
     ok 3 - upserts settings and returns the full settings map
       ---
-      duration_ms: 0.558602
+      duration_ms: 0.551985
       type: 'test'
       ...
     # Subtest: removes a project cleanly
     ok 4 - removes a project cleanly
       ---
-      duration_ms: 0.610873
+      duration_ms: 0.629449
       type: 'test'
       ...
     # Subtest: creates a remote project with SSH fields
     ok 5 - creates a remote project with SSH fields
       ---
-      duration_ms: 0.365904
+      duration_ms: 0.354696
       type: 'test'
       ...
     # Subtest: creates a local project with null SSH fields
     ok 6 - creates a local project with null SSH fields
       ---
-      duration_ms: 1.301929
+      duration_ms: 0.294913
       type: 'test'
       ...
     1..6
 ok 1 - store
   ---
-  duration_ms: 6.773907
+  duration_ms: 6.810434
   type: 'suite'
   ...
 1..1
@@ -54,7 +54,28 @@ ok 1 - store
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 84.248617
+# duration_ms 77.01122
+=== Queue Integration Test ===
+Server: http://10.18.8.55:3088
+Created project: 9a48adfa-7bb3-4d5c-90a3-1731e4778728
+Created tab: 9afcf75f
+[client] Sending first message
+[client] Sending second message (may be busy)
+[client] Result #1 received (subtype=success)
+[client] Result #2 received (subtype=success)
+
+--- Results ---
+Total events: 39
+Result events: 2
+Queued events: 1
+Old drop-message appearances: 0
+Stderr events: (none)
+PASS: No drop message (queue correctly swallowed it)
+PASS: 2 result events — both turns completed
+PASS: Got 1 queued event(s) — message was enqueued while busy
+  queued text: Message queued (position 1). Will run after current turn.
+
+=== ALL ASSERTIONS PASS ===
 
 > nanocode@1.2.4 test
 > node --test server/tests/*.test.js
@@ -64,43 +85,43 @@ TAP version 13
     # Subtest: creates and fetches projects
     ok 1 - creates and fetches projects
       ---
-      duration_ms: 2.195042
+      duration_ms: 2.265742
       type: 'test'
       ...
     # Subtest: lists projects in creation order
     ok 2 - lists projects in creation order
       ---
-      duration_ms: 0.48051
+      duration_ms: 0.500243
       type: 'test'
       ...
     # Subtest: upserts settings and returns the full settings map
     ok 3 - upserts settings and returns the full settings map
       ---
-      duration_ms: 0.554644
+      duration_ms: 0.549964
       type: 'test'
       ...
     # Subtest: removes a project cleanly
     ok 4 - removes a project cleanly
       ---
-      duration_ms: 0.614456
+      duration_ms: 0.622508
       type: 'test'
       ...
     # Subtest: creates a remote project with SSH fields
     ok 5 - creates a remote project with SSH fields
       ---
-      duration_ms: 0.364655
+      duration_ms: 0.366757
       type: 'test'
       ...
     # Subtest: creates a local project with null SSH fields
     ok 6 - creates a local project with null SSH fields
       ---
-      duration_ms: 0.266571
+      duration_ms: 1.207604
       type: 'test'
       ...
     1..6
 ok 1 - store
   ---
-  duration_ms: 6.67228
+  duration_ms: 6.70464
   type: 'suite'
   ...
 1..1
@@ -111,5 +132,25 @@ ok 1 - store
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 74.964755
---- Final test run complete ---
+# duration_ms 88.784595
+=== Queue Integration Test ===
+Server: http://10.18.8.55:3088
+Created project: 70b4083a-78e6-4a2d-89c3-00dc6411436f
+Created tab: f1d7ce62
+[client] Sending first message
+[client] Sending second message (may be busy)
+[client] Result #1 received (subtype=success)
+[client] Result #2 received (subtype=success)
+
+--- Results ---
+Total events: 40
+Result events: 2
+Queued events: 1
+Old drop-message appearances: 0
+Stderr events: (none)
+PASS: No drop message (queue correctly swallowed it)
+PASS: 2 result events — both turns completed
+PASS: Got 1 queued event(s) — message was enqueued while busy
+  queued text: Message queued (position 1). Will run after current turn.
+
+=== ALL ASSERTIONS PASS ===
