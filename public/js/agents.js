@@ -123,8 +123,11 @@ async function _loadRecentAgents() {
  * 3. Dispatch a custom event so terminal-view can open/focus the correct session tab.
  */
 async function _resumeSession(entry) {
-  // Decode cwd from dirName: "-storage-home-user-code-nanocode" → "/storage/home/user/code/nanocode"
-  const cwd = entry.projectDir.replace(/^-/, '/').replace(/-/g, '/')
+  // Use the real cwd returned by /api/recent-agents (read from jsonl).
+  // Fallback to heuristic dir-name decoding only for old entries that pre-date the cwd field.
+  // The heuristic is ambiguous for paths with '-' in directory names (e.g. meshy-dcc-pipeline),
+  // so we always prefer entry.cwd when present.
+  const cwd = entry.cwd || entry.projectDir.replace(/^-/, '/').replace(/-/g, '/')
 
   // Find project in current state or create it
   let project = null

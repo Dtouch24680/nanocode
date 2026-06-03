@@ -505,10 +505,11 @@ export function createTerminalRoutes(store) {
   // Returns up to max 50 entries (no pagination needed at current scale).
   //
   // Each entry:
-  //   { projectDir, projectName, sessionId, mtime (ISO), relTime, summary, active }
+  //   { projectDir, projectName, cwd, sessionId, mtime (ISO), relTime, summary, active }
   //
-  // projectName is derived from the directory name by reversing the cwd encoding:
-  //   replace all '-' with '/' → strip leading '/' → take the last path component.
+  // cwd is read directly from the jsonl file (any row that has a 'cwd' field).
+  // projectName is the basename of the real cwd (no ambiguous '-' replacement).
+  // Fallback: if no cwd field found in jsonl, fall back to dir-name heuristic and log.
 
   router.get('/api/recent-agents', (req, res) => {
     const claudeProjectsRoot = join(home, '.claude', 'projects')
@@ -517,18 +518,31 @@ export function createTerminalRoutes(store) {
     const now = Date.now()
     const H24 = 24 * 60 * 60 * 1000
 
-    /** Decode project directory name back to a human-friendly project name. */
-    function dirToProjectName(dirName) {
-      // dirName: e.g. "-storage-home-user-code-nanocode"
-      // → cwd: "/storage/home/user/code/nanocode"
-      // → project name: "nanocode"
+    /**
+     * Read the real cwd from any jsonl row that carries a 'cwd' field.
+     * Reads only the first few KB to stay fast. Returns null if not found.
+     */
+    function cwdFromJsonl(jsonlPath) {
       try {
-        const cwd = dirName.replace(/^-/, '/').replace(/-/g, '/')
-        const parts = cwd.split('/').filter(Boolean)
-        return parts[parts.length - 1] || dirName
-      } catch {
-        return dirName
-      }
+        const content = readFileSync(jsonlPath, 'utf-8')
+        for (const line of content.split('\n')) {
+          if (!line.trim()) continue
+          let row
+          try { row = JSON.parse(line) } catch { continue }
+          if (typeof row.cwd === 'string' && row.cwd) return row.cwd
+        }
+      } catch {}
+      return null
+    }
+
+    /**
+     * Fallback: decode project directory name heuristically.
+     * Only used when the jsonl has no 'cwd' field (e.g. very old sessions).
+     * Logs a warning so these can be audited.
+     */
+    function cwdFromDirName(dirName) {
+      console.warn(`[recent-agents] no cwd in jsonl for dir=${dirName}, falling back to dir-name heuristic`)
+      return dirName.replace(/^-/, '/').replace(/-/g, '/')
     }
 
     /** Extract the first user prompt text from a jsonl path (≤120 chars). */
@@ -602,15 +616,22 @@ export function createTerminalRoutes(store) {
     // Hard cap at 50 to avoid runaway payloads
     cutoff = cutoff.slice(0, 50)
 
-    const result = cutoff.map((e) => ({
-      projectDir: e.dirName,
-      projectName: dirToProjectName(e.dirName),
-      sessionId: e.sessionId,
-      mtime: new Date(e.mtimeMs).toISOString(),
-      relTime: relTime(e.mtimeMs),
-      summary: extractSummary(e.fullPath),
-      active: now - e.mtimeMs <= H24,
-    }))
+    const result = cutoff.map((e) => {
+      // Read the real cwd from the jsonl file; fall back to dir-name heuristic only if absent
+      const cwd = cwdFromJsonl(e.fullPath) || cwdFromDirName(e.dirName)
+      const cwdParts = cwd.split('/').filter(Boolean)
+      const projectName = cwdParts[cwdParts.length - 1] || e.dirName
+      return {
+        projectDir: e.dirName,
+        projectName,
+        cwd,
+        sessionId: e.sessionId,
+        mtime: new Date(e.mtimeMs).toISOString(),
+        relTime: relTime(e.mtimeMs),
+        summary: extractSummary(e.fullPath),
+        active: now - e.mtimeMs <= H24,
+      }
+    })
 
     res.json(result)
   })
