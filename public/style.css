@@ -1321,6 +1321,63 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 }
 .send-btn:hover { background: var(--primary-hover); }
 .send-btn:active { transform: translateY(1px); }
+.send-btn[hidden] { display: none; }
+
+/* -- Claude Stop button ---------------------------------------- */
+
+.claude-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  color: rgb(239, 68, 68);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.claude-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+.claude-stop-btn:active { transform: translateY(1px); }
+.claude-stop-btn[hidden] { display: none; }
+
+/* -- Claude thinking: input bar fade pulsing animation --------- */
+
+@keyframes claude-thinking-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.chat-textarea.claude-thinking {
+  animation: claude-thinking-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+  border-color: var(--border);
+}
+
+/* -- Claude slash command dropdown ----------------------------- */
+
+.claude-slash-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.claude-slash-cmd {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--primary);
+  font-weight: 600;
+  min-width: 80px;
+}
+.claude-slash-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
 
 /* -- Suggestions dropdown -------------------------------------- */
 
@@ -2283,6 +2340,38 @@ body.workspace-active .landing-overlay { display: none; }
   height: 100%;
   overflow: hidden;
   background: var(--bg);
+  position: relative;
+}
+
+/* ── Scroll-to-bottom floating button ──────────────────────────── */
+.cbr-scroll-to-bottom {
+  position: absolute;
+  bottom: var(--s-4);
+  right: var(--s-4);
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity var(--duration-fast), transform var(--duration-fast);
+}
+.cbr-scroll-to-bottom.cbr-scroll-btn-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.cbr-scroll-to-bottom:hover {
+  background: var(--primary-hover);
 }
 
 /* Scroll area — this is the scrollable region */
@@ -2593,6 +2682,64 @@ body.workspace-active .landing-overlay { display: none; }
 .cbr-tool-body .cbr-code-wrap {
   border-radius: 0;
   border: none;
+}
+
+/* Tool fold button */
+.cbr-tool-fold-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  transition: color var(--duration-fast);
+}
+.cbr-tool-fold-btn:hover { color: var(--primary); }
+
+/* ── Three-level fold: data-fold attribute ─────────────────────── */
+
+/* full (default) — show everything, chevron points down */
+.cbr-block-tool[data-fold="full"] .cbr-tool-body,
+.cbr-block-tool-result[data-fold="full"] .cbr-tool-result {
+  display: block;
+}
+.cbr-block-tool[data-fold="full"] .cbr-tool-fold-btn svg {
+  transform: rotate(0deg);
+  transition: transform var(--duration-fast);
+}
+
+/* header — show header only, hide body, chevron points right */
+.cbr-block-tool[data-fold="header"] .cbr-tool-body,
+.cbr-block-tool-result[data-fold="header"] .cbr-tool-result {
+  display: none;
+}
+.cbr-block-tool[data-fold="header"] .cbr-tool-fold-btn svg {
+  transform: rotate(-90deg);
+  transition: transform var(--duration-fast);
+}
+
+/* line — collapse to a single accent stripe, header hidden */
+.cbr-block-tool[data-fold="line"],
+.cbr-block-tool-result[data-fold="line"] {
+  min-height: 0 !important;
+  overflow: hidden;
+}
+.cbr-block-tool[data-fold="line"] .cbr-tool-card,
+.cbr-block-tool-result[data-fold="line"] .cbr-tool-result {
+  display: none;
+}
+.cbr-block-tool[data-fold="line"]::before,
+.cbr-block-tool-result[data-fold="line"]::before {
+  content: '';
+  display: block;
+  height: 3px;
+  background: var(--primary);
+  border-radius: var(--radius-sm);
+  opacity: 0.4;
 }
 
 /* Tool result (compact) */
