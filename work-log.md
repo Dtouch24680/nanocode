@@ -1,5 +1,28 @@
 # Work Log
 
+## 2026-06-03 [Task A + B: tool折叠修复 + subagent可见性开关]
+
+### Task A - Tool Blocks 折叠设置无效（根因确认）
+根因1：CSS `.cbr-block-tool[data-fold="full"]` 规则要求属性**显式设为"full"**才显示内容。无属性时无 display:block 兜底规则。但 `applyToolFold(article)` 在渲染时读 localStorage，正常情况下会设置属性，所以这不是主因。
+根因2（主因）：`_handleUserEvent` 只提取 `content.find(c => c.type === 'text')` 的文本内容，完全忽略了 `tool_result` 类型的 item。工具输出（Bash stdout、文件内容等）以 `tool_result` 形式出现在 user-turn 事件里，之前从未被渲染——这才是「看不到具体内容」「全是一条线」的根本原因。
+修法：
+  - CSS 加 `:not([data-fold])` 兜底规则
+  - `_handleUserEvent` 改为遍历所有 content 项，遇到 tool_result 调用 `_renderToolResultPart`
+证据：
+  - 实地抓取 stream-json 确认：`user` event 中 `content[].type === "tool_result"`, `content[].content` = 输出字符串
+  - npm test 6/6 pass，grep -i "FAIL|Error" run.log → "# fail 0"
+  - commit 9ca1b73
+
+### Task B - Subagent 可见性开关
+实地抓取确认真实事件字段：
+  - Subagent 调用：`assistant` event，`tool_use.name === "Agent"`，`input = {description, prompt, subagent_type}`
+  - Subagent 活动：`user` event，`parent_tool_use_id` 设为 Agent tool 的 id（非 null）
+两个开关（Settings > Subagent Visibility，localStorage 持久化，即时生效）：
+  - 「Show message sent to subagent」默认开：控制 Agent/Task tool_use 块中 input.prompt 的显隐
+  - 「Show subagent activity」默认关：控制 parent_tool_use_id 非空的 user 事件显隐
+codex 处理：Bash tool_use 命令含 "codex" 正则匹配为启发式 codex dispatch，加 cbr-block-subagent-prompt 类，受开关1控制。注释已说明判定方式。
+commit 03beb00
+
 ## 2026-06-03 10:30 [Bug2补丁：原地重连重复渲染]
 - 根因：ClaudeBlockRenderer 原地重连（onclose → setTimeout → _connect()）时，同一 renderer 实例的 _scroll DOM 没被清空，server 重放 cs.history 后 = 旧渲染 + 重放 = 双份内容。Bug2 把 user 事件也加进了 history，让这个重复更明显。
 - 修法：在 _ws.onopen 里，先判断 isReconnect（reconnectAttempts > 0，因为首次连接时该值为 0），若是重连则清空 _scroll.innerHTML + 重置 _liveAssistantBlock / _liveAssistantId / _pendingNonces / _thinking，并插一条 "[Reconnected. Restoring session history…]" 系统块作为视觉分隔。首次连接不受影响（_scroll 本来为空）。

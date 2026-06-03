@@ -4,8 +4,9 @@ commit: 06c41e7 — 加 compositionstart/compositionend + isComposing + keyCode 
 commit: 000687f — server 把 user turn 存 history + client nonce dedup 避免重复渲染
 [QA] Bug3: 滚到底按钮消失 — 新增浮动「滚到最底」按钮
 commit: 000687f — cbr-scroll-to-bottom button + CSS in 1cf2bd1
-[QA] Bug4: tool折叠显示 — 三档折叠(full/header/line) + 设置持久化
-commit: 000687f + 1cf2bd1 + 78d7d4b — fold logic + CSS + settings UI
+[QA] Bug4: tool折叠显示修复 — 工具输出可见 + 折叠三档正常工作 + subagent 开关
+根因：tool_result 从未渲染（_handleUserEvent 只处理 text 类型）+ CSS 无兜底规则
+commit: 9ca1b73 (Task A fold fix) + 03beb00 (Task B subagent toggles)
 [QA] 自续接功能 — claude 退出后自动 --continue 重开 + 3秒倒计时 + 设置开关
 commit: 000687f — TAB_LAUNCHERS.claude shell loop + Settings toggle
 
