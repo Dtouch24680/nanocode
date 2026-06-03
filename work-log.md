@@ -1,5 +1,11 @@
 # Work Log
 
+## 2026-06-03 10:30 [Bug2补丁：原地重连重复渲染]
+- 根因：ClaudeBlockRenderer 原地重连（onclose → setTimeout → _connect()）时，同一 renderer 实例的 _scroll DOM 没被清空，server 重放 cs.history 后 = 旧渲染 + 重放 = 双份内容。Bug2 把 user 事件也加进了 history，让这个重复更明显。
+- 修法：在 _ws.onopen 里，先判断 isReconnect（reconnectAttempts > 0，因为首次连接时该值为 0），若是重连则清空 _scroll.innerHTML + 重置 _liveAssistantBlock / _liveAssistantId / _pendingNonces / _thinking，并插一条 "[Reconnected. Restoring session history…]" 系统块作为视觉分隔。首次连接不受影响（_scroll 本来为空）。
+- 验证：5 个内联 Node.js 单元测试（模拟 onopen 逻辑 + _handleUserEvent 逻辑）全部 pass；npm test 6/6；node --check 语法 OK；grep FAIL/Error run.log → "# fail 0"
+- 产出：commit 60a731a
+
 ## 2026-06-03 09:55 [Bug1-5 + 自续接功能]
 - 操作：实现 5 项 bug fix + 自续接功能
   - Bug1 (IME回车): terminal-view.js 加 compositionstart/compositionend 标志位 + e.isComposing + keyCode 229 守卫，阻止输入法合成期间 Enter 触发发送
