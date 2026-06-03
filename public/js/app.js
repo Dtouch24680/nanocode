@@ -484,6 +484,22 @@ function loadAutoResumeSettings() {
   }
 }
 
+// Live apply on radio change — no Save click needed
+document.querySelectorAll('input[name="tool-fold"]').forEach((radio) => {
+  radio.addEventListener('change', () => {
+    if (radio.checked) {
+      setToolFoldLevel(radio.value)
+      const statusEl = document.getElementById('tool-fold-status')
+      if (statusEl) {
+        statusEl.textContent = 'Saved'
+        statusEl.className = 'settings-status success'
+        setTimeout(() => { statusEl.textContent = '' }, 2500)
+      }
+    }
+  })
+})
+
+// Save button still works as explicit confirmation (already persisted by change handler)
 const toolFoldSaveBtn = document.getElementById('tool-fold-save-btn')
 if (toolFoldSaveBtn) {
   toolFoldSaveBtn.addEventListener('click', () => {
@@ -510,6 +526,34 @@ function loadSubagentVisSettings() {
   if (activityEl) activityEl.checked = getSubagentActivityVisible()
 }
 
+// Live apply on checkbox change — no Save click needed
+const subagentPromptEl = document.getElementById('subagent-prompt-visible')
+if (subagentPromptEl) {
+  subagentPromptEl.addEventListener('change', () => {
+    setSubagentPromptVisible(subagentPromptEl.checked)
+    const statusEl = document.getElementById('subagent-vis-status')
+    if (statusEl) {
+      statusEl.textContent = 'Saved'
+      statusEl.className = 'settings-status success'
+      setTimeout(() => { statusEl.textContent = '' }, 2500)
+    }
+  })
+}
+
+const subagentActivityEl = document.getElementById('subagent-activity-visible')
+if (subagentActivityEl) {
+  subagentActivityEl.addEventListener('change', () => {
+    setSubagentActivityVisible(subagentActivityEl.checked)
+    const statusEl = document.getElementById('subagent-vis-status')
+    if (statusEl) {
+      statusEl.textContent = 'Saved'
+      statusEl.className = 'settings-status success'
+      setTimeout(() => { statusEl.textContent = '' }, 2500)
+    }
+  })
+}
+
+// Save button still works as explicit confirmation (already persisted by change handler)
 const subagentVisSaveBtn = document.getElementById('subagent-vis-save-btn')
 if (subagentVisSaveBtn) {
   subagentVisSaveBtn.addEventListener('click', () => {

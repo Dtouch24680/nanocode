@@ -154,3 +154,105 @@ PASS: Got 1 queued event(s) — message was enqueued while busy
   queued text: Message queued (position 1). Will run after current turn.
 
 === ALL ASSERTIONS PASS ===
+
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
+
+TAP version 13
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.21286
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.481832
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.559316
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.627278
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 0.365836
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 1.446065
+      type: 'test'
+      ...
+    1..6
+ok 1 - store
+  ---
+  duration_ms: 6.913312
+  type: 'suite'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 85.699437
+Main page status: [33m200[39m
+After radio change to full: [1mnull[22m
+After radio change to line (no Save): [1mnull[22m
+subagent-prompt-visible after uncheck (no Save): [1mnull[22m
+subagent-activity-visible after check (no Save): [1mnull[22m
+FAIL: expected cbr_tool_fold_level=full, got [1mnull[22m
+FAIL: expected cbr_tool_fold_level=line, got [1mnull[22m
+FAIL: expected cbr_subagent_prompt_visible=false, got [1mnull[22m
+FAIL: expected cbr_subagent_activity_visible=true, got [1mnull[22m
+Title: Nanocode
+Elements: fold: [33mtrue[39m prompt: [33mtrue[39m activity: [33mtrue[39m
+After radio change to full (no Save): full
+After radio change to line (no Save): line
+cbr_subagent_prompt after uncheck (no Save): false
+cbr_subagent_activity after check (no Save): true
+ALL PASS: change listeners fire setXxx without clicking Save
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+page.goto: Timeout 30000ms exceeded.
+Call log:
+[2m  - navigating to "http://10.18.8.55:3099/", waiting until "networkidle"[22m
+
+    at /tmp/test_persist.mjs:10:14 {
+  name: [32m'TimeoutError'[39m
+}
+
+Node.js v22.22.0
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+page.goto: Timeout 30000ms exceeded.
+Call log:
+[2m  - navigating to "http://10.18.8.55:3099/", waiting until "networkidle"[22m
+
+    at /tmp/test_persist.mjs:10:14 {
+  name: [32m'TimeoutError'[39m
+}
+
+Node.js v22.22.0
+After loadToolFoldSettings with stored=header, checked radio: [1mnull[22m
+After change→line, localStorage cbr_tool_fold: line
+FAIL loadToolFoldSettings restore, got [1mnull[22m
