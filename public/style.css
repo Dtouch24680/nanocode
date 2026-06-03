@@ -2702,6 +2702,13 @@ body.workspace-active .landing-overlay { display: none; }
 
 /* ── Three-level fold: data-fold attribute ─────────────────────── */
 
+/* Default (no attribute): treat as full — prevents invisible body when
+   localStorage is empty or before applyToolFold() runs */
+.cbr-block-tool:not([data-fold]) .cbr-tool-body,
+.cbr-block-tool-result:not([data-fold]) .cbr-tool-result {
+  display: block;
+}
+
 /* full (default) — show everything, chevron points down */
 .cbr-block-tool[data-fold="full"] .cbr-tool-body,
 .cbr-block-tool-result[data-fold="full"] .cbr-tool-result {
@@ -2785,6 +2792,64 @@ body.workspace-active .landing-overlay { display: none; }
 /* Rate limit warning */
 .cbr-rate-limit {
   opacity: 0.8;
+}
+
+/* ── Subagent blocks ────────────────────────────────────────────── */
+
+/* Subagent prompt block (message sent TO a subagent / Agent/Task tool) */
+.cbr-block-subagent-prompt {
+  border-left-color: var(--accent, #a78bfa) !important;
+}
+
+.cbr-subagent-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent, #a78bfa);
+  background: color-mix(in srgb, var(--accent, #a78bfa) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #a78bfa) 30%, transparent);
+  border-radius: var(--radius-sm, 4px);
+  padding: 1px 5px;
+  margin-left: var(--s-2, 8px);
+}
+
+.cbr-subagent-desc {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: var(--s-1) var(--s-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.cbr-subagent-prompt-text {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.78rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Subagent activity block (nested events with parent_tool_use_id) */
+.cbr-block-subagent-activity {
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  opacity: 0.75;
+}
+
+.cbr-subagent-activity-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 2px var(--s-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
 }
 
 /* ── Mobile tweaks ──────────────────────────────────────────────── */

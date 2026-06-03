@@ -43,6 +43,41 @@ function getToolFoldLevel() {
   return TOOL_FOLD_LEVELS.includes(v) ? v : 'full'
 }
 
+// ── Subagent visibility toggles ───────────────────────────────────────────────
+// Two independent booleans (persisted in localStorage):
+//   cbr_subagent_prompt  — show the message/prompt sent TO a subagent (default on)
+//   cbr_subagent_activity — show subagent internal activity (nested events, default off)
+const SUBAGENT_PROMPT_KEY = 'cbr_subagent_prompt'
+const SUBAGENT_ACTIVITY_KEY = 'cbr_subagent_activity'
+
+function getSubagentPromptVisible() {
+  const v = localStorage.getItem(SUBAGENT_PROMPT_KEY)
+  return v === null ? true : v !== 'false'
+}
+
+function setSubagentPromptVisible(val) {
+  localStorage.setItem(SUBAGENT_PROMPT_KEY, val ? 'true' : 'false')
+  // Apply immediately to all existing subagent-prompt blocks
+  document.querySelectorAll('.cbr-block-subagent-prompt').forEach((el) => {
+    el.style.display = val ? '' : 'none'
+  })
+  document.dispatchEvent(new CustomEvent('cbr:subagent-prompt-changed', { detail: { visible: val } }))
+}
+
+function getSubagentActivityVisible() {
+  const v = localStorage.getItem(SUBAGENT_ACTIVITY_KEY)
+  return v === null ? false : v === 'true'
+}
+
+function setSubagentActivityVisible(val) {
+  localStorage.setItem(SUBAGENT_ACTIVITY_KEY, val ? 'true' : 'false')
+  // Apply immediately to all existing subagent-activity blocks
+  document.querySelectorAll('.cbr-block-subagent-activity').forEach((el) => {
+    el.style.display = val ? '' : 'none'
+  })
+  document.dispatchEvent(new CustomEvent('cbr:subagent-activity-changed', { detail: { visible: val } }))
+}
+
 function setToolFoldLevel(level) {
   if (!TOOL_FOLD_LEVELS.includes(level)) return
   localStorage.setItem(TOOL_FOLD_KEY, level)
@@ -388,9 +423,42 @@ export class ClaudeBlockRenderer {
       this._pendingNonces.delete(nonce)
       return
     }
-    // No nonce match → this is a history replay on reconnect. Render the block.
-    const text = event.message?.content?.find?.((c) => c.type === 'text')?.text
-    if (text) this._appendUserBlock(text)
+
+    const content = event.message?.content
+    if (!Array.isArray(content)) return
+
+    // Subagent activity: events with parent_tool_use_id are messages TO a subagent
+    // or results FROM a subagent. Visibility controlled by the subagent-activity toggle.
+    const parentToolUseId = event.parent_tool_use_id
+    if (parentToolUseId) {
+      if (!getSubagentActivityVisible()) return
+      // Render subagent prompt (text) or tool_result inside the subagent context
+      for (const c of content) {
+        if (c.type === 'text' && c.text?.trim()) {
+          const article = this._makeBlock('cbr-block-subagent-activity')
+          article.innerHTML =
+            `<div class="cbr-subagent-activity-label">subagent input</div>` +
+            `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(c.text.slice(0, 2000))}${c.text.length > 2000 ? '\n…' : ''}</pre>`
+          this._scroll.appendChild(article)
+          this._scrollBottom()
+        } else if (c.type === 'tool_result') {
+          this._renderToolResultPart(c)
+        }
+      }
+      return
+    }
+
+    // Normal user event (no parent): render text turns and tool results.
+    for (const c of content) {
+      if (c.type === 'text' && c.text?.trim()) {
+        // History-replayed user turn (no nonce match above) — show user prompt
+        this._appendUserBlock(c.text)
+      } else if (c.type === 'tool_result') {
+        // Tool output arrives as tool_result in the user turn following each tool_use.
+        // This is the content that was previously invisible ("全是一条线" bug).
+        this._renderToolResultPart(c)
+      }
+    }
   }
 
   _handleSystem(event) {
@@ -517,26 +585,68 @@ export class ClaudeBlockRenderer {
 
   _renderToolUsePart(part) {
     const toolName = escHtml(part.name || 'tool')
+
+    // ── Subagent prompt detection ─────────────────────────────────────────────
+    // The Agent tool (and TaskCreate in some versions) represents dispatching a
+    // subagent. Its input.prompt is the message we send to the subagent.
+    // We also detect codex dispatches heuristically: a Bash tool_use whose command
+    // contains "codex" or dispatches via tmux is treated as a subagent invocation
+    // for toggle purposes. This is best-effort; a plain Bash tool running an
+    // unrelated tmux command would not normally contain "codex" in its context.
+    const isSubagentTool = part.name === 'Agent' || part.name === 'Task' || part.name === 'TaskCreate'
+    const isBashCodexDispatch = part.name === 'Bash' && (
+      (typeof part.input?.command === 'string' && /codex|dispatch.codex/i.test(part.input.command))
+    )
+    const isSubagentPrompt = isSubagentTool || isBashCodexDispatch
+
     let inputHtml = ''
     if (part.input != null) {
-      try {
-        const pretty = JSON.stringify(part.input, null, 2)
-        inputHtml = renderCode(pretty, 'json')
-      } catch {
-        inputHtml = `<pre class="cbr-pre"><code>${escHtml(String(part.input))}</code></pre>`
+      if (isSubagentTool) {
+        // For subagent tools, show prompt and description in a more readable way
+        const prompt = part.input.prompt || ''
+        const description = part.input.description || ''
+        if (description) {
+          inputHtml += `<div class="cbr-subagent-desc">${escHtml(description)}</div>`
+        }
+        if (prompt) {
+          inputHtml += `<pre class="cbr-pre cbr-subagent-prompt-text">${escHtml(prompt.slice(0, 3000))}${prompt.length > 3000 ? '\n…' : ''}</pre>`
+        }
+        if (!description && !prompt) {
+          try {
+            inputHtml = renderCode(JSON.stringify(part.input, null, 2), 'json')
+          } catch {
+            inputHtml = `<pre class="cbr-pre"><code>${escHtml(String(part.input))}</code></pre>`
+          }
+        }
+      } else {
+        try {
+          const pretty = JSON.stringify(part.input, null, 2)
+          inputHtml = renderCode(pretty, 'json')
+        } catch {
+          inputHtml = `<pre class="cbr-pre"><code>${escHtml(String(part.input))}</code></pre>`
+        }
       }
     }
-    const article = this._makeBlock('cbr-block-tool')
+
+    const extraClass = isSubagentPrompt ? ' cbr-block-subagent-prompt' : ''
+    const article = this._makeBlock('cbr-block-tool' + extraClass)
     article.innerHTML =
       `<div class="cbr-tool-card">` +
       `<div class="cbr-tool-header">` +
       `<span class="cbr-tool-name">${toolName}</span>` +
+      (isSubagentTool ? `<span class="cbr-subagent-badge">subagent</span>` : '') +
       `<button class="cbr-tool-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
       `<div class="cbr-tool-body">${inputHtml}</div>` +
       `</div>`
+
+    // Apply subagent-prompt visibility
+    if (isSubagentPrompt && !getSubagentPromptVisible()) {
+      article.style.display = 'none'
+    }
+
     // Clicking the header (or fold button) manually toggles between full↔header
     const header = article.querySelector('.cbr-tool-header')
     if (header) {
@@ -606,5 +716,9 @@ export class ClaudeBlockRenderer {
   }
 }
 
-// Export fold helpers so settings panel (app.js) can wire them up
-export { getToolFoldLevel, setToolFoldLevel, TOOL_FOLD_LEVELS }
+// Export fold helpers and subagent visibility helpers so settings panel (app.js) can wire them up
+export {
+  getToolFoldLevel, setToolFoldLevel, TOOL_FOLD_LEVELS,
+  getSubagentPromptVisible, setSubagentPromptVisible,
+  getSubagentActivityVisible, setSubagentActivityVisible,
+}
