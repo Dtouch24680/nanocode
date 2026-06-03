@@ -477,6 +477,11 @@ export class ClaudeBlockRenderer {
   }
 
   _handleAssistant(event) {
+    // Gate: subagent's own assistant output carries parent_tool_use_id.
+    // If the visibility toggle is off, skip rendering entirely so it does not
+    // pollute the main agent's block stream or the live-block state.
+    if (event.parent_tool_use_id && !getSubagentActivityVisible()) return
+
     // Finalize any in-progress live block
     this._liveAssistantBlock = null
     this._liveAssistantId = null
@@ -490,6 +495,11 @@ export class ClaudeBlockRenderer {
   }
 
   _handlePartialMessage(event) {
+    // Gate: subagent's own partial_message output carries parent_tool_use_id.
+    // If the visibility toggle is off, skip so the live-block state is not
+    // hijacked by subagent streaming text.
+    if (event.parent_tool_use_id && !getSubagentActivityVisible()) return
+
     // partial_message carries a partial assistant message object
     const msg = event.message
     if (!msg || !Array.isArray(msg.content)) return
