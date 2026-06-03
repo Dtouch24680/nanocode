@@ -3,7 +3,7 @@
 import { Router } from 'express'
 import { execFile, spawn } from 'node:child_process'
 import { platform } from 'node:os'
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import { resolve, relative, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -510,6 +510,24 @@ export function createTerminalRoutes(store) {
   // cwd is read directly from the jsonl file (any row that has a 'cwd' field).
   // projectName is the basename of the real cwd (no ambiguous '-' replacement).
   // Fallback: if no cwd field found in jsonl, fall back to dir-name heuristic and log.
+  //
+  // Perf: cache results for 10 seconds to avoid re-reading all jsonl files on
+  // every drawer open (scanning 38+ files totalling 100+ MB takes ~300ms).
+  let _recentAgentsCache = null
+  let _recentAgentsCacheAt = 0
+  const RECENT_AGENTS_CACHE_MS = 10_000  // 10 seconds
+
+  /** Relative time string from mtime ms and a reference 'now'. */
+  function _relTime(mtimeMs, nowMs) {
+    const diff = nowMs - mtimeMs
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return '刚刚'
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    const days = Math.floor(hrs / 24)
+    return `${days}d ago`
+  }
 
   router.get('/api/recent-agents', (req, res) => {
     const claudeProjectsRoot = join(home, '.claude', 'projects')
@@ -518,15 +536,37 @@ export function createTerminalRoutes(store) {
     const now = Date.now()
     const H24 = 24 * 60 * 60 * 1000
 
+    // Return cached result if fresh
+    if (_recentAgentsCache && now - _recentAgentsCacheAt < RECENT_AGENTS_CACHE_MS) {
+      // Patch relTime fields with the current time before returning
+      const patched = _recentAgentsCache.map(e => ({
+        ...e,
+        relTime: _relTime(e._mtimeMs, now),
+        active: now - e._mtimeMs <= H24,
+      }))
+      return res.json(patched)
+    }
+
     /**
      * Read the real cwd from any jsonl row that carries a 'cwd' field.
-     * Reads only the first few KB to stay fast. Returns null if not found.
+     * Perf: only reads the first 8 KB (cwd is always in an early row) instead
+     * of loading the entire file (which can be 22 MB for long sessions).
+     * Returns null if not found in the first 8 KB.
      */
     function cwdFromJsonl(jsonlPath) {
       try {
-        const content = readFileSync(jsonlPath, 'utf-8')
-        for (const line of content.split('\n')) {
-          if (!line.trim()) continue
+        const MAX_BYTES = 8192
+        const fd = openSync(jsonlPath, 'r')
+        const buf = Buffer.allocUnsafe(MAX_BYTES)
+        let bytesRead = 0
+        try { bytesRead = readSync(fd, buf, 0, MAX_BYTES, 0) } finally { closeSync(fd) }
+        const chunk = buf.slice(0, bytesRead).toString('utf-8')
+        // Parse complete lines only (last line may be truncated)
+        const lines = chunk.split('\n')
+        // Drop the last element — it may be a partial line
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim()
+          if (!line) continue
           let row
           try { row = JSON.parse(line) } catch { continue }
           if (typeof row.cwd === 'string' && row.cwd) return row.cwd
@@ -545,12 +585,24 @@ export function createTerminalRoutes(store) {
       return dirName.replace(/^-/, '/').replace(/-/g, '/')
     }
 
-    /** Extract the first user prompt text from a jsonl path (≤120 chars). */
+    /**
+     * Extract the first user prompt text from a jsonl path (≤120 chars).
+     * Perf: only reads the first 16 KB — enough to find the first user row
+     * without loading entire multi-MB session files.
+     */
     function extractSummary(jsonlPath) {
       try {
-        const content = readFileSync(jsonlPath, 'utf-8')
-        for (const line of content.split('\n')) {
-          if (!line.trim()) continue
+        const MAX_BYTES = 16384
+        const fd = openSync(jsonlPath, 'r')
+        const buf = Buffer.allocUnsafe(MAX_BYTES)
+        let bytesRead = 0
+        try { bytesRead = readSync(fd, buf, 0, MAX_BYTES, 0) } finally { closeSync(fd) }
+        const chunk = buf.slice(0, bytesRead).toString('utf-8')
+        const lines = chunk.split('\n')
+        // Drop last element — may be a partial line
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim()
+          if (!line) continue
           let row
           try { row = JSON.parse(line) } catch { continue }
           if (row.type === 'user' && row.message?.content) {
@@ -570,17 +622,7 @@ export function createTerminalRoutes(store) {
       return '(无摘要)'
     }
 
-    /** Relative time string from mtime ms. */
-    function relTime(mtimeMs) {
-      const diff = now - mtimeMs
-      const mins = Math.floor(diff / 60000)
-      if (mins < 1) return '刚刚'
-      if (mins < 60) return `${mins}m ago`
-      const hrs = Math.floor(mins / 60)
-      if (hrs < 24) return `${hrs}h ago`
-      const days = Math.floor(hrs / 24)
-      return `${days}d ago`
-    }
+    // (relTime computed via module-level _relTime helper defined above the handler)
 
     // Collect all jsonl entries across all project dirs
     const allEntries = []
@@ -627,11 +669,18 @@ export function createTerminalRoutes(store) {
         cwd,
         sessionId: e.sessionId,
         mtime: new Date(e.mtimeMs).toISOString(),
-        relTime: relTime(e.mtimeMs),
+        relTime: _relTime(e.mtimeMs, now),
         summary: extractSummary(e.fullPath),
         active: now - e.mtimeMs <= H24,
+        // Internal field for cache recompute — stripped before sending is fine
+        // (clients just ignore unknown fields)
+        _mtimeMs: e.mtimeMs,
       }
     })
+
+    // Store in cache so subsequent requests within 10s skip file I/O
+    _recentAgentsCache = result
+    _recentAgentsCacheAt = now
 
     res.json(result)
   })

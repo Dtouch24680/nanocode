@@ -366,6 +366,14 @@ export class ClaudeBlockRenderer {
     // Thinking state: true when claude is processing a turn
     this._thinking = false
 
+    // Replay mode flag: true while _fetchAndReplayHistory is running.
+    // Used to suppress per-block rAF scrolls and TTS dispatches during bulk replay.
+    this._replayMode = false
+
+    // Streaming render throttle: rAF handle for pending live-block markdown update.
+    // Prevents running marked.parse() on every WS chunk (can be 10s/sec).
+    this._streamRafPending = false
+
     this._connect()
   }
 
@@ -463,13 +471,27 @@ export class ClaudeBlockRenderer {
     // Show a subtle separator so the user knows this is restored history
     this._addSystemBlock(`[Restored ${events.length} event(s) from session history]`)
 
-    for (const event of events) {
-      // Track uuid for dedup against later WS replay (must happen BEFORE render
-      // so that the WS replay path sees it; pass opts.fromReplay=true so the
-      // _handleEvent dedup guard doesn't block the initial render itself).
-      if (event.uuid) this._replayedUuids.add(event.uuid)
-      this._handleEvent(event, { fromReplay: true })
+    // ── Perf: batch replay mode ──────────────────────────────────────────────
+    // During replay, suppress per-block _scrollBottom() rAF callbacks and
+    // nanocode:terminal-output dispatches (TTS does not need history events).
+    // We do a single scroll-to-bottom at the end instead of N rAF + layout hits.
+    this._replayMode = true
+    try {
+      for (const event of events) {
+        // Track uuid for dedup against later WS replay (must happen BEFORE render
+        // so that the WS replay path sees it; pass opts.fromReplay=true so the
+        // _handleEvent dedup guard doesn't block the initial render itself).
+        if (event.uuid) this._replayedUuids.add(event.uuid)
+        this._handleEvent(event, { fromReplay: true })
+      }
+    } finally {
+      this._replayMode = false
     }
+    // Single scroll-to-bottom after all blocks are in DOM
+    requestAnimationFrame(() => {
+      this._scroll.scrollTop = this._scroll.scrollHeight
+      this._updateScrollBtn()
+    })
   }
 
   // ── WS connection ────────────────────────────────────────────────────────────
@@ -612,10 +634,13 @@ export class ClaudeBlockRenderer {
         break
     }
 
-    // Dispatch for TTS and other listeners
-    document.dispatchEvent(new CustomEvent('nanocode:terminal-output', {
-      detail: JSON.stringify(event),
-    }))
+    // Dispatch for TTS and other listeners (skip during replay — history events
+    // should not trigger TTS playback or other real-time side-effects)
+    if (!this._replayMode) {
+      document.dispatchEvent(new CustomEvent('nanocode:terminal-output', {
+        detail: JSON.stringify(event),
+      }))
+    }
   }
 
   _handleUserEvent(event) {
@@ -867,14 +892,27 @@ export class ClaudeBlockRenderer {
         this._liveAssistantBlock = article
         this._scrollBottom()
       }
-      let html
-      try {
-        html = renderMarkdown(text)
-      } catch {
-        html = `<p>${escHtml(text)}</p>`
+      // Perf: throttle markdown re-render to one rAF per frame instead of
+      // running marked.parse() + innerHTML on every incoming WS chunk.
+      // Store the latest text; the pending rAF will pick it up when it fires.
+      this._streamPendingText = text
+      if (!this._streamRafPending) {
+        this._streamRafPending = true
+        requestAnimationFrame(() => {
+          this._streamRafPending = false
+          const latestText = this._streamPendingText
+          if (!latestText || !this._liveAssistantBlock) return
+          let html
+          try { html = renderMarkdown(latestText) } catch { html = `<p>${escHtml(latestText)}</p>` }
+          this._liveAssistantBlock.innerHTML = `<div class="cbr-text">${html}</div>`
+          // Scroll only if user is near bottom (avoid fighting manual scroll)
+          const s = this._scroll
+          if (s.scrollHeight - s.scrollTop - s.clientHeight < 120) {
+            s.scrollTop = s.scrollHeight
+          }
+          this._updateScrollBtn()
+        })
       }
-      this._liveAssistantBlock.innerHTML = `<div class="cbr-text">${html}</div>`
-      this._scrollBottom()
     }
   }
 
@@ -1173,6 +1211,8 @@ export class ClaudeBlockRenderer {
   }
 
   _scrollBottom() {
+    // During replay, skip per-block rAF scroll — _fetchAndReplayHistory does one at the end
+    if (this._replayMode) return
     requestAnimationFrame(() => {
       this._scroll.scrollTop = this._scroll.scrollHeight
       // After programmatic scroll, re-evaluate button visibility
