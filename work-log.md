@@ -1,0 +1,152 @@
+# Work Log
+
+## 2026-06-03 09:55 [Bug1-5 + 自续接功能]
+- 操作：实现 5 项 bug fix + 自续接功能
+  - Bug1 (IME回车): terminal-view.js 加 compositionstart/compositionend 标志位 + e.isComposing + keyCode 229 守卫，阻止输入法合成期间 Enter 触发发送
+  - Bug2 (消息不可见): routes.js 在收到 claude-input 时存 synthetic user event 到 cs.history；client 端 sendInputWithEcho 带 nonce，_handleUserEvent 通过 nonce dedup 避免双渲染，reconnect 回放时无 nonce 则正常渲染
+  - Bug3 (滚到底按钮): claude-block-renderer.js 在 container 内创建 .cbr-scroll-to-bottom 浮动按钮，scroll 事件更新可见性；style.css 加 transition + absolute positioning
+  - Bug4 (tool折叠): claude-block-renderer.js 新增 getToolFoldLevel/setToolFoldLevel/applyToolFold 模块函数，_renderToolUsePart 加折叠按钮+点击 header 切换单块；style.css data-fold="full|header|line" CSS 属性控制；index.html + app.js 加 Settings UI
+  - 自续接: routes.js TAB_LAUNCHERS.claude 改为 shell 循环（读 store.getSetting('claude_autoresume')），支持 3 秒倒计时 + 任意键退出到 bash；Settings UI 切换开关存 localStorage + server
+- 产出：commits 06c41e7, 000687f, 1cf2bd1, 78d7d4b
+- 测试：npm test 6/6 pass, grep -i FAIL/Error run.log → "# fail 0"，PORT=3099 server 启动 200 ✓
+- 下一步：等主人 QA 验收
+
+## 2026-03-19 23:55 [Agent 命名功能]
+- 操作：实现 session 自定义命名功能
+  - store.js: 新增 sessionNames 数据层 (get/set/getAll)
+  - routes.js: 新增 GET /session-names 和 PUT /sessions/:id/name API
+  - api.js: 新增 fetchSessionNames / updateSessionName 前端 API
+  - terminal-view.js: session tab 显示自定义名称，双击重命名
+  - style.css: 新增 .session-rename-input 样式
+  - store.test.js: 新增 2 个测试用例
+- 结果：✓ 全部 10 个测试通过
+- 产出：commit d84bf8a on zhining/agent-naming-and-ux
+- 下一步：继续下一个 TODO 任务
+
+## 2026-03-20 00:05 [Claude 界面自动滚动到最新]
+- 操作：terminal-pane.js 新增滚动跟踪 + 浮动「滚到底部」按钮
+- 结果：✓ 通过
+- 产出：commit dfda767
+
+## 2026-03-20 00:20 [文本复制功能]
+- 操作：Ctrl+C 选中时复制、无选中时发送 ^C；移动端添加 Copy 按钮
+- 结果：✓ 通过
+- 产出：commit be31415
+- push 到 zhining/agent-naming-and-ux
+
+## 2026-03-20 00:30 [手机端滑动体验优化]
+- 操作：重写 touch scroll 为带惯性的平滑滚动（velocity tracking + friction decay）
+- 结果：✓ 通过
+- 产出：commit 8f714ae
+
+## 2026-03-20 00:40 [全面探索并完善产品体验]
+- 操作：通读全部代码，修复 XSS 漏洞（landing.js innerHTML 注入），清理废弃代码
+- 结果：✓ 通过，4 条改进建议写入 proposals.md
+- 产出：commit 8856d89
+- push 到 zhining/agent-naming-and-ux，可酌情 PR
+
+## 2026-03-20 01:30 [验收官反馈修复]
+- 操作：修复验收官提出的 4 个问题
+  - CSS 变量修复：landing-new-form 的 --bg-2/--border/--fg-1 等替换为 glass design system 变量
+  - --fg-3 对比度提升：0.4 → 0.55 (WCAG AA 合规)
+  - WebSocket 连接状态三态：disconnected → connecting(黄色脉冲) → connected(绿色)
+  - Claude 模式图标：锁🔒改为星★，语义更匹配 AI 助手
+  - 新增 3 条改进建议写入 proposals.md（session 内存泄漏、原子写入、history.jsonl 优化）
+- 结果：✓ 全部 10 个测试通过
+- 产出：commit c999db5
+- push 到 zhining/agent-naming-and-ux
+- 旧 3001 进程已停止，新代码在 PORT=3001 重启完毕
+
+## 2026-03-20 10:15 [自动滚动 bug 修复]
+- 操作：修复用户反馈的"agent 说话时页面跳到最上边"的 bug
+  - 根因：term.onScroll 在 term.write() 期间同步触发，在 scrollToBottom() 执行前就将 _userScrolledUp 设为 true，导致自动滚动被跳过
+  - 修复：移除 term.onScroll handler，仅保留 DOM viewport scroll listener（在 scroll position 实际变化后触发）
+  - 额外：用 requestAnimationFrame 包裹 viewport listener 挂载，确保 xterm 渲染完成
+- 结果：✓ 全部 10 个测试通过
+- 产出：commit ca65f96
+- push 到 zhining/agent-naming-and-ux，3001 已重启新代码
+
+## 2026-03-20 10:45 [7 项功能批次实现]
+- 操作：一次性实现 proposals.md 中 7 项功能
+  1. Favicon + PWA manifest：SVG favicon (>_) + manifest.json
+  2. WebSocket 心跳超时：per-client ping 追踪，30s 无 ping 断开
+  3. Project 搜索：sidebar 4+ 项目时显示搜索框，按名称/SSH host 过滤
+  4. 终端字体大小：Settings 页 range slider (10-22px)，实时应用到终端
+  5. Session GC：PTY 退出 + 无 client 30 分钟后自动清理
+  6. 原子写入：store.js save() 先写 .tmp 再 rename
+  7. 空 sidebar 引导："No projects yet. Click + to add one."
+- 结果：✓ 全部 10 个测试通过
+- 产出：commit 6310ab4
+- push 到 zhining/agent-naming-and-ux，3001 已重启新代码
+
+
+## 2026-03-21 [TTS 按钮不可见修复]
+- 操作：修复 TTS 按钮在 mac 和安卓都看不到的问题
+  - 根因：CSS 变量 --surface-2/--surface-3 未在 :root 定义，tts-btn 和 mic-btn 背景透明
+  - 根因：SVG fill="none" + 非激活时 wave 隐藏，只剩极细描边 polygon 几乎不可见
+  - 修复：:root 添加 --surface-2: rgba(255,255,255,0.08) 和 --surface-3: rgba(255,255,255,0.12)
+  - 修复：speaker polygon 添加 fill="currentColor"
+- 结果：✓ 10/10 测试通过，热更新部署 3001 正常
+- 产出：commit 62c248c
+- 下一步：用户确认移动端和桌面端可见
+
+## 2026-03-21 [TTS 听不到声音修复]
+- 操作：修复 TTS 音频无法播放问题
+  - AudioContext unlock：首次用户交互时创建静音 buffer 解锁浏览器 autoplay 策略
+  - Settings 新增 "Test TTS" 按钮：用户手动触发测试语音播放
+  - play() 错误日志：不再静默吞掉，console.warn('[TTS]') 方便调试
+- 结果：✓ 10/10 测试通过，热更新部署 3001 正常
+- 产出：commit 待提交
+
+## 2026-03-21 [TTS 偶尔蹦日语修复]
+- 操作：server/index.js getTtsConfig() text_lang 默认从 'auto' 改为 'en'；顺带修复 handleTts 末尾多余 `})` 语法错误
+- 结果：✓ TTS 200 OK，热更新部署 3001 成功
+- 产出：commit d45681b
+- 下一步：等验收官确认
+
+## 2026-03-22 [重播按钮修复]
+- 操作：删除 Test TTS 中 setLastTtsText(testText)；replay 按钮 tooltip 改为 "Replay last message"
+- 结果：✓ 热更新 3001 成功，两项 curl 验证通过
+- 产出：commit 9137eca
+- 下一步：等验收官确认
+
+## 2026-03-22 [TTS 音色优化 NanamiNeural]
+- 操作：edge-tts ja-JP-NanamiNeural 生成参考音频 → ffmpeg 转 WAV → 替换 GPT-SoVITS ref_audio → /api/tts/voice 持久化
+- 结果：✓ POST /api/tts → 200, 29KB OGG Vorbis，新甜美猫娘声工作正常
+- 产出：/storage/home/zhiningjiao/code/GPT-SoVITS/ref_audio.wav（已替换），旧版备份为 ref_audio_backup_xiaoy.wav
+- 下一步：等主人和验收官试听确认音色效果
+
+## 2026-03-22 [重播按钮读所有历史修复]
+- 操作：replay handler 加 stopTts() 先清空队列，再 push ttsLastText
+- 结果：✓ stopTts() 出现 3 次，3001 已服务最新静态文件
+- 产出：commit 524447c
+- 下一步：等验收官确认
+
+## 2026-03-22 [TTS 重复播报修复]
+- 操作：sessions.js 始终发 history 消息 + stripAnsi 补全 + enqueueTts 队列内去重
+- 结果：✓ 3001 热更新成功，served JS 验证 2 项通过
+- 产出：commit 784e8fd
+- 下一步：等验收官确认
+
+## 2026-03-22 [QA 信号监听服务]
+- 操作：server/qa-watcher.js（fs.watch）+ /ws/notify WS endpoint + 前端 toast
+- 结果：✓ 测试写入 qa-signal.json → 服务端检测到 → tmux notified reviewer: nanocode QA watcher test
+- 产出：commit 63632f7
+- 下一步：等验收官确认
+
+## 2026-03-22 [done 信号 + activity-feed]
+- 操作：qa-watcher.js 扩展 done-signal 监听 + evidence.md 聚合；app.js 扩展 done_notify/activity WS 处理
+- 结果：✓ done-signal 检测、agent-status 追加、evidence 聚合均验证通过
+- 产出：commit afa2d6b
+- 下一步：等验收官确认
+
+## 2026-03-22 [fs.watchFile CephFS 修复]
+- 操作：qa-watcher.js fs.watch → fs.watchFile 2s 轮询，覆盖 qa/done/evidence 6个文件
+- 结果：✓ QA signal 轮询触发验证通过
+- 产出：commit b613ff7
+- 下一步：等验收官确认
+
+## 2026-03-23 [watchFile persistent:true 修复]
+- 操作：persistent: false → true，防止 Node 事件循环退出导致 callback 不触发
+- 结果：✓ echo qa-signal → sleep 5s → [watcher] QA signal: nanocode persistent:true test
+- 产出：commit aefcd8d
