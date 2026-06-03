@@ -286,6 +286,7 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 .connection-status.connected {
   color: var(--success);
@@ -989,6 +990,8 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   color: var(--text);
   background: transparent;
   white-space: pre;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .preview-md {
@@ -1035,6 +1038,10 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 .preview-md table {
   border-collapse: collapse;
   margin: 0 0 var(--s-3);
+  /* Allow narrow containers to scroll tables horizontally instead of clipping */
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .preview-md th, .preview-md td {
   border: 1px solid var(--border);
@@ -2287,7 +2294,7 @@ body.workspace-active .landing-overlay { display: none; }
 .agent-status-dot.stopped { background: #f44336; }
 .agent-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .agent-name { font-size: 13px; color: var(--fg, #fff); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent-meta { display: flex; align-items: center; gap: 4px; }
+.agent-meta { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .agent-type-badge {
   font-size: 10px;
   font-weight: 600;
@@ -2300,7 +2307,7 @@ body.workspace-active .landing-overlay { display: none; }
 .agent-type-badge.codex  { background: rgba(99,179,237,0.15); color: #63b3ed; }
 .agent-type-badge.cursor { background: rgba(167,139,250,0.15); color: #a78bfa; }
 .agent-type-badge.other  { background: rgba(255,255,255,0.06); color: var(--fg-3, rgba(255,255,255,0.4)); }
-.agent-tmux-label { font-size: 10px; color: var(--fg-3, rgba(255,255,255,0.4)); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.agent-tmux-label { font-size: 10px; color: var(--fg-3, rgba(255,255,255,0.4)); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .agent-actions { display: flex; gap: 2px; }
 .agent-add-form {
   padding: 12px;
@@ -2551,7 +2558,7 @@ body.workspace-active .landing-overlay { display: none; }
 }
 .cbr-text strong { font-weight: 600; color: var(--text); }
 .cbr-text em     { color: var(--text-secondary); }
-.cbr-text a      { color: var(--primary); text-decoration: underline; text-decoration-style: dotted; }
+.cbr-text a      { color: var(--primary); text-decoration: underline; text-decoration-style: dotted; overflow-wrap: anywhere; word-break: break-all; }
 .cbr-text hr     { border: none; border-top: 1px solid var(--border); margin: 0.6em 0; }
 
 /* Heading utility (from renderInlineMarkdown) */
@@ -2586,6 +2593,11 @@ body.workspace-active .landing-overlay { display: none; }
   color: var(--text-tertiary);
   text-transform: lowercase;
   letter-spacing: 0.04em;
+  /* Prevent long language labels (e.g. file paths) from pushing Copy button off-screen */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cbr-copy-btn {
@@ -2701,6 +2713,8 @@ body.workspace-active .landing-overlay { display: none; }
   font-size: 0.8rem;
   color: var(--text-tertiary);
   font-style: italic;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 /* ── Prompt (user input echo) ───────────────────────────────────── */
@@ -2718,6 +2732,8 @@ body.workspace-active .landing-overlay { display: none; }
   font-weight: 500;
   user-select: text;
   -webkit-user-select: text;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 /* User-sent prompt block (echoed immediately on send) */
@@ -2734,6 +2750,8 @@ body.workspace-active .landing-overlay { display: none; }
   font-family: var(--font-mono);
   font-size: var(--text-mono);
   opacity: 0.8;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 /* ── Tool use cards ─────────────────────────────────────────────── */
@@ -2763,6 +2781,11 @@ body.workspace-active .landing-overlay { display: none; }
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--primary);
+  /* Prevent very long tool names (e.g. mcp__ prefixed names) from breaking flex layout */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cbr-tool-body {

@@ -1,0 +1,57 @@
+
+> nanocode@1.2.4 test
+> node --test server/tests/*.test.js
+
+TAP version 13
+# Subtest: store
+    # Subtest: creates and fetches projects
+    ok 1 - creates and fetches projects
+      ---
+      duration_ms: 2.566799
+      type: 'test'
+      ...
+    # Subtest: lists projects in creation order
+    ok 2 - lists projects in creation order
+      ---
+      duration_ms: 0.555056
+      type: 'test'
+      ...
+    # Subtest: upserts settings and returns the full settings map
+    ok 3 - upserts settings and returns the full settings map
+      ---
+      duration_ms: 0.560336
+      type: 'test'
+      ...
+    # Subtest: removes a project cleanly
+    ok 4 - removes a project cleanly
+      ---
+      duration_ms: 0.621849
+      type: 'test'
+      ...
+    # Subtest: creates a remote project with SSH fields
+    ok 5 - creates a remote project with SSH fields
+      ---
+      duration_ms: 0.358027
+      type: 'test'
+      ...
+    # Subtest: creates a local project with null SSH fields
+    ok 6 - creates a local project with null SSH fields
+      ---
+      duration_ms: 0.303924
+      type: 'test'
+      ...
+    1..6
+ok 1 - store
+  ---
+  duration_ms: 7.457287
+  type: 'suite'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 88.067531
