@@ -819,6 +819,9 @@ export class ClaudeBlockRenderer {
         // ignore
       } else if (msg.type === 'exit') {
         this._exited = true
+        // N13 fix: clear thinking state on session exit so the client input bar
+        // unlocks and any client-side _pendingQueue can flush to the new session.
+        this._setThinking(false)
         this._addSystemBlock(`[Session ended (exit ${msg.exitCode ?? '?'}). Send a message to start a new session.]`)
       } else if (msg.type === 'error') {
         this._addSystemBlock('[Error: ' + (msg.error || 'unknown') + ']')

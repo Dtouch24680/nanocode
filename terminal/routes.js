@@ -866,6 +866,50 @@ export function createTerminalRoutes(store) {
   })
 
   /**
+   * POST /api/projects/:id/tabs/:tabId/reset
+   * Emergency reset: clears the busy flag, drains the queue, and optionally
+   * generates a fresh session UUID. Use when a session is permanently stuck
+   * (e.g. after N13 — session lock permanently held by an orphaned process).
+   */
+  router.post('/api/projects/:id/tabs/:tabId/reset', (req, res) => {
+    const sessionKey = `${req.params.id}:claude:${req.params.tabId}`
+    const cs = claudeSessions.get(sessionKey)
+    if (!cs) return res.status(404).json({ error: 'no claude session' })
+
+    // Kill any running process before resetting
+    if (cs.currentProc) {
+      try { cs.currentProc.kill('SIGKILL') } catch {}
+      cs.currentProc = null
+    }
+
+    const discarded = (cs.queue || []).length
+    cs.busy = false
+    cs.queue = []
+    cs._conflictRetries = 0
+
+    // Generate new session UUID so the next turn starts fresh
+    const oldSessionId = cs.claudeSessionId
+    const newSessionId = randomUUID()
+    cs.claudeSessionId = newSessionId
+    cs.turnCount = 0
+    if (store.updateTabMetadata) {
+      store.updateTabMetadata(req.params.id, req.params.tabId, { claudeSessionId: newSessionId })
+    }
+
+    // Broadcast a result event so the client's thinking-state UI resets
+    const doneEvent = { type: 'result', subtype: 'success' }
+    claudeBroadcast(cs, doneEvent)
+    const infoEvent = {
+      type: 'system', subtype: 'info',
+      text: `Session reset. ${discarded} queued message${discarded !== 1 ? 's' : ''} discarded. New session started.`,
+    }
+    claudeBroadcast(cs, infoEvent)
+
+    console.log(`[claude:reset] ${sessionKey}: busy cleared, ${discarded} queued msgs discarded, session ${oldSessionId} → ${newSessionId}`)
+    res.json({ ok: true, discarded, oldSessionId, newSessionId })
+  })
+
+  /**
    * Build a child environment for a spawned claude subprocess.
    *
    * We strip session-identity env vars that Claude Code sets on itself so that
@@ -1022,14 +1066,26 @@ export function createTerminalRoutes(store) {
           cs.turnCount--  // undo so the same sessionArg is produced next time
           console.warn(`[claude:session-conflict] ${sessionKey}: retry #${attempt} in 1s`)
           setTimeout(() => {
-            if ((cs._conflictRetries || 0) === attempt) cs._conflictRetries = 0
+            // Note: do NOT reset _conflictRetries to 0 here — the guard was
+            // accidentally preventing the counter from accumulating past 1.
+            // The counter is only reset after exhausting all retries (below) or
+            // after a successful turn completes.
             runClaudeTurn(cs, userText, sessionKey, cwd)
           }, 1000)
           return  // skip result broadcast and queue drain — retry handles this
         }
-        // Exhausted retries: fall through to normal error handling so the user
-        // sees the failure rather than being silently stuck.
+        // Exhausted retries: the session lock is permanently held (orphaned process).
+        // Generate a new session UUID so the next turn starts fresh instead of
+        // repeatedly hammering the locked session. This recovers N13.
         cs._conflictRetries = 0
+        const newSessionId = randomUUID()
+        console.warn(`[claude:session-conflict] ${sessionKey}: exhausted retries, abandoning locked session ${cs.claudeSessionId} → new ${newSessionId}`)
+        cs.claudeSessionId = newSessionId
+        cs.turnCount = 0  // reset so next turn uses --session-id with the new UUID
+        if (store.updateTabMetadata) {
+          const [projectId, , tabId] = sessionKey.split(':')
+          store.updateTabMetadata(projectId, tabId, { claudeSessionId: newSessionId })
+        }
       }
 
       // Broadcast a synthetic 'result' event so the frontend knows the turn ended

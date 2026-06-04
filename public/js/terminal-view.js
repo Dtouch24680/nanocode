@@ -308,6 +308,54 @@ function setupChatInput() {
   sendBtn.parentNode.insertBefore(stopBtn, sendBtn)
 
 
+  // ── Session reset button (N13 recovery) ──────────────────────────────────
+  // Shows alongside Stop btn when thinking state has been stuck. Calls the
+  // /reset API to clear cs.busy + cs.queue + generate a new session UUID.
+  const resetBtn = document.createElement('button')
+  resetBtn.type = 'button'
+  resetBtn.id = 'claude-reset-btn'
+  resetBtn.className = 'claude-reset-btn'
+  resetBtn.setAttribute('aria-label', 'Reset stuck session')
+  resetBtn.title = 'Session stuck? Reset it (clears queue, starts fresh session)'
+  resetBtn.textContent = '重置'
+  resetBtn.hidden = true
+  sendBtn.parentNode.insertBefore(resetBtn, sendBtn)
+
+  let _stuckTimer = null
+  function _scheduleStuckCheck() {
+    clearTimeout(_stuckTimer)
+    _stuckTimer = null
+    if (!isClaudeThinking || !isClaudeTab) return
+    // After 15 s of thinking, reveal the reset button as an escape hatch
+    _stuckTimer = setTimeout(() => {
+      if (isClaudeThinking && isClaudeTab) resetBtn.hidden = false
+    }, 15000)
+  }
+
+  resetBtn.addEventListener('click', async () => {
+    if (!tabManager) return
+    const activeTab = tabManager.tabs?.find((t) => t.id === tabManager.activeId)
+    if (!activeTab) return
+    const projectId = tabManager.projectId
+    const tabId = activeTab.id
+    resetBtn.disabled = true
+    resetBtn.textContent = '重置中…'
+    try {
+      const r = await fetch(`/api/projects/${projectId}/tabs/${tabId}/reset`, { method: 'POST' })
+      const data = await r.json()
+      console.log('[reset]', data)
+      // Clear client-side pending queue too
+      _pendingQueue.splice(0)
+      updateQueueTray()
+    } catch (err) {
+      console.error('[reset] failed', err)
+    } finally {
+      resetBtn.hidden = true
+      resetBtn.disabled = false
+      resetBtn.textContent = '重置'
+    }
+  })
+
   // ── Client-side pending queue ─────────────────────────────────────────────
   // Messages typed while Claude is busy are held here (not sent to server yet).
   // When Claude becomes idle, all pending items are combined into one turn.
@@ -371,8 +419,14 @@ function setupChatInput() {
       stopBtn.disabled = false
       stopBtn.hidden = false
       sendBtn.hidden = true
+      // Start stuck-detection timer: if still thinking after 15s show reset btn
+      _scheduleStuckCheck()
     } else {
       chatInput.classList.remove('claude-thinking')
+      // Clear stuck timer and hide reset button
+      clearTimeout(_stuckTimer)
+      _stuckTimer = null
+      resetBtn.hidden = true
       // Result arrived — restore normal send UI.
       stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
       stopBtn.title = 'Stop Claude (interrupt)'

@@ -701,6 +701,15 @@ async function enterWorkspace(projectId) {
   document.body.classList.add('workspace-active')
   state.activeProjectId = projectId
   localStorage.setItem('activeProjectId', projectId)
+  // P1+P2 fix: close settings panel and agent drawer on every workspace entry
+  // to prevent residual open state from previous session
+  closeSettingsPanel()
+  const agentDrawer = document.getElementById('agent-drawer')
+  const agentDrawerBackdrop = document.getElementById('agent-drawer-backdrop')
+  const agentDrawerToggle = document.getElementById('agent-drawer-toggle')
+  agentDrawer?.classList.remove('open')
+  agentDrawerBackdrop?.classList.remove('open')
+  agentDrawerToggle?.classList.remove('active')
   renderSidebar()
   if (!workspaceReady) {
     workspaceReady = true
