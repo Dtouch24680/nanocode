@@ -1006,10 +1006,13 @@ export function createTerminalRoutes(store) {
           claudeBroadcast(cs, ev)
         }
       } else if (cs.queue.length > 0) {
-        const nextText = cs.queue.shift()
-        console.log(`[claude:queue] sessionKey=${sessionKey} running queued turn, ${cs.queue.length} remaining`)
+        // Flush ALL queued messages as one combined turn so the user gets a single
+        // response covering everything they sent while Claude was busy ("一次性都发出去").
+        const allQueued = cs.queue.splice(0)
+        const combinedText = allQueued.join('\n\n')
+        console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) as one turn`)
         // Small tick to avoid re-entrancy issues (exit handler → runClaudeTurn synchronously)
-        setImmediate(() => runClaudeTurn(cs, nextText, sessionKey, cwd))
+        setImmediate(() => runClaudeTurn(cs, combinedText, sessionKey, cwd))
       }
     })
 
@@ -1022,9 +1025,10 @@ export function createTerminalRoutes(store) {
       claudeBroadcast(cs, event)
       // On spawn error, still drain the queue so queued messages are not lost
       if (cs.queue.length > 0) {
-        const nextText = cs.queue.shift()
-        console.log(`[claude:queue] sessionKey=${sessionKey} running queued turn after spawn error, ${cs.queue.length} remaining`)
-        setImmediate(() => runClaudeTurn(cs, nextText, sessionKey, cwd))
+        const allQueued = cs.queue.splice(0)
+        const combinedText = allQueued.join('\n\n')
+        console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) after spawn error`)
+        setImmediate(() => runClaudeTurn(cs, combinedText, sessionKey, cwd))
       }
     })
   }
@@ -1092,8 +1096,14 @@ export function createTerminalRoutes(store) {
         // replay user turns and see their own messages after a WS disconnect.
         // The event includes a unique nonce so the client can deduplicate against
         // its locally-echoed block (avoids double-rendering on the same session).
+        // Assign a uuid so that _replayedUuids / text-based dedup on the client can
+        // suppress the cs.history replay of a user turn that was already rendered
+        // from the session jsonl (which has its own claude-CLI-assigned uuid).
+        // Without a uuid here the dedup guard in _handleEvent short-circuits and the
+        // message renders twice after a page reload or WS reconnect.
         const userEvent = {
           type: 'user',
+          uuid: randomUUID(),
           message: { role: 'user', content: [{ type: 'text', text: msg.text }] },
           _nonce: msg._nonce || null,
         }

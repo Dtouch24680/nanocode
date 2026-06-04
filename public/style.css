@@ -2629,6 +2629,59 @@ body.workspace-active .landing-overlay { display: none; }
   text-decoration-style: solid;
 }
 
+/* ── Client-side pending queue tray ─────────────────────────────── */
+/* Shows queued messages above the input row when Claude is busy.   */
+/* CLI-parity: silent auto-queue + position display + ↑ to edit.    */
+
+.claude-queue-tray {
+  padding: 4px var(--s-3) 4px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-secondary);
+}
+.cq-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm, 0.82rem);
+  min-height: 22px;
+}
+.cq-pos {
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.78rem;
+  min-width: 14px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.cq-text {
+  flex: 1;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cq-remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 0 4px;
+  line-height: 1;
+  font-size: 14px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+.cq-remove:hover { color: var(--error, #f87171); background: rgba(248,113,113,0.1); }
+.cq-hint {
+  font-size: 0.73rem;
+  color: var(--text-tertiary);
+  padding: 1px 0 2px 20px;
+  letter-spacing: 0.01em;
+}
+
 /* ── Feature 1: Queue choice banner ─────────────────────────────── */
 .cbr-queue-banner {
   display: flex;

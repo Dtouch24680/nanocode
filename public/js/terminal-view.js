@@ -307,6 +307,42 @@ function setupChatInput() {
   // Insert before send-btn
   sendBtn.parentNode.insertBefore(stopBtn, sendBtn)
 
+  // ── Client-side pending queue ─────────────────────────────────────────────
+  // Messages typed while Claude is busy are held here (not sent to server yet).
+  // When Claude becomes idle, all pending items are combined into one turn.
+  // This matches CLI behaviour: silent auto-queue + ↑ to edit last item.
+  let _pendingQueue = []
+
+  // Inject the queue tray (above .input-row) at init time.
+  const queueTray = document.createElement('div')
+  queueTray.id = 'claude-queue-tray'
+  queueTray.className = 'claude-queue-tray'
+  queueTray.hidden = true
+  inputRow.parentNode.insertBefore(queueTray, inputRow)
+
+  function updateQueueTray() {
+    const visible = _pendingQueue.length > 0 && isClaudeTab
+    queueTray.hidden = !visible
+    if (!visible) { queueTray.innerHTML = ''; return }
+    queueTray.innerHTML =
+      _pendingQueue.map((text, i) => {
+        const truncated = text.length > 72 ? text.slice(0, 72) + '…' : text
+        return `<div class="cq-item">` +
+          `<span class="cq-pos">${i + 1}</span>` +
+          `<span class="cq-text">${escapeHtml(truncated)}</span>` +
+          `<button class="cq-remove" data-idx="${i}" aria-label="Remove queued message" title="Remove from queue">×</button>` +
+          `</div>`
+      }).join('') +
+      `<div class="cq-hint">↑ 取回编辑 · Claude 空闲时自动发送</div>`
+    queueTray.querySelectorAll('.cq-remove').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        _pendingQueue.splice(+btn.dataset.idx, 1)
+        updateQueueTray()
+      })
+    })
+  }
+
   // ── State ─────────────────────────────────────────────────────────────────
   let isClaudeTab = false      // is the active tab a claude tab?
   let isClaudeThinking = false // is claude currently thinking?
@@ -334,6 +370,16 @@ function setupChatInput() {
       chatInput.classList.remove('claude-thinking')
       stopBtn.hidden = true
       sendBtn.hidden = false
+      // Auto-flush: when Claude becomes idle, send all pending queued messages
+      // as one combined turn (matches CLI "send all at once when idle" behaviour).
+      if (!thinking && isClaudeTab && _pendingQueue.length > 0) {
+        const all = _pendingQueue.splice(0)
+        updateQueueTray()
+        const combined = all.join('\n\n')
+        if (activePane) activePane.sendInputWithEcho(combined)
+        pushHistory(combined)
+        resetHistoryNav()
+      }
     }
   }
 
@@ -342,7 +388,8 @@ function setupChatInput() {
   document.addEventListener('nanocode:tab-active', (e) => {
     _activeTabType = e.detail?.type || 'bash'
     isClaudeThinking = false  // reset on tab switch
-    updateInputBarForTabType()
+    updateInputBarForTabType()  // updates isClaudeTab first
+    updateQueueTray()           // then update tray with fresh isClaudeTab
   })
 
   // Listen for claude thinking state changes
@@ -631,14 +678,18 @@ function setupChatInput() {
     const text = chatInput.value
     if (!text) return
 
-    // Feature 1: when claude is busy on a claude tab, offer queue/interrupt choice
+    // When Claude is busy: silently add to client-side pending queue.
+    // No per-message banner — matches CLI behaviour of auto-queuing with a
+    // compact tray showing position. User can ↑ to take back the last item,
+    // or click × on any item to remove it. All items flush automatically when
+    // Claude finishes. To interrupt instead, use the Stop button.
     if (isClaudeTab && isClaudeThinking) {
-      // Clear input first so the user can keep typing if they cancel
+      _pendingQueue.push(text)
       chatInput.value = ''
       autoResize()
       hideSuggestions()
       hideSlashCommands()
-      showQueueChoiceBanner(text)
+      updateQueueTray()
       chatInput.focus()
       return
     }
@@ -742,6 +793,15 @@ function setupChatInput() {
         selectSuggestion(-1)
         return
       }
+      // ↑ on empty input with pending queue → pop last item back into input for editing.
+      // Mirrors CLI "press up to edit queued messages" behaviour.
+      if (isClaudeTab && _pendingQueue.length > 0 && chatInput.value === '') {
+        chatInput.value = _pendingQueue.pop()
+        updateQueueTray()
+        autoResize()
+        chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length)
+        return
+      }
       if (!history.length) return
       if (historyIdx === -1) {
         historyDraft = chatInput.value
@@ -808,6 +868,13 @@ function setupChatInput() {
         case 'ctrl-l':
           activePane.sendRaw('\x0c'); break
         case 'arrow-up': {
+          // Same as keyboard ↑: pop pending queue first if applicable
+          if (isClaudeTab && _pendingQueue.length > 0 && chatInput.value === '') {
+            chatInput.value = _pendingQueue.pop()
+            updateQueueTray()
+            autoResize()
+            break
+          }
           if (!history.length) break
           if (historyIdx === -1) {
             historyDraft = chatInput.value
