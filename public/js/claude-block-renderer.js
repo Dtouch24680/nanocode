@@ -113,7 +113,34 @@ function escHtml(s) {
     .replace(/"/g, '&quot;')
 }
 
+// N16 fix: strip Claude's internal XML system-caveat tags before rendering.
+// These tags (e.g. <local-command-caveat>, <function_calls>) are implementation
+// details that must never be shown raw to the user. We strip the full tag block
+// including its content; stripping only tags while keeping content makes the
+// text even more confusing.
+const XML_CAVEAT_TAGS = [
+  'local-command-caveat',
+  'antml:function_calls',
+  'function_calls',
+  'antml:invoke',
+  'antml:parameter',
+  'command-caveat',
+]
+function stripXmlCaveats(text) {
+  if (!text || !/</.test(text)) return text
+  let out = text
+  for (const tag of XML_CAVEAT_TAGS) {
+    // Strip complete <tag ...>...</tag> blocks (including content)
+    out = out.replace(new RegExp(`<${tag}(?:\\s[^>]*)?>.*?<\\/${tag}>`, 'gsi'), '')
+    // Strip self-closing <tag ... />
+    out = out.replace(new RegExp(`<${tag}(?:\\s[^>]*)?\\/?>`, 'gi'), '')
+  }
+  return out.trim()
+}
+
 function renderMarkdown(text) {
+  if (!text) return ''
+  text = stripXmlCaveats(text)
   if (!text) return ''
   try {
     if (window.marked && window.DOMPurify) {
@@ -469,6 +496,40 @@ export class ClaudeBlockRenderer {
     if (data === '\x0c') {
       this._scroll.innerHTML = ''
     }
+  }
+
+  /**
+   * N19 fix: Clear DOM + history state after a session reset so old queued
+   * events cannot replay into the new session's view. Called by the reset
+   * button handler in terminal-view.js after the POST /reset succeeds.
+   */
+  clearAfterReset() {
+    // Stop lazy-history observer
+    this._removeHistorySentinel()
+    this._historyEvents = []
+    this._historyRenderedStart = 0
+    this._historyLoading = false
+
+    // Clear visible DOM
+    this._scroll.innerHTML = ''
+    this._liveAssistantBlock = null
+    this._liveAssistantId = null
+    this._liveSubagentBlock = null
+    if (this._liveToolBlocks) this._liveToolBlocks.clear()
+
+    // Reset dedup sets so new session events are not silently skipped
+    this._replayedUuids = new Set()
+    this._replayedUserTexts = new Map()
+    this._seenSubagentUuids = new Set()
+    this._pendingNonces = new Set()
+
+    // Exit thinking state
+    this._thinking = false
+    document.dispatchEvent(new CustomEvent('nanocode:claude-thinking', {
+      detail: { tabId: this.tabId, thinking: false },
+    }))
+
+    this._addSystemBlock('[Session reset. Starting fresh.]')
   }
 
   /**
@@ -846,7 +907,13 @@ export class ClaudeBlockRenderer {
   _send(msg) {
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
       this._ws.send(JSON.stringify(msg))
+      return true
     }
+    // N1 fix: warn when a user message is dropped due to disconnected WS
+    if (msg.type === 'claude-input') {
+      this._addSystemBlock('[Connection not ready — message may not have been sent. Please wait for reconnection.]')
+    }
+    return false
   }
 
   _startPing() {

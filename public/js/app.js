@@ -653,6 +653,12 @@ if (settingsToggleBtn) settingsToggleBtn.addEventListener('click', () => {
 if (settingsPanelBackdrop) settingsPanelBackdrop.addEventListener('click', closeSettingsPanel)
 const settingsPanelClose = document.getElementById('settings-panel-close')
 if (settingsPanelClose) settingsPanelClose.addEventListener('click', closeSettingsPanel)
+// Close settings on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && settingsPanel?.classList.contains('open')) {
+    closeSettingsPanel()
+  }
+})
 
 // ─── Routing ──────────────────────────────────────────────────────────────────
 

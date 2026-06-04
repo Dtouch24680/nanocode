@@ -3,7 +3,7 @@
 import { Router } from 'express'
 import { execFile, spawn } from 'node:child_process'
 import { platform } from 'node:os'
-import { readdirSync, readFileSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, statSync, openSync, readSync, closeSync, unlinkSync } from 'node:fs'
 import { resolve, relative, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -910,6 +910,45 @@ export function createTerminalRoutes(store) {
   })
 
   /**
+   * N20: Garbage-collect stale Claude session lock files.
+   *
+   * Claude creates ~/.claude/sessions/{pid}.json on start. If a process exits
+   * without cleanup (crash, kill -9, machine reboot) the file lingers.  When
+   * nanocode spawns claude --session-id=X where X matches a stale session's
+   * sessionId, the binary checks the sessions dir, finds the entry, discovers
+   * the PID is dead, and *should* clean up.  In practice the binary sometimes
+   * misses the cleanup, leaving the ID permanently locked.
+   *
+   * This GC: read the sessions dir, for each {pid}.json whose PID is not alive
+   * (kill -0 returns ESRCH) remove the file.  Called once before the first turn
+   * of a new claude session and at most every 60 s to avoid excessive stat().
+   */
+  let _lastGcMs = 0
+  function gcClaudeSessions() {
+    const now = Date.now()
+    if (now - _lastGcMs < 60_000) return
+    _lastGcMs = now
+    try {
+      const sessDir = join(home, '.claude', 'sessions')
+      if (!existsSync(sessDir)) return
+      const files = readdirSync(sessDir)
+      for (const f of files) {
+        if (!/^\d+\.json$/.test(f)) continue
+        const pid = parseInt(f, 10)
+        try {
+          process.kill(pid, 0)  // throws if PID not alive
+        } catch {
+          // PID is dead — remove the stale session lock
+          try {
+            unlinkSync(join(sessDir, f))
+            console.log(`[gc:sessions] removed stale lock for PID ${pid}`)
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+
+  /**
    * Build a child environment for a spawned claude subprocess.
    *
    * We strip session-identity env vars that Claude Code sets on itself so that
@@ -964,9 +1003,10 @@ export function createTerminalRoutes(store) {
     cs.busy = true
     cs.currentProc = null
 
-    // First turn uses --session-id to claim a fixed UUID; subsequent turns
-    // use --resume to continue the same conversation.
+    // N20: GC stale Claude session lock files before the first turn so stale
+    // locks from crashed processes don't block --session-id from claiming the UUID.
     const isFirstTurn = cs.turnCount === 0
+    if (isFirstTurn) gcClaudeSessions()
     const sessionArg = isFirstTurn
       ? `--session-id=${cs.claudeSessionId}`
       : `--resume=${cs.claudeSessionId}`

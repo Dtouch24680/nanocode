@@ -326,10 +326,10 @@ function setupChatInput() {
     clearTimeout(_stuckTimer)
     _stuckTimer = null
     if (!isClaudeThinking || !isClaudeTab) return
-    // After 15 s of thinking, reveal the reset button as an escape hatch
+    // After 5 s of thinking, reveal the reset button as an escape hatch
     _stuckTimer = setTimeout(() => {
       if (isClaudeThinking && isClaudeTab) resetBtn.hidden = false
-    }, 15000)
+    }, 5000)
   }
 
   resetBtn.addEventListener('click', async () => {
@@ -347,6 +347,11 @@ function setupChatInput() {
       // Clear client-side pending queue too
       _pendingQueue.splice(0)
       updateQueueTray()
+      // N19 fix: clear the active CBR pane's DOM + history so old queued
+      // events cannot replay into the freshly-reset session view.
+      if (activePane && typeof activePane.clearAfterReset === 'function') {
+        activePane.clearAfterReset()
+      }
     } catch (err) {
       console.error('[reset] failed', err)
     } finally {
