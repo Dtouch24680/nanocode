@@ -37,10 +37,25 @@ function getFoldLevel() {
 }
 
 // ── ANSI strip ────────────────────────────────────────────────────────────────
-const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
+// Standard CSI sequences: ESC [ ... final-byte
+const ANSI_CSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g
+// OSC sequences: ESC ] ... (BEL or ST)
+const ANSI_OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
+// DCS sequences: ESC P ... ST
+const ANSI_DCS_RE = /\x1b[P][^\x1b]*(?:\x1b\\)?/g
+// Other 2-char ESC sequences: ESC + single char
+const ANSI_2CHAR_RE = /\x1b[@-Z\\-_]/g
+// Bare BEL (0x07) and other control chars (NUL, SOH, STX, ETX, EOT, ENQ, ACK, SO, SI)
+// that slip through after ANSI stripping — keep CR (0x0d) and LF (0x0a)
+const BARE_CTRL_RE = /[\x00-\x06\x07\x08\x0e-\x0f\x10-\x1f]/g
 
 function stripAnsi(s) {
-  return s.replace(ANSI_RE, '')
+  return s
+    .replace(ANSI_OSC_RE, '')   // OSC first (contains BEL as terminator)
+    .replace(ANSI_DCS_RE, '')   // DCS
+    .replace(ANSI_CSI_RE, '')   // CSI (color, cursor, etc.)
+    .replace(ANSI_2CHAR_RE, '') // 2-char ESC sequences
+    .replace(BARE_CTRL_RE, '')  // stray control chars (BEL, BS, SO, SI, etc.)
 }
 
 // ── HTML escape ───────────────────────────────────────────────────────────────
@@ -68,13 +83,38 @@ function linkifyText(text) {
 // "Working 2m 15s" / "Working..." spinner lines
 const STATUS_BANNER_RE = /^(?:Working|Thinking|Analyzing|Planning|Running|Executing|Reviewing)[\s.…]*/i
 
-// Bash command line: codex often shows commands like:
-//   $ cmd
-//   > cmd (alternative)
-//   Running: cmd
-//   Executing: cmd
-//   bash: cmd
-const BASH_CMD_RE = /^(?:\$\s+|>\s+|Running:\s+|Executing:\s+|bash:\s+|cmd:\s+)/i
+// Bash command line patterns.
+//
+// Codex CLI uses › (U+203A) as its native user-input echo prefix:
+//   › ls -la           ← codex echoes the user's command
+//
+// The › prompt is followed by the actual command. We require the next char
+// to be a word char or / or ~ or . to avoid matching codex update menu items
+// like "› 1. Update now" or "› 2.Skip" (which start with digit+dot).
+//
+// Codex also spawns an inner bash shell that emits a full shell prompt:
+//   user@host:~/path$ cmd          ← after ANSI stripping
+//   $ cmd                          ← simplified form
+//   > cmd                          ← git / python REPL continuation
+//
+// The shell-prompt pattern captures everything after the $ so we get
+// just the command portion (e.g. "ls qatool/scripts").
+// Also handles "[tmux-label] user@host:path$ cmd" (double-echo from OSC title)
+const BASH_CMD_RE = /^(?:(?:[›❯])\s+(?=[a-zA-Z/~\.]|\.\.)|\$\s+|Running:\s+|Executing:\s+|bash:\s+|cmd:\s+|(?:[^\s@]+@[^\s:]+:[^\s$]+\$\s+)|(?:\[[^\]]+\]\s+[^\s@]+@[^\s:]+:[^\s$]+\$\s+))/
+
+// Regex to extract just the command part from a shell-prompt line
+// matches  "user@host:path$ COMMAND"  →  group 1 = "COMMAND"
+// Also handles "[tmux-label] user@host:path$ COMMAND" format
+const SHELL_PROMPT_CMD_RE = /(?:\[[^\]]+\]\s+)?[^\s@]+@[^\s:]+:[^\s$]+\$\s+(.*)/
+
+// Lines that are xterm title-set echoes.
+// After OSC stripping, some terminals emit TWO copies of the title text —
+// one inside the OSC sequence (stripped) and one as literal output.
+// The literal form looks like: "[pek-idc] user@host:path$ cmd"
+// We detect this as: optional [label] then user@host:path$ — same as a shell
+// prompt, so the SHELL_PROMPT_CMD_RE + BASH_CMD_RE handles them correctly.
+// Lines starting with bare "0;" or "2;" are raw xterm title remainders.
+const XTERM_TITLE_RE = /^(?:0;|\d+;)[a-zA-Z\[]|\x1b\]0;/
 
 // Exit status line: "Exit code: 0" / "exit 0" / "✓ Command succeeded" / "✗ Error"
 const EXIT_STATUS_RE = /^(?:exit\s+code\s*[:=]?\s*(\d+)|exit\s+(\d+)|✓|✗|Error:|error:)/i
@@ -308,6 +348,13 @@ export class CodexBlockRenderer {
       return
     }
 
+    // ── Filter noise lines ───────────────────────────────────────────────────────
+    // xterm title-set echoes: "0;[pek-idc] hostname~/path$ cmd" or "\e]0;..."
+    // These are OSC 0 remnants that survive ANSI stripping — silently discard.
+    if (XTERM_TITLE_RE.test(line)) {
+      return
+    }
+
     // Status banner (Working / Thinking) — update in-place
     if (STATUS_BANNER_RE.test(line)) {
       this._updateStatusBanner(line.trim())
@@ -323,11 +370,17 @@ export class CodexBlockRenderer {
       return
     }
 
-    // Bash command line
+    // Bash command line (› prompt, ❯ prompt, $ prompt, user@host:path$ prompt)
     if (BASH_CMD_RE.test(line)) {
       this._finalizeCurrentBlock()
-      const cmd = line.replace(BASH_CMD_RE, '').trim()
-      this._startBashBlock(cmd)
+
+      // For full shell-prompt lines like "user@host:path$ cmd", extract just "cmd"
+      const shellMatch = SHELL_PROMPT_CMD_RE.exec(line)
+      const cmd = shellMatch ? shellMatch[1].trim() : line.replace(BASH_CMD_RE, '').trim()
+
+      if (cmd) {
+        this._startBashBlock(cmd)
+      }
       return
     }
 
@@ -412,10 +465,21 @@ export class CodexBlockRenderer {
   _appendToBashOutput(line) {
     if (!this._currentBashBlock) return
     this._currentBashBlock.outputLines.push(line)
-    // Limit display to 2000 chars per block to prevent DOM bloat
-    const text = this._currentBashBlock.outputLines.join('\n')
-    const truncated = text.length > 3000
-    const display = truncated ? text.slice(0, 3000) + '\n…[truncated]' : text
+    const lines = this._currentBashBlock.outputLines
+    const text = lines.join('\n')
+    const MAX_CHARS = 4000
+    const MAX_LINES = 80
+    const isTooLong = text.length > MAX_CHARS || lines.length > MAX_LINES
+    let display
+    if (isTooLong) {
+      // Show first MAX_LINES lines only, with a clear truncation notice
+      const kept = lines.slice(0, MAX_LINES)
+      const dropped = lines.length - kept.length
+      const keptText = kept.join('\n').slice(0, MAX_CHARS)
+      display = keptText + `\n\n… [${dropped} more lines hidden — scroll terminal for full output]`
+    } else {
+      display = text
+    }
     this._currentBashBlock.outputEl.textContent = display
     this._scrollBottom()
   }
