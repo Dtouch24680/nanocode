@@ -1127,6 +1127,10 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   scrollbar-width: none;
 }
 .touch-toolbar::-webkit-scrollbar { display: none; }
+/* Show touch toolbar on any touch/coarse-pointer device (tablets, landscape phones) */
+@media (pointer: coarse) {
+  .touch-toolbar { display: flex; }
+}
 .touch-btn {
   height: 28px;
   padding: 0 12px;

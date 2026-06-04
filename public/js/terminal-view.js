@@ -307,6 +307,12 @@ function setupChatInput() {
   // Insert before send-btn
   sendBtn.parentNode.insertBefore(stopBtn, sendBtn)
 
+  // Track interrupting state for force-escalation (P0-3).
+  // _interruptingAt: timestamp of last interrupt POST, or null if not interrupting.
+  // Within 3s of an interrupt, a second press escalates to force=1.
+  let _interruptingAt = null
+  const FORCE_WINDOW_MS = 3000
+
   // ── Client-side pending queue ─────────────────────────────────────────────
   // Messages typed while Claude is busy are held here (not sent to server yet).
   // When Claude becomes idle, all pending items are combined into one turn.
@@ -364,10 +370,19 @@ function setupChatInput() {
     isClaudeThinking = thinking
     if (isClaudeTab && thinking) {
       chatInput.classList.add('claude-thinking')
+      // Restore stop button to default icon/state (in case it was showing "interrupting…")
+      stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
+      stopBtn.title = 'Stop Claude (interrupt)'
+      stopBtn.disabled = false
       stopBtn.hidden = false
       sendBtn.hidden = true
     } else {
       chatInput.classList.remove('claude-thinking')
+      // Result arrived — reset interrupting state and restore normal send UI.
+      _interruptingAt = null
+      stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
+      stopBtn.title = 'Stop Claude (interrupt)'
+      stopBtn.disabled = false
       stopBtn.hidden = true
       sendBtn.hidden = false
       // Auto-flush: when Claude becomes idle, send all pending queued messages
@@ -401,30 +416,60 @@ function setupChatInput() {
     updateThinkingState(!!detail.thinking)
   })
 
-  // Stop button click: POST interrupt to backend
-  stopBtn.addEventListener('click', async () => {
+  // ── Interrupt helper (shared by Stop btn, Esc, Ctrl+C) ─────────────────────
+  // Posts /interrupt to the backend. If called within FORCE_WINDOW_MS of a
+  // previous interrupt POST, escalates to force=1 (SIGKILL). Updates the Stop
+  // button to an "interrupting…" visual state while waiting for the real result
+  // event. Does NOT call updateThinkingState(false) — that only happens when the
+  // WS 'result' event arrives, preserving the _pendingQueue protection (b67a2b6).
+  async function doInterrupt() {
     if (!tabManager) return
     const activeTab = tabManager.tabs?.find((t) => t.id === tabManager.activeId)
     if (!activeTab) return
     const projectId = tabManager.projectId
     const tabId = activeTab.id
+
+    const now = Date.now()
+    const isForce = _interruptingAt !== null && (now - _interruptingAt) < FORCE_WINDOW_MS
+    _interruptingAt = now
+
+    const url = `/api/projects/${projectId}/tabs/${tabId}/interrupt` + (isForce ? '?force=1' : '')
     try {
-      await fetch(`/api/projects/${projectId}/tabs/${tabId}/interrupt`, { method: 'POST' })
+      await fetch(url, { method: 'POST' })
     } catch {}
-    // Update UI immediately for responsiveness, but do NOT call updateThinkingState(false)
-    // here. Doing so would flush _pendingQueue while cs.busy is still true (Claude hasn't
-    // exited yet), sending the combined message into cs.queue, which is then discarded by
-    // the exit handler (wasInterrupted=true → cs.queue = []).
-    //
-    // Instead: keep isClaudeThinking=true internally so any messages the user types while
-    // waiting continue to queue client-side. When the real WS 'result' event arrives
-    // (Claude has actually exited, cs.busy=false), it fires nanocode:claude-thinking with
-    // thinking=false → updateThinkingState(false) → _pendingQueue flushes directly to
-    // runClaudeTurn with no server-side queue discard risk.
+
+    // Visual: enter "interrupting…" state. Do NOT hide stopBtn or show sendBtn yet
+    // — the real WS result event will trigger updateThinkingState(false) which does that.
+    // This prevents premature flush of _pendingQueue.
     chatInput.classList.remove('claude-thinking')
-    stopBtn.hidden = true
-    sendBtn.hidden = false
+    if (isForce) {
+      stopBtn.textContent = '强杀中…'
+      stopBtn.title = 'Force-killing Claude process…'
+    } else {
+      stopBtn.textContent = '中断中… (再按强杀)'
+      stopBtn.title = 'Interrupting… press again to force-kill'
+    }
+    stopBtn.disabled = false
+    stopBtn.hidden = false
+    sendBtn.hidden = true
+
+    // Restore stop button icon after 5s in case no result event arrives
+    setTimeout(() => {
+      if (!stopBtn.hidden) {
+        stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
+        stopBtn.title = 'Stop Claude (interrupt)'
+        stopBtn.disabled = false
+      }
+    }, 5000)
+  }
+
+  // Stop button click: POST interrupt to backend
+  stopBtn.addEventListener('click', () => {
+    doInterrupt()
   })
+
+  // Expose doInterrupt so Esc/Ctrl+C handlers below can call it.
+  // (All three handlers are in the same setupChatInput() closure scope.)
 
   // ── Slash-command dropdown for Claude tabs ────────────────────────────────
   function showSlashCommands(query) {
@@ -787,12 +832,21 @@ function setupChatInput() {
 
     if (e.key === 'Escape') {
       if (claudeSlashOpen) {
+        // Priority 1: close slash dropdown
         hideSlashCommands()
       } else if (suggestionsOpen) {
+        // Priority 2: close suggestions
         hideSuggestions()
-      } else {
+      } else if (isClaudeTab && isClaudeThinking) {
+        // Priority 3 (claude tab): interrupt running turn
+        doInterrupt()
+      } else if (chatInput.value) {
+        // Priority 4: clear input
         chatInput.value = ''
         autoResize()
+      } else if (!isClaudeTab && activePane) {
+        // Bash/codex tab: send raw Escape to PTY
+        activePane.sendRaw('\x1b')
       }
       e.preventDefault()
       return
@@ -845,9 +899,19 @@ function setupChatInput() {
       return
     }
 
-    if (e.ctrlKey && e.key === 'c' && !chatInput.value) {
+    if (e.ctrlKey && e.key === 'c') {
       e.preventDefault()
-      if (activePane) activePane.sendRaw('\x03')
+      if (chatInput.value) {
+        // Input has text: CLI behaviour = clear the line (not copy/kill)
+        chatInput.value = ''
+        autoResize()
+      } else if (isClaudeTab && isClaudeThinking) {
+        // Empty + busy on claude tab: interrupt
+        doInterrupt()
+      } else if (activePane) {
+        // Empty + idle, or non-claude tab: forward raw Ctrl+C to PTY
+        activePane.sendRaw('\x03')
+      }
       return
     }
 
@@ -875,7 +939,15 @@ function setupChatInput() {
       if (!activePane) return
       switch (action) {
         case 'ctrl-c':
-          activePane.sendRaw('\x03'); break
+          // Same logic as keyboard Ctrl+C: clear input if has text, else interrupt/sendRaw
+          if (chatInput.value) {
+            chatInput.value = ''; autoResize()
+          } else if (isClaudeTab && isClaudeThinking) {
+            doInterrupt()
+          } else {
+            activePane.sendRaw('\x03')
+          }
+          break
         case 'ctrl-l':
           activePane.sendRaw('\x0c'); break
         case 'arrow-up': {
@@ -906,8 +978,18 @@ function setupChatInput() {
         case 'tab':
           activePane.sendRaw('\t'); break
         case 'escape':
-          if (suggestionsDropdown && !suggestionsDropdown.hidden) hideSuggestions()
-          else { chatInput.value = ''; autoResize() }
+          // Same priority logic as keyboard Esc
+          if (claudeSlashOpen) {
+            hideSlashCommands()
+          } else if (suggestionsOpen) {
+            hideSuggestions()
+          } else if (isClaudeTab && isClaudeThinking) {
+            doInterrupt()
+          } else if (chatInput.value) {
+            chatInput.value = ''; autoResize()
+          } else if (!isClaudeTab) {
+            activePane.sendRaw('\x1b')
+          }
           break
       }
       if (document.activeElement === chatInput) chatInput.focus()

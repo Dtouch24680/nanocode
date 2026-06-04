@@ -822,6 +822,9 @@ export function createTerminalRoutes(store) {
     const cs = claudeSessions.get(sessionKey)
     if (!cs) return res.status(404).json({ error: 'no claude session' })
     if (!cs.busy || !cs.currentProc) return res.json({ ok: false, reason: 'not busy' })
+    // force=1 triggers SIGKILL escalation when SIGINT has not yet stopped the process.
+    // Only use when user explicitly requests escalation (e.g. second interrupt press).
+    const force = req.query.force === '1' || req.body?.force === true
     try {
       // Interrupt scope — "Stop must not kill my sub-agents".
       //
@@ -843,14 +846,14 @@ export function createTerminalRoutes(store) {
       //     parent turn is interrupted — that is harness-level behavior nanocode
       //     cannot change. Only the OS processes a sub-agent detached survive.
       //
-      // So nanocode already does the minimal correct thing here: single-pid
-      // SIGINT, never a process-group kill, never SIGKILL, no escalation timer.
-      // The spawn side additionally isolates the turn in its own process group
-      // (detached:true) so no group-scoped signal can ever bleed into detached
-      // sub-agent work. Maintain this invariant: never switch to kill(-pid) or
-      // add a SIGKILL escalation here.
-      cs.currentProc.kill('SIGINT')
-      res.json({ ok: true })
+      // Normally: single-pid SIGINT only. force=1 escalates to SIGKILL on the same
+      // single pid (never a process-group kill, to preserve detached sub-agents).
+      if (force) {
+        cs.currentProc.kill('SIGKILL')
+      } else {
+        cs.currentProc.kill('SIGINT')
+      }
+      res.json({ ok: true, force: !!force })
     } catch (err) {
       res.status(500).json({ error: err.message })
     }

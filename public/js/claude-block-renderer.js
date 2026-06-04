@@ -456,11 +456,14 @@ export class ClaudeBlockRenderer {
   }
 
   sendRaw(data) {
-    // Only forward Ctrl+C (interrupt) and Ctrl+L (clear screen stub).
-    // Claude stream-json has no concept of raw keystrokes; Ctrl+C can
-    // signal the user wants to interrupt — we restart the session.
+    // Ctrl+C: POST interrupt API (real interrupt, not a no-op).
+    // This is called by the touch toolbar ctrl-c button and legacy callers.
     if (data === '\x03') {
-      this._addSystemBlock('[Ctrl+C — to restart session, type /restart]')
+      this._addSystemBlock('[interrupting…]')
+      if (this.projectId && this.tabId) {
+        fetch(`/api/projects/${this.projectId}/tabs/${this.tabId}/interrupt`, { method: 'POST' })
+          .catch(() => {})
+      }
     }
     // Ctrl+L: visually clear the scroll area
     if (data === '\x0c') {
