@@ -478,12 +478,14 @@ function setupChatInput() {
     const activeId = tabManager ? tabManager.activeId : null
     if (!activeId || detail.tabId !== activeId) return
     if (isCodexTab) {
-      // P2: codex thinking — dim input bar to signal "busy" state
+      // N43-R9: codex is an interactive REPL — dim animation only, do NOT
+      // disable the send button or the user can't navigate interactive menus
+      // (/model, /compact, etc.) or send /clear while codex is busy.
       isCodexThinking = !!detail.thinking
       chatInput.classList.toggle('codex-thinking', isCodexThinking)
       sendBtn.classList.toggle('codex-thinking-btn', isCodexThinking)
-      sendBtn.disabled = isCodexThinking
-      sendBtn.title = isCodexThinking ? 'Codex is thinking…' : 'Send'
+      // sendBtn.disabled intentionally NOT set for codex tabs — keep enabled
+      sendBtn.title = isCodexThinking ? 'Codex is working… (send to interact)' : 'Send'
     } else {
       updateThinkingState(!!detail.thinking)
     }
@@ -806,8 +808,11 @@ function setupChatInput() {
       return
     }
 
-    // N43/P2: Codex processes one request at a time — block sends while thinking
-    if (isCodexTab && isCodexThinking) return
+    // N43-R9: Codex is an interactive REPL — do NOT block sends while thinking.
+    // The user must be able to send follow-up input (e.g. navigate /model menu,
+    // send /clear to interrupt, enter numbers to select options). Removing this
+    // guard is the core fix for N43: mobile users were permanently locked out
+    // when isCodexThinking=true blocked both the send button AND pointer events.
 
     // Not busy (or not a claude tab): send immediately as before
     if (activePane) activePane.sendInputWithEcho(text)

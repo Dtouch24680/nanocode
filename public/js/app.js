@@ -329,17 +329,8 @@ const renderModeGroup = document.getElementById('render-mode-group')
 const renderModeSaveBtn = document.getElementById('render-mode-save-btn')
 const renderModeStatusEl = document.getElementById('render-mode-status')
 
-const codexModelGroup = document.getElementById('codex-model-group')
-const codexModelSaveBtn = document.getElementById('codex-model-save-btn')
-const codexModelStatusEl = document.getElementById('codex-model-status')
-
-function loadCodexModelSettings(serverSettings) {
-  const model = serverSettings?.codex_model || ''
-  const radios = codexModelGroup?.querySelectorAll('input[name="codex-model"]')
-  if (radios) {
-    for (const radio of radios) radio.checked = radio.value === model
-  }
-}
+// N43-R9: Codex Model selector removed — use /model command inside codex instead
+// const codexModelGroup / codexModelSaveBtn / codexModelStatusEl removed
 
 function loadRenderModeSettings(serverSettings) {
   const mode = (serverSettings?.renderMode) || 'block'
@@ -366,7 +357,7 @@ function loadSettings(serverSettings) {
   loadAutoResumeSettings()
   loadSubagentVisSettings()
   loadRenderModeSettings(serverSettings)
-  loadCodexModelSettings(serverSettings)
+  // loadCodexModelSettings removed — N43-R9
 }
 
 if (cliSaveBtn) {
@@ -416,35 +407,7 @@ if (renderModeSaveBtn) {
   })
 }
 
-// ─── Codex model save ─────────────────────────────────────────────────────────
-
-if (codexModelSaveBtn) {
-  codexModelSaveBtn.addEventListener('click', async () => {
-    const selected = codexModelGroup?.querySelector('input[name="codex-model"]:checked')
-    if (selected === null || selected === undefined) return
-    const model = selected.value  // empty string = use default from config.toml
-    try {
-      await updateSetting('codex_model', model)
-      // Also persist in localStorage for immediate reads
-      if (model) {
-        localStorage.setItem('codex_model', model)
-      } else {
-        localStorage.removeItem('codex_model')
-      }
-      if (codexModelStatusEl) {
-        codexModelStatusEl.textContent = 'Saved — 重新打开 Codex tab 后生效'
-        codexModelStatusEl.className = 'settings-status success'
-        setTimeout(() => { codexModelStatusEl.textContent = '' }, 4000)
-      }
-    } catch (err) {
-      if (codexModelStatusEl) {
-        codexModelStatusEl.textContent = err.message
-        codexModelStatusEl.className = 'settings-status error'
-        setTimeout(() => { codexModelStatusEl.textContent = '' }, 3000)
-      }
-    }
-  })
-}
+// N43-R9: Codex model save handler removed — model is now set via /model command
 
 if (fontSizeRange && fontSizeValue) {
   fontSizeRange.addEventListener('input', () => {

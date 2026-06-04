@@ -139,20 +139,8 @@
               </div>
             </div>
 
-            <!-- Codex Model -->
-            <div class="settings-subsection" id="codex-model-section">
-              <div class="settings-label-row">Codex Model <span class="settings-hint-inline">codex -m 参数，重新打开 tab 后生效</span></div>
-              <div class="settings-radio-group" id="codex-model-group">
-                <label class="settings-radio-label"><input type="radio" name="codex-model" value="" checked /> Default（config.toml）</label>
-                <label class="settings-radio-label"><input type="radio" name="codex-model" value="gpt-5.4" /> gpt-5.4</label>
-                <label class="settings-radio-label"><input type="radio" name="codex-model" value="gpt-5.5" /> gpt-5.5 medium</label>
-                <label class="settings-radio-label"><input type="radio" name="codex-model" value="gpt-5.5-xhigh" /> gpt-5.5 xhigh</label>
-              </div>
-              <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="codex-model-save-btn">Save</button>
-                <span class="settings-status" id="codex-model-status"></span>
-              </div>
-            </div>
+            <!-- Codex Model: removed R9 — use codex /model command instead -->
+            <!-- (The /model slash command opens codex's native model picker TUI) -->
 
             <!-- Render Mode -->
             <div class="settings-subsection">
@@ -416,6 +404,9 @@
                   rows="1"
                   autocomplete="off"
                   spellcheck="false"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  enterkeyhint="send"
                 ></textarea>
               </div>
               <!-- TTS + mic + send buttons -->

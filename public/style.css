@@ -1415,24 +1415,26 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   border-color: var(--border);
 }
 
-/* -- Codex thinking: subtle dim + lock (N43/P2) ---------------- */
-/* Codex processes one request at a time, so we lock input while busy.    */
-/* The dim + border tint signals "codex is working" without full opacity. */
+/* -- Codex thinking: subtle dim (N43 R9 fix) ------------------- */
+/* Codex is an interactive REPL — user must be able to type even while   */
+/* codex is processing (e.g. to navigate /model menu, send /clear, etc). */
+/* Visual dim is sufficient UX feedback; hard lock breaks mobile input.  */
 @keyframes codex-thinking-pulse {
-  0%, 100% { opacity: 0.65; }
-  50%       { opacity: 0.45; }
+  0%, 100% { opacity: 0.75; }
+  50%       { opacity: 0.55; }
 }
 
 .chat-textarea.codex-thinking {
-  animation: codex-thinking-pulse 1.2s ease-in-out infinite;
+  animation: codex-thinking-pulse 1.4s ease-in-out infinite;
   border-color: var(--primary);
-  cursor: not-allowed;
-  pointer-events: none;
+  /* N43-R9: DO NOT set pointer-events:none — it blocks mobile touch input
+     and prevents navigating interactive codex menus (/model, /compact…).
+     The animation alone is enough to signal "codex is busy". */
 }
 
 .send-btn.codex-thinking-btn {
-  opacity: 0.4;
-  cursor: not-allowed;
+  opacity: 0.6;
+  /* N43-R9: not cursor:not-allowed — send must work for codex REPL interaction */
 }
 
 /* -- Claude slash command dropdown ----------------------------- */
