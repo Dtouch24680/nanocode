@@ -806,6 +806,9 @@ function setupChatInput() {
       return
     }
 
+    // N43/P2: Codex processes one request at a time — block sends while thinking
+    if (isCodexTab && isCodexThinking) return
+
     // Not busy (or not a claude tab): send immediately as before
     if (activePane) activePane.sendInputWithEcho(text)
     pushHistory(text)
