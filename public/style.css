@@ -1415,6 +1415,26 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   border-color: var(--border);
 }
 
+/* -- Codex thinking: subtle dim + lock (N43/P2) ---------------- */
+/* Codex processes one request at a time, so we lock input while busy.    */
+/* The dim + border tint signals "codex is working" without full opacity. */
+@keyframes codex-thinking-pulse {
+  0%, 100% { opacity: 0.65; }
+  50%       { opacity: 0.45; }
+}
+
+.chat-textarea.codex-thinking {
+  animation: codex-thinking-pulse 1.2s ease-in-out infinite;
+  border-color: var(--primary);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.send-btn.codex-thinking-btn {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* -- Claude slash command dropdown ----------------------------- */
 
 .claude-slash-item {
@@ -3609,6 +3629,31 @@ body.workspace-active .landing-overlay { display: none; }
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;
+}
+
+/* ── P2: Codex connecting indicator ──────────────── */
+.cbx-connecting {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-3);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-family: var(--font-mono);
+}
+
+.cbx-connecting-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: cbx-connecting-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes cbx-connecting-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.3; transform: scale(0.7); }
 }
 
 /* ── Alt-screen (VT100 full-screen TUI) spinner ─── */

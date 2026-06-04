@@ -399,14 +399,20 @@ function setupChatInput() {
 
   // ── State ─────────────────────────────────────────────────────────────────
   let isClaudeTab = false      // is the active tab a claude tab?
+  let isCodexTab = false       // is the active tab a codex tab? (N43: slash passthrough)
   let isClaudeThinking = false // is claude currently thinking?
+  let isCodexThinking = false  // is codex currently thinking? (P2: visual feedback)
   let claudeSlashOpen = false  // is the slash commands dropdown open?
 
   function updateInputBarForTabType() {
     const tabType = _activeTabType
     isClaudeTab = tabType === 'claude'
+    isCodexTab = tabType === 'codex'
     if (isClaudeTab) {
       chatInput.placeholder = 'Message Claude… (/ for commands)'
+    } else if (isCodexTab) {
+      // N43: codex tab — "/" should pass through to codex, not trigger nanocode slash menu
+      chatInput.placeholder = 'Send to Codex… (/ for codex commands)'
     } else {
       chatInput.placeholder = 'Type a command...'
     }
@@ -456,17 +462,31 @@ function setupChatInput() {
   document.addEventListener('nanocode:tab-active', (e) => {
     _activeTabType = e.detail?.type || 'bash'
     isClaudeThinking = false  // reset on tab switch
-    updateInputBarForTabType()  // updates isClaudeTab first
+    isCodexThinking = false
+    // Reset codex-thinking CSS state on tab switch
+    chatInput.classList.remove('codex-thinking')
+    sendBtn.classList.remove('codex-thinking-btn')
+    sendBtn.disabled = false
+    updateInputBarForTabType()  // updates isClaudeTab + isCodexTab first
     updateQueueTray()           // then update tray with fresh isClaudeTab
   })
 
-  // Listen for claude thinking state changes
+  // Listen for claude/codex thinking state changes
   document.addEventListener('nanocode:claude-thinking', (e) => {
     const detail = e.detail || {}
     // Only react if this is the active tab
     const activeId = tabManager ? tabManager.activeId : null
     if (!activeId || detail.tabId !== activeId) return
-    updateThinkingState(!!detail.thinking)
+    if (isCodexTab) {
+      // P2: codex thinking — dim input bar to signal "busy" state
+      isCodexThinking = !!detail.thinking
+      chatInput.classList.toggle('codex-thinking', isCodexThinking)
+      sendBtn.classList.toggle('codex-thinking-btn', isCodexThinking)
+      sendBtn.disabled = isCodexThinking
+      sendBtn.title = isCodexThinking ? 'Codex is thinking…' : 'Send'
+    } else {
+      updateThinkingState(!!detail.thinking)
+    }
   })
 
   // ── Interrupt helper (shared by Stop btn, Esc, Ctrl+C) ─────────────────────
@@ -819,6 +839,12 @@ function setupChatInput() {
       return
     }
     hideSlashCommands()
+    // N43: codex tab — suppress history suggestion dropdown so "/" passes
+    // through cleanly to codex without nanocode dropdown intercepting Enter.
+    if (isCodexTab) {
+      hideSuggestions()
+      return
+    }
     showSuggestions(val)
   })
 

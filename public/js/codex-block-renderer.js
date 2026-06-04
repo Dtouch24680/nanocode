@@ -179,16 +179,27 @@ class VT100Screen {
     }
   }
 
-  /** Dump non-empty rows as plain text, trimming trailing whitespace. */
+  /** Dump non-empty rows as plain text, trimming trailing whitespace.
+   *  N40: collapse runs of >1 consecutive blank line into a single blank
+   *  so the alt-screen result block stays visually compact. */
   dump() {
     const lines = []
     for (const row of this.buf) {
       const line = row.join('').trimEnd()
-      if (line) lines.push(line)
+      lines.push(line)
     }
-    // Remove trailing empty groups
+    // Remove trailing blank lines
     while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop()
-    return lines.join('\n')
+    // N40: collapse consecutive blank lines (≥2 in a row → 1)
+    const collapsed = []
+    let prevBlank = false
+    for (const line of lines) {
+      const blank = !line.trim()
+      if (blank && prevBlank) continue  // skip duplicate blank
+      collapsed.push(line)
+      prevBlank = blank
+    }
+    return collapsed.join('\n')
   }
 }
 
@@ -360,6 +371,14 @@ export class CodexBlockRenderer {
     // Update/tip notice dedup — only show once per session
     this._shownUpdateNotice = false
 
+    // P2: Loading indicator — show "Connecting…" until WS ready
+    this._connectingEl = document.createElement('div')
+    this._connectingEl.className = 'cbx-connecting'
+    this._connectingEl.innerHTML =
+      `<span class="cbx-connecting-dot"></span>` +
+      `<span class="cbx-connecting-text">Connecting to Codex…</span>`
+    this._scroll.appendChild(this._connectingEl)
+
     // ── Alt-screen (VT100 full-screen TUI) state ──────────────────────────────
     // When codex enters its full-screen TUI (ESC[?1049h), we switch to
     // VT100Screen rendering mode. A spinner block is shown while codex works.
@@ -445,6 +464,12 @@ export class CodexBlockRenderer {
       let msg
       try { msg = JSON.parse(e.data) } catch { return }
 
+      // P2: Remove "Connecting…" indicator once first message arrives
+      if (this._connectingEl) {
+        this._connectingEl.remove()
+        this._connectingEl = null
+      }
+
       if (msg.type === 'history') {
         // Replay historical PTY data
         if (msg.data) this._handlePtyData(msg.data, true)
@@ -515,6 +540,20 @@ export class CodexBlockRenderer {
    */
   _handlePtyData(data, fromHistory) {
     if (!data) return
+
+    // N42: History replay — skip alt-screen TUI rendering entirely.
+    // Raw PTY bytes stored in scrollback contain ESC[?1049h/l sequences.
+    // Re-running the alt-screen state machine on replay would create phantom
+    // spinner + result blocks on top of the already-rendered history blocks.
+    // Instead, just strip ANSI and process the text lines as-is.
+    if (fromHistory) {
+      const cleaned = stripAnsi(data)
+      this._ptybuf += cleaned
+      const lines = this._ptybuf.split('\n')
+      this._ptybuf = lines.pop() ?? ''
+      for (const line of lines) this._processLine(line.replace(/\r/g, ''))
+      return
+    }
 
     // ── Alt-screen boundary detection (pre-ANSI-strip) ──────────────────────
     // We may receive chunks that straddle an enter/exit boundary, so we
