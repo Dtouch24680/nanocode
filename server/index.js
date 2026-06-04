@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url'
 import path from 'path'
 import os from 'os'
 import { readFileSync, writeFileSync } from 'fs'
-import { execFile } from 'child_process'
+import { execFile, execSync } from 'child_process'
 import { promisify } from 'util'
 const execFileAsync = promisify(execFile)
 import { WebSocketServer } from 'ws'
@@ -14,6 +14,15 @@ import { getStore } from './store.js'
 import { createTerminalRoutes } from '../terminal/routes.js'
 import { createFileRoutes } from '../terminal/files.js'
 import { startQaWatcher, setNtfyStore } from './qa-watcher.js'
+
+// ── Cache busting version string ─────────────────────────────────────────────
+// Computed once at startup: short git SHA or fallback timestamp.
+// Every HTML asset reference (?v=xxx) uses this so iOS Safari cache
+// invalidates automatically after each server restart (new deploy).
+let ASSET_VERSION = String(Date.now())
+try {
+  ASSET_VERSION = execSync('git rev-parse --short HEAD', { encoding: 'utf8', timeout: 3000 }).trim()
+} catch { /* non-git env — use timestamp */ }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
@@ -37,6 +46,37 @@ const app = express()
 // gzip on every response
 app.use(compression())
 app.use(express.json())
+
+// ── P4: Cache busting — serve index.html with ?v= version strings injected ──
+// iOS Safari aggressively caches static assets. We serve index.html via a
+// dynamic route so we can inject the asset version string into CSS/JS URLs.
+// All other public files use Cache-Control: no-store to prevent stale caches.
+const _indexHtmlPath = path.join(root, 'public', 'index.html')
+let _indexHtmlTemplate = ''
+try { _indexHtmlTemplate = readFileSync(_indexHtmlPath, 'utf8') } catch {}
+
+function getVersionedIndexHtml() {
+  // Inject ?v=<sha> into style.css and app.js / tts.js references
+  return _indexHtmlTemplate
+    .replace(/(href="\/style\.css)(")/g, `$1?v=${ASSET_VERSION}$2`)
+    .replace(/(src="\/js\/([^"?]+\.js))(")/g, `$1?v=${ASSET_VERSION}$3`)
+}
+
+app.get('/', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(getVersionedIndexHtml())
+})
+
+// Dev-mode: no-store for all /js/* and /style.css so browser never caches JS/CSS
+app.use((req, res, next) => {
+  const url = req.path
+  if (url === '/style.css' || url.startsWith('/js/') || url === '/manifest.json') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  }
+  next()
+})
+
 app.use(express.static(path.join(root, 'public')))
 
 const vendorOpts = { maxAge: '365d', immutable: true }

@@ -44,6 +44,15 @@ function getFoldLevel() {
 const ALT_SCREEN_ENTER_RE = /\x1b\[\?(?:1049|47)h/
 const ALT_SCREEN_EXIT_RE  = /\x1b\[\?(?:1049|47)l/
 
+// ── Synchronized Output detection (DEC private mode 2026) ────────────────────
+// Codex CLI uses ESC[?2026h...ESC[?2026l to atomically batch screen updates.
+// This is NOT the alt-screen buffer — it's in-place screen update batching.
+//   ESC[?2026h = begin synchronized update (start buffering a frame)
+//   ESC[?2026l = end synchronized update (flush/render frame)
+// We detect these boundaries and use VT100Screen to render each frame.
+const SYNC_OUTPUT_ENTER_RE = /\x1b\[\?2026h/
+const SYNC_OUTPUT_EXIT_RE  = /\x1b\[\?2026l/
+
 // ── Simple VT100 virtual screen (for alt-screen rendering) ────────────────────
 // Minimal 2D char buffer that handles:
 //   - CSI H / CSI f — cursor position (row;col)
@@ -389,6 +398,20 @@ export class CodexBlockRenderer {
     this._altScreen = null    // VT100Screen instance while active
     this._altSpinnerEl = null // the spinner/progress block element
 
+    // ── Synchronized Output (ESC[?2026h/l) state ──────────────────────────────
+    // Codex CLI uses DEC private mode 2026 to batch screen updates atomically.
+    // We buffer each sync frame through a VT100Screen and diff against the
+    // previous frame to produce minimal DOM updates (no duplicate welcome screen).
+    this._inSyncOutput = false
+    this._syncBuf = ''         // raw data accumulation within a sync frame
+    this._syncScreen = null    // VT100Screen for current sync frame
+    this._prevSyncDump = ''    // last committed frame's dump (for dedup)
+    this._syncSpinnerEl = null // shared spinner element while sync is active
+    this._syncFrameCount = 0   // total frames committed this session
+
+    // P2: Welcome screen dedup — track content fingerprints already rendered
+    this._renderedContentHashes = new Set()
+
     this._connect()
   }
 
@@ -533,18 +556,17 @@ export class CodexBlockRenderer {
   // ── PTY data handling ─────────────────────────────────────────────────────────
 
   /**
-   * Process raw PTY data. We handle alt-screen transitions BEFORE stripping ANSI.
-   * While in alt-screen, data is fed into a VT100Screen virtual buffer.
-   * On alt-screen exit, the screen is dumped as a text block.
-   * Outside alt-screen, behavior is the original line-by-line processing.
+   * Process raw PTY data. We handle alt-screen and sync-output transitions
+   * BEFORE stripping ANSI. While in either mode, data is fed into a VT100Screen.
+   * On exit, the screen is dumped as a result block.
+   * Outside special modes, behavior is the original line-by-line processing.
    */
   _handlePtyData(data, fromHistory) {
     if (!data) return
 
-    // N42: History replay — skip alt-screen TUI rendering entirely.
-    // Raw PTY bytes stored in scrollback contain ESC[?1049h/l sequences.
-    // Re-running the alt-screen state machine on replay would create phantom
-    // spinner + result blocks on top of the already-rendered history blocks.
+    // N42: History replay — skip TUI rendering entirely.
+    // Raw PTY bytes stored in scrollback contain ESC[?1049h/l and ESC[?2026h/l.
+    // Re-running the state machine on replay creates phantom spinner/result blocks.
     // Instead, just strip ANSI and process the text lines as-is.
     if (fromHistory) {
       const cleaned = stripAnsi(data)
@@ -555,10 +577,23 @@ export class CodexBlockRenderer {
       return
     }
 
-    // ── Alt-screen boundary detection (pre-ANSI-strip) ──────────────────────
-    // We may receive chunks that straddle an enter/exit boundary, so we
-    // split on the boundary sequence and process each segment.
+    // ── Sync output (ESC[?2026h/l) boundary detection ───────────────────────
+    // Codex CLI uses DEC private mode 2026 for frame-level batching.
+    // This takes priority over alt-screen detection.
+    if (SYNC_OUTPUT_ENTER_RE.test(data) || SYNC_OUTPUT_EXIT_RE.test(data)) {
+      this._handlePtyDataWithSyncOutput(data)
+      return
+    }
 
+    if (this._inSyncOutput) {
+      // Inside a sync frame — buffer to VT100Screen
+      this._syncBuf += data
+      this._syncScreen.write(data)
+      this._updateSyncSpinner()
+      return
+    }
+
+    // ── Alt-screen boundary detection (pre-ANSI-strip) ──────────────────────
     // Check if there are any alt-screen transitions in this chunk
     if (ALT_SCREEN_ENTER_RE.test(data) || ALT_SCREEN_EXIT_RE.test(data)) {
       // Process segment-by-segment around alt-screen boundaries
@@ -583,6 +618,226 @@ export class CodexBlockRenderer {
     for (const line of lines) {
       this._processLine(line.replace(/\r/g, ''))
     }
+  }
+
+  /**
+   * Handle PTY data that contains ESC[?2026h/l (Synchronized Output) boundaries.
+   * Each frame is fed through a VT100Screen and the resulting dump is diffed
+   * against the previous frame to avoid duplicating content (P2 welcome-screen fix).
+   */
+  _handlePtyDataWithSyncOutput(data) {
+    let pos = 0
+    while (pos < data.length) {
+      const enterIdx = data.indexOf('\x1b[?2026h', pos)
+      const exitIdx  = data.indexOf('\x1b[?2026l', pos)
+
+      const nextEnter = enterIdx >= 0 ? enterIdx : Infinity
+      const nextExit  = exitIdx  >= 0 ? exitIdx  : Infinity
+
+      if (nextEnter === Infinity && nextExit === Infinity) {
+        // No more boundaries — process remainder in current mode
+        const rest = data.slice(pos)
+        if (rest) {
+          if (this._inSyncOutput) {
+            this._syncBuf += rest
+            this._syncScreen.write(rest)
+            this._updateSyncSpinner()
+          } else {
+            const cleaned = stripAnsi(rest)
+            this._ptybuf += cleaned
+            const lines = this._ptybuf.split('\n')
+            this._ptybuf = lines.pop() ?? ''
+            for (const line of lines) this._processLine(line.replace(/\r/g, ''))
+          }
+        }
+        break
+      }
+
+      if (!this._inSyncOutput && nextEnter < nextExit) {
+        // Process text before the enter sequence (normal mode)
+        const before = data.slice(pos, nextEnter)
+        if (before) {
+          const cleaned = stripAnsi(before)
+          this._ptybuf += cleaned
+          const lines = this._ptybuf.split('\n')
+          this._ptybuf = lines.pop() ?? ''
+          for (const line of lines) this._processLine(line.replace(/\r/g, ''))
+        }
+        // Enter sync mode
+        this._enterSyncOutput()
+        pos = nextEnter + 8  // '\x1b[?2026h'.length === 8
+      } else if (this._inSyncOutput && nextExit < nextEnter) {
+        // Feed data up to exit sequence into VT100Screen
+        const before = data.slice(pos, nextExit)
+        if (before) {
+          this._syncBuf += before
+          this._syncScreen.write(before)
+        }
+        // Exit sync mode — commit the frame
+        this._exitSyncOutput()
+        pos = nextExit + 8  // '\x1b[?2026l'.length === 8
+      } else if (!this._inSyncOutput && nextExit <= nextEnter) {
+        // Spurious exit while not in sync mode — skip
+        pos = nextExit + 8
+      } else {
+        // Spurious enter while already in sync mode — skip
+        pos = nextEnter + 8
+      }
+    }
+  }
+
+  /** Called when ESC[?2026h is received — begin synchronized output frame. */
+  _enterSyncOutput() {
+    if (this._inSyncOutput) return
+    this._inSyncOutput = true
+    this._syncBuf = ''
+    this._syncScreen = new VT100Screen(220, 50)
+    // Don't create a spinner for every frame; only on first active frame
+    if (this._syncFrameCount === 0) {
+      this._setThinking(true)
+      this._showSyncSpinner()
+    }
+  }
+
+  /** Called when ESC[?2026l is received — commit the synchronized output frame. */
+  _exitSyncOutput() {
+    if (!this._inSyncOutput) return
+    this._inSyncOutput = false
+    this._syncFrameCount++
+
+    const dump = this._syncScreen ? this._syncScreen.dump() : ''
+    this._syncScreen = null
+    this._syncBuf = ''
+
+    if (!dump || !dump.trim()) return
+
+    // P2: Dedup frames — if this frame is identical to the last, skip
+    if (dump === this._prevSyncDump) return
+
+    // Compute a lightweight content fingerprint for welcome screen dedup
+    // (first 200 chars are usually enough for identity check)
+    const fingerprint = dump.slice(0, 200)
+    if (this._renderedContentHashes.has(fingerprint)) return
+    this._renderedContentHashes.add(fingerprint)
+    this._prevSyncDump = dump
+
+    // Remove the spinner once we get actual content
+    this._clearSyncSpinner()
+
+    // Determine if this is a codex welcome/startup screen
+    const isWelcomeScreen = /OpenAI Codex|model:\s+\S|YOLO mode|context left/i.test(dump)
+    const isSpinnerFrame = /Working\s+\d|Analyzing|Thinking\.\.\./i.test(dump) && dump.length < 200
+
+    if (isSpinnerFrame) {
+      // Show as a status banner update, not a full block
+      const firstLine = dump.split('\n').find(l => l.trim()) || dump.slice(0, 80)
+      this._updateStatusBanner(firstLine.trim())
+      this._setThinking(true)
+      return
+    }
+
+    // Render as a sync-screen result block (same style as alt-screen)
+    this._addSyncScreenResultBlock(dump, isWelcomeScreen)
+
+    if (!isWelcomeScreen) {
+      this._setThinking(false)
+    }
+  }
+
+  /** Show (or reuse) a spinner indicating sync output is active. */
+  _showSyncSpinner() {
+    if (!this._syncSpinnerEl) {
+      const el = document.createElement('div')
+      el.className = 'cbx-alt-spinner cbx-sync-spinner'
+      el.innerHTML =
+        `<span class="cbx-alt-spinner-dot"></span>` +
+        `<span class="cbx-alt-spinner-text">Codex thinking…</span>` +
+        `<span class="cbx-alt-spinner-hint"></span>`
+      this._scroll.appendChild(el)
+      this._syncSpinnerEl = el
+    }
+    this._scrollBottom()
+  }
+
+  /** Update the sync spinner with activity feedback. */
+  _updateSyncSpinner() {
+    if (this._syncSpinnerEl) {
+      const now = Date.now()
+      if (!this._syncSpinnerLastUpdate || now - this._syncSpinnerLastUpdate > 500) {
+        this._syncSpinnerLastUpdate = now
+        const dots = '.'.repeat(((now / 500) | 0) % 4)
+        const hint = this._syncSpinnerEl.querySelector('.cbx-alt-spinner-hint')
+        if (hint) hint.textContent = `（sync frame ${this._syncFrameCount}${dots}）`
+        this._scrollBottom()
+      }
+    }
+  }
+
+  /** Remove the sync output spinner. */
+  _clearSyncSpinner() {
+    if (this._syncSpinnerEl) {
+      this._syncSpinnerEl.remove()
+      this._syncSpinnerEl = null
+    }
+    this._syncSpinnerLastUpdate = 0
+  }
+
+  /**
+   * Render a synchronized output frame dump as a collapsible block.
+   * P3: Each line in the dump is rendered as a separate <div> for proper
+   * line breaks — the dump may contain \n but we need explicit DOM elements.
+   */
+  _addSyncScreenResultBlock(text, isWelcome = false) {
+    // Clear any status banner
+    if (this._statusBannerEl) {
+      this._statusBannerEl.remove()
+      this._statusBannerEl = null
+    }
+
+    const blockClass = isWelcome ? 'cbx-block-sync cbx-block-sync-welcome' : 'cbx-block-sync'
+    const article = this._makeBlock(blockClass)
+    const foldLevel = isWelcome ? 'header' : getFoldLevel()
+    article.setAttribute('data-fold', foldLevel)
+
+    const labelText = isWelcome ? 'Codex Welcome' : 'Codex Response'
+    const iconText = isWelcome ? '🖥' : '◈'
+
+    article.innerHTML =
+      `<div class="cbx-altscreen-card">` +
+      `<div class="cbx-altscreen-header">` +
+      `<span class="cbx-altscreen-icon">${iconText}</span>` +
+      `<span class="cbx-altscreen-label">${labelText}</span>` +
+      (isWelcome ? '' : `<span class="cbx-altscreen-done">✓ done</span>`) +
+      `<button class="cbx-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+      `</button>` +
+      `</div>` +
+      `<div class="cbx-altscreen-body cbx-sync-body"></div>` +
+      `</div>`
+
+    // P3: Render each line as a separate div for proper line breaks
+    const bodyEl = article.querySelector('.cbx-sync-body')
+    const lines = text.split('\n')
+    for (const line of lines) {
+      const lineEl = document.createElement('div')
+      lineEl.className = 'cbx-sync-line'
+      lineEl.textContent = line  // safe — no HTML injection
+      bodyEl.appendChild(lineEl)
+    }
+
+    // Click header to cycle fold states
+    const header = article.querySelector('.cbx-altscreen-header')
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('a') || e.target.tagName === 'A') return
+      const cur = article.getAttribute('data-fold') || getFoldLevel()
+      const idx = FOLD_LEVELS.indexOf(cur)
+      const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
+      article.setAttribute('data-fold', next)
+    })
+    article.style.cursor = 'pointer'
+
+    this._scroll.appendChild(article)
+    this._scrollBottom()
   }
 
   /**

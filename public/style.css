@@ -3770,6 +3770,53 @@ body.workspace-active .landing-overlay { display: none; }
 .cbx-block-altscreen[data-fold='line'] .cbx-altscreen-done { display: none; }
 .cbx-block-altscreen:not([data-fold]) .cbx-altscreen-body { display: block; }
 
+/* ── Sync output block (ESC[?2026h/l) ──────────────────────────────────── */
+/* Same visual treatment as alt-screen blocks but uses div-per-line body */
+.cbx-sync-body {
+  padding: var(--s-2) var(--s-3);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-border);
+  color: var(--c-text-2);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* P3: Each line rendered as separate div — handles \n properly */
+.cbx-sync-line {
+  display: block;
+  min-height: 1.2em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Welcome screen: more compact — collapsed by default */
+.cbx-block-sync-welcome .cbx-altscreen-label {
+  color: var(--c-text-3, #888);
+  font-size: 0.8rem;
+}
+.cbx-block-sync-welcome .cbx-altscreen-header {
+  background: color-mix(in srgb, var(--c-surface) 80%, var(--c-accent) 20%);
+  opacity: 0.8;
+}
+
+/* Fold states for sync output block */
+.cbx-block-sync[data-fold='full'] .cbx-sync-body { display: block; }
+.cbx-block-sync[data-fold='header'] .cbx-sync-body { display: none; }
+.cbx-block-sync[data-fold='line'] .cbx-altscreen-header {
+  min-height: 0;
+  padding: 2px var(--s-3);
+  font-size: 0.75rem;
+}
+.cbx-block-sync[data-fold='line'] .cbx-sync-body { display: none; }
+.cbx-block-sync[data-fold='line'] .cbx-altscreen-icon,
+.cbx-block-sync[data-fold='line'] .cbx-altscreen-done { display: none; }
+.cbx-block-sync:not([data-fold]) .cbx-sync-body { display: block; }
+
 /* ── Mobile tweaks ──────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
