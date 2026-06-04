@@ -167,6 +167,25 @@ class Session {
       if (!this._flushTimer) {
         this._flushTimer = setTimeout(() => this._flush(), OUTPUT_FLUSH_MS)
       }
+      // N30: auto-skip codex update TUI.
+      // Codex shows an update prompt with options like "1. Update now" / "2. Skip".
+      // We detect specific patterns and auto-send the skip key after a short delay.
+      if (this._codexAutoSkipUpdate && !this._autoSkipSent) {
+        // Pattern: codex update TUI is identified by box-drawing chars + "Update available"
+        // or by the menu options "1." and "2." appearing after "Update"
+        const stripped = data.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b[@-Z\\-_]/g, '')
+        if (/Update\s+available|Skip\s+this\s+update|›\s*2\b/.test(stripped) ||
+            /\[2\]\s*Skip|\(2\)\s*Skip|2\.\s*Skip|Skip\s+for\s+now/i.test(stripped)) {
+          this._autoSkipSent = true
+          // Send "2\n" to select "Skip" after 600ms
+          setTimeout(() => {
+            if (this._proc && !this._exited) {
+              console.log(`[pty:codex-autoskip] auto-sending skip for update prompt`)
+              this._proc.write('2\n')
+            }
+          }, 600)
+        }
+      }
     })
 
     this._proc.onExit(({ exitCode, signal }) => {
@@ -246,6 +265,17 @@ class Session {
       ws.removeListener('message', onMessage)
       this.detach(ws)
     })
+  }
+
+  /**
+   * Enable automatic skip of codex update prompt (N30).
+   * Call this after getOrCreate() for codex tab types.
+   */
+  enableCodexAutoSkip() {
+    if (!this._codexAutoSkipUpdate) {
+      this._codexAutoSkipUpdate = true
+      this._autoSkipSent = false
+    }
   }
 
   /**

@@ -329,6 +329,18 @@ const renderModeGroup = document.getElementById('render-mode-group')
 const renderModeSaveBtn = document.getElementById('render-mode-save-btn')
 const renderModeStatusEl = document.getElementById('render-mode-status')
 
+const codexModelGroup = document.getElementById('codex-model-group')
+const codexModelSaveBtn = document.getElementById('codex-model-save-btn')
+const codexModelStatusEl = document.getElementById('codex-model-status')
+
+function loadCodexModelSettings(serverSettings) {
+  const model = serverSettings?.codex_model || ''
+  const radios = codexModelGroup?.querySelectorAll('input[name="codex-model"]')
+  if (radios) {
+    for (const radio of radios) radio.checked = radio.value === model
+  }
+}
+
 function loadRenderModeSettings(serverSettings) {
   const mode = (serverSettings?.renderMode) || 'block'
   const radios = renderModeGroup?.querySelectorAll('input[name="render-mode"]')
@@ -354,6 +366,7 @@ function loadSettings(serverSettings) {
   loadAutoResumeSettings()
   loadSubagentVisSettings()
   loadRenderModeSettings(serverSettings)
+  loadCodexModelSettings(serverSettings)
 }
 
 if (cliSaveBtn) {
@@ -398,6 +411,36 @@ if (renderModeSaveBtn) {
         renderModeStatusEl.textContent = err.message
         renderModeStatusEl.className = 'settings-status error'
         setTimeout(() => { renderModeStatusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
+// ─── Codex model save ─────────────────────────────────────────────────────────
+
+if (codexModelSaveBtn) {
+  codexModelSaveBtn.addEventListener('click', async () => {
+    const selected = codexModelGroup?.querySelector('input[name="codex-model"]:checked')
+    if (selected === null || selected === undefined) return
+    const model = selected.value  // empty string = use default from config.toml
+    try {
+      await updateSetting('codex_model', model)
+      // Also persist in localStorage for immediate reads
+      if (model) {
+        localStorage.setItem('codex_model', model)
+      } else {
+        localStorage.removeItem('codex_model')
+      }
+      if (codexModelStatusEl) {
+        codexModelStatusEl.textContent = 'Saved — 重新打开 Codex tab 后生效'
+        codexModelStatusEl.className = 'settings-status success'
+        setTimeout(() => { codexModelStatusEl.textContent = '' }, 4000)
+      }
+    } catch (err) {
+      if (codexModelStatusEl) {
+        codexModelStatusEl.textContent = err.message
+        codexModelStatusEl.className = 'settings-status error'
+        setTimeout(() => { codexModelStatusEl.textContent = '' }, 3000)
       }
     }
   })

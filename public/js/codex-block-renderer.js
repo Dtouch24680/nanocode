@@ -36,6 +36,162 @@ function getFoldLevel() {
   return FOLD_LEVELS.includes(v) ? v : 'full'
 }
 
+// ── Alt-screen detection ──────────────────────────────────────────────────────
+// Codex CLI uses the VT100 alternate screen buffer for its full-screen TUI.
+// ESC[?1049h = enter alt-screen (save cursor + switch to alt buffer)
+// ESC[?1049l = leave alt-screen (restore cursor + switch back to main buffer)
+// We also handle the simpler ESC[?47h/l variants (xterm compat).
+const ALT_SCREEN_ENTER_RE = /\x1b\[\?(?:1049|47)h/
+const ALT_SCREEN_EXIT_RE  = /\x1b\[\?(?:1049|47)l/
+
+// ── Simple VT100 virtual screen (for alt-screen rendering) ────────────────────
+// Minimal 2D char buffer that handles:
+//   - CSI H / CSI f — cursor position (row;col)
+//   - CSI A/B/C/D   — cursor up/down/forward/back
+//   - CSI J         — erase in display (0/2/3)
+//   - CSI K         — erase in line (0/1/2)
+//   - CR (\r)       — carriage return
+//   - LF (\n)       — line feed
+//   - printable chars — write to buffer at cursor position
+//
+// Non-printable / color SGR sequences are ignored.
+// This is intentionally minimal — good enough for Codex TUI text content.
+class VT100Screen {
+  constructor(cols = 220, rows = 50) {
+    this.cols = cols
+    this.rows = rows
+    // Each row is a fixed-length array of chars (space-filled).
+    this.buf = Array.from({ length: rows }, () => new Array(cols).fill(' '))
+    this.cx = 0  // cursor col (0-based)
+    this.cy = 0  // cursor row (0-based)
+  }
+
+  /** Write raw PTY data into the virtual screen. */
+  write(data) {
+    let i = 0
+    while (i < data.length) {
+      const ch = data[i]
+      if (ch === '\r') {
+        this.cx = 0; i++; continue
+      }
+      if (ch === '\n') {
+        this.cy = Math.min(this.cy + 1, this.rows - 1); i++; continue
+      }
+      if (ch === '\x1b') {
+        // ESC sequence
+        const rest = data.slice(i)
+        // OSC: ESC ] ... BEL or ST — skip
+        if (rest[1] === ']') {
+          const end = rest.search(/\x07|\x1b\\/)
+          if (end === -1) { i = data.length; break }
+          i += end + (rest[end] === '\x07' ? 1 : 2); continue
+        }
+        // DCS: ESC P ... ST — skip
+        if (rest[1] === 'P') {
+          const st = rest.indexOf('\x1b\\', 2)
+          i += st === -1 ? data.length : st + 2; continue
+        }
+        // CSI: ESC [
+        if (rest[1] === '[') {
+          const m = rest.match(/^\x1b\[([0-9;?]*)([A-Za-z@`])/)
+          if (!m) { i += 2; continue }
+          const params = m[1]
+          const cmd    = m[2]
+          i += m[0].length
+          this._csi(cmd, params); continue
+        }
+        // 2-char ESC sequences: skip
+        i += 2; continue
+      }
+      // Printable char (includes UTF-8 multibyte — treated as 1 cell width for simplicity)
+      const code = ch.charCodeAt(0)
+      if (code >= 0x20) {
+        if (this.cy < this.rows && this.cx < this.cols) {
+          this.buf[this.cy][this.cx] = ch
+        }
+        this.cx++
+        if (this.cx >= this.cols) { this.cx = 0; this.cy = Math.min(this.cy + 1, this.rows - 1) }
+      }
+      i++
+    }
+  }
+
+  _csi(cmd, params) {
+    const nums = params.split(';').map(n => parseInt(n, 10) || 0)
+    const n0 = nums[0]
+    switch (cmd) {
+      case 'H': case 'f': {  // cursor position: row;col (1-based)
+        this.cy = Math.max(0, Math.min((nums[0] || 1) - 1, this.rows - 1))
+        this.cx = Math.max(0, Math.min((nums[1] || 1) - 1, this.cols - 1))
+        break
+      }
+      case 'A': this.cy = Math.max(0, this.cy - (n0 || 1)); break  // up
+      case 'B': this.cy = Math.min(this.rows - 1, this.cy + (n0 || 1)); break  // down
+      case 'C': this.cx = Math.min(this.cols - 1, this.cx + (n0 || 1)); break  // right
+      case 'D': this.cx = Math.max(0, this.cx - (n0 || 1)); break  // left
+      case 'G': this.cx = Math.max(0, Math.min((n0 || 1) - 1, this.cols - 1)); break  // col
+      case 'd': this.cy = Math.max(0, Math.min((n0 || 1) - 1, this.rows - 1)); break  // row
+      case 'J': {  // erase in display
+        if (n0 === 0) {
+          // erase from cursor to end of screen
+          for (let c = this.cx; c < this.cols; c++) { if (this.buf[this.cy]) this.buf[this.cy][c] = ' ' }
+          for (let r = this.cy + 1; r < this.rows; r++) this.buf[r].fill(' ')
+        } else if (n0 === 1) {
+          // erase from start to cursor
+          for (let r = 0; r < this.cy; r++) this.buf[r].fill(' ')
+          for (let c = 0; c <= this.cx; c++) { if (this.buf[this.cy]) this.buf[this.cy][c] = ' ' }
+        } else {
+          // erase entire screen (2 or 3)
+          for (const row of this.buf) row.fill(' ')
+        }
+        break
+      }
+      case 'K': {  // erase in line
+        if (n0 === 0) {
+          for (let c = this.cx; c < this.cols; c++) { if (this.buf[this.cy]) this.buf[this.cy][c] = ' ' }
+        } else if (n0 === 1) {
+          for (let c = 0; c <= this.cx; c++) { if (this.buf[this.cy]) this.buf[this.cy][c] = ' ' }
+        } else {
+          if (this.buf[this.cy]) this.buf[this.cy].fill(' ')
+        }
+        break
+      }
+      case 'P': {  // delete N chars at cursor (shift left)
+        const count = n0 || 1
+        if (this.buf[this.cy]) {
+          const row = this.buf[this.cy]
+          row.splice(this.cx, count)
+          while (row.length < this.cols) row.push(' ')
+        }
+        break
+      }
+      case '@': {  // insert N blank chars at cursor
+        const count = n0 || 1
+        if (this.buf[this.cy]) {
+          const row = this.buf[this.cy]
+          for (let k = 0; k < count; k++) row.splice(this.cx, 0, ' ')
+          row.length = this.cols
+        }
+        break
+      }
+      // SGR (m), cursor save/restore (s/u), private modes (?h/l) — ignore
+      default: break
+    }
+  }
+
+  /** Dump non-empty rows as plain text, trimming trailing whitespace. */
+  dump() {
+    const lines = []
+    for (const row of this.buf) {
+      const line = row.join('').trimEnd()
+      if (line) lines.push(line)
+    }
+    // Remove trailing empty groups
+    while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop()
+    return lines.join('\n')
+  }
+}
+
 // ── ANSI strip ────────────────────────────────────────────────────────────────
 // Standard CSI sequences: ESC [ ... final-byte
 const ANSI_CSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g
@@ -204,6 +360,16 @@ export class CodexBlockRenderer {
     // Update/tip notice dedup — only show once per session
     this._shownUpdateNotice = false
 
+    // ── Alt-screen (VT100 full-screen TUI) state ──────────────────────────────
+    // When codex enters its full-screen TUI (ESC[?1049h), we switch to
+    // VT100Screen rendering mode. A spinner block is shown while codex works.
+    // When alt-screen ends (ESC[?1049l), the final VT100Screen state is dumped
+    // as a result block so the user sees what codex produced.
+    this._inAltScreen = false
+    this._altScreenBuf = ''   // raw (pre-strip) data accumulation while in alt-screen
+    this._altScreen = null    // VT100Screen instance while active
+    this._altSpinnerEl = null // the spinner/progress block element
+
     this._connect()
   }
 
@@ -342,24 +508,242 @@ export class CodexBlockRenderer {
   // ── PTY data handling ─────────────────────────────────────────────────────────
 
   /**
-   * Process raw PTY data. We accumulate in a buffer and split on newlines.
-   * Each complete line is processed to detect codex patterns.
+   * Process raw PTY data. We handle alt-screen transitions BEFORE stripping ANSI.
+   * While in alt-screen, data is fed into a VT100Screen virtual buffer.
+   * On alt-screen exit, the screen is dumped as a text block.
+   * Outside alt-screen, behavior is the original line-by-line processing.
    */
   _handlePtyData(data, fromHistory) {
     if (!data) return
-    // Strip ANSI codes first
+
+    // ── Alt-screen boundary detection (pre-ANSI-strip) ──────────────────────
+    // We may receive chunks that straddle an enter/exit boundary, so we
+    // split on the boundary sequence and process each segment.
+
+    // Check if there are any alt-screen transitions in this chunk
+    if (ALT_SCREEN_ENTER_RE.test(data) || ALT_SCREEN_EXIT_RE.test(data)) {
+      // Process segment-by-segment around alt-screen boundaries
+      this._handlePtyDataWithAltScreen(data, fromHistory)
+      return
+    }
+
+    if (this._inAltScreen) {
+      // We're inside an alt-screen TUI — feed raw data to virtual screen
+      this._altScreenBuf += data
+      this._altScreen.write(data)
+      // Update spinner to show "still thinking"
+      this._updateAltSpinner()
+      return
+    }
+
+    // Normal path: strip ANSI codes, split lines
     const cleaned = stripAnsi(data)
-    // Accumulate in buffer
     this._ptybuf += cleaned
-
-    // Process complete lines
     const lines = this._ptybuf.split('\n')
-    // Keep last (potentially incomplete) line in buffer
     this._ptybuf = lines.pop() ?? ''
-
     for (const line of lines) {
       this._processLine(line.replace(/\r/g, ''))
     }
+  }
+
+  /**
+   * Handle PTY data that contains alt-screen enter or exit sequences.
+   * Splits the chunk on boundary sequences and processes each segment
+   * in the correct mode (normal vs alt-screen).
+   */
+  _handlePtyDataWithAltScreen(data, fromHistory) {
+    // Split on alt-screen enter/exit, keeping the delimiters
+    // We walk through the data finding ESC[?1049h and ESC[?1049l sequences.
+    let pos = 0
+    while (pos < data.length) {
+      // Find next alt-screen sequence
+      const enterIdx = data.indexOf('\x1b[?1049h', pos)
+      const exitIdx  = data.indexOf('\x1b[?1049l', pos)
+      // Also handle ESC[?47h/l variants
+      const enter47Idx = data.indexOf('\x1b[?47h', pos)
+      const exit47Idx  = data.indexOf('\x1b[?47l', pos)
+
+      // Determine the nearest event
+      const nextEnter = Math.min(
+        enterIdx  >= 0 ? enterIdx  : Infinity,
+        enter47Idx >= 0 ? enter47Idx : Infinity,
+      )
+      const nextExit = Math.min(
+        exitIdx  >= 0 ? exitIdx  : Infinity,
+        exit47Idx >= 0 ? exit47Idx : Infinity,
+      )
+
+      if (nextEnter === Infinity && nextExit === Infinity) {
+        // No more boundaries — process rest in current mode
+        const rest = data.slice(pos)
+        if (rest) {
+          if (this._inAltScreen) {
+            this._altScreenBuf += rest
+            this._altScreen.write(rest)
+            this._updateAltSpinner()
+          } else {
+            const cleaned = stripAnsi(rest)
+            this._ptybuf += cleaned
+            const lines = this._ptybuf.split('\n')
+            this._ptybuf = lines.pop() ?? ''
+            for (const line of lines) this._processLine(line.replace(/\r/g, ''))
+          }
+        }
+        break
+      }
+
+      if (!this._inAltScreen && nextEnter < nextExit) {
+        // Process normal data before the enter sequence
+        const before = data.slice(pos, nextEnter)
+        if (before) {
+          const cleaned = stripAnsi(before)
+          this._ptybuf += cleaned
+          const lines = this._ptybuf.split('\n')
+          this._ptybuf = lines.pop() ?? ''
+          for (const line of lines) this._processLine(line.replace(/\r/g, ''))
+        }
+        // Enter alt-screen
+        this._enterAltScreen()
+        const seqLen = data[nextEnter + 2] === '?' && data.slice(nextEnter).startsWith('\x1b[?1049h') ? 8 : 6
+        pos = nextEnter + seqLen
+      } else if (this._inAltScreen && nextExit < nextEnter) {
+        // Feed alt-screen data up to the exit sequence
+        const before = data.slice(pos, nextExit)
+        if (before) {
+          this._altScreenBuf += before
+          this._altScreen.write(before)
+        }
+        // Exit alt-screen — finalize and render
+        const seqLen = data.slice(nextExit).startsWith('\x1b[?1049l') ? 8 : 6
+        pos = nextExit + seqLen
+        // Capture any data that follows on the same chunk (main-screen content)
+        this._exitAltScreen()
+      } else if (!this._inAltScreen && nextExit <= nextEnter) {
+        // Spurious exit while not in alt-screen — skip sequence
+        const seqLen = data.slice(nextExit).startsWith('\x1b[?1049l') ? 8 : 6
+        pos = nextExit + seqLen
+      } else {
+        // Spurious enter while already in alt-screen — skip sequence
+        const seqLen = data.slice(nextEnter).startsWith('\x1b[?1049h') ? 8 : 6
+        pos = nextEnter + seqLen
+      }
+    }
+  }
+
+  /** Called when ESC[?1049h is received — codex enters full-screen TUI. */
+  _enterAltScreen() {
+    if (this._inAltScreen) return
+    this._inAltScreen = true
+    this._altScreenBuf = ''
+    this._altScreen = new VT100Screen(220, 50)
+    this._finalizeCurrentBlock()
+    this._setThinking(true)
+    // Show a progress spinner block
+    this._showAltSpinner()
+  }
+
+  /** Called when ESC[?1049l is received — codex leaves full-screen TUI. */
+  _exitAltScreen() {
+    if (!this._inAltScreen) return
+    this._inAltScreen = false
+    const screenDump = this._altScreen ? this._altScreen.dump() : ''
+    this._altScreen = null
+    this._altScreenBuf = ''
+
+    // Remove the spinner
+    this._clearAltSpinner()
+
+    // Render the screen dump as a result block (if non-empty content)
+    if (screenDump && screenDump.trim()) {
+      this._addAltScreenResultBlock(screenDump)
+    }
+
+    this._setThinking(false)
+  }
+
+  /** Show (or update) the "Codex thinking..." spinner block. */
+  _showAltSpinner() {
+    if (!this._altSpinnerEl) {
+      const el = document.createElement('div')
+      el.className = 'cbx-alt-spinner'
+      el.innerHTML =
+        `<span class="cbx-alt-spinner-dot"></span>` +
+        `<span class="cbx-alt-spinner-text">Codex thinking…</span>` +
+        `<span class="cbx-alt-spinner-hint">（全屏 TUI 渲染中）</span>`
+      this._scroll.appendChild(el)
+      this._altSpinnerEl = el
+    }
+    this._scrollBottom()
+  }
+
+  /** Update the alt-screen spinner to indicate ongoing activity. */
+  _updateAltSpinner() {
+    if (this._altSpinnerEl) {
+      const now = Date.now()
+      if (!this._altSpinnerLastUpdate || now - this._altSpinnerLastUpdate > 500) {
+        this._altSpinnerLastUpdate = now
+        const dots = '.'.repeat(((now / 500) | 0) % 4)
+        const hint = this._altSpinnerEl.querySelector('.cbx-alt-spinner-hint')
+        if (hint) hint.textContent = `（全屏 TUI 渲染中${dots}）`
+        this._scrollBottom()
+      }
+    }
+  }
+
+  /** Remove the alt-screen spinner block. */
+  _clearAltSpinner() {
+    if (this._altSpinnerEl) {
+      this._altSpinnerEl.remove()
+      this._altSpinnerEl = null
+    }
+    this._altSpinnerLastUpdate = 0
+  }
+
+  /**
+   * Render the alt-screen dump as a collapsible result block.
+   * The screen dump is the final visual state of codex's TUI —
+   * includes reasoning, tool calls, file changes, etc.
+   */
+  _addAltScreenResultBlock(text) {
+    // Clear any status banner
+    if (this._statusBannerEl) {
+      this._statusBannerEl.remove()
+      this._statusBannerEl = null
+    }
+
+    const article = this._makeBlock('cbx-block-altscreen')
+    const foldLevel = getFoldLevel()
+    article.setAttribute('data-fold', foldLevel)
+
+    article.innerHTML =
+      `<div class="cbx-altscreen-card">` +
+      `<div class="cbx-altscreen-header">` +
+      `<span class="cbx-altscreen-icon">◈</span>` +
+      `<span class="cbx-altscreen-label">Codex Response</span>` +
+      `<span class="cbx-altscreen-done">✓ done</span>` +
+      `<button class="cbx-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+      `</button>` +
+      `</div>` +
+      `<pre class="cbx-altscreen-body"></pre>` +
+      `</div>`
+
+    // Set text content safely (no HTML injection)
+    article.querySelector('.cbx-altscreen-body').textContent = text
+
+    // Click header to cycle fold states
+    const header = article.querySelector('.cbx-altscreen-header')
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('a') || e.target.tagName === 'A') return
+      const cur = article.getAttribute('data-fold') || getFoldLevel()
+      const idx = FOLD_LEVELS.indexOf(cur)
+      const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
+      article.setAttribute('data-fold', next)
+    })
+    article.style.cursor = 'pointer'
+
+    this._scroll.appendChild(article)
+    this._scrollBottom()
   }
 
   _processLine(line) {

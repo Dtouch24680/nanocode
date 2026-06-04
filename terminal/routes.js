@@ -768,7 +768,20 @@ export function createTerminalRoutes(store) {
       ].join(' ')
     },
     // Codex: skip all approvals AND drop the sandbox.
-    codex: () => 'codex --dangerously-bypass-approvals-and-sandbox; exec bash -l',
+    // If codex_model is set in server settings, pass -m <model> to select the model.
+    // Model value mapping: 'gpt-5.5-xhigh' → 'gpt-5.5' with reasoning_effort=xhigh,
+    // but codex CLI accepts the model name directly with -m; xhigh is set via
+    // OPENAI_REASONING_EFFORT env var or config.toml. For now we pass the base model.
+    codex: () => {
+      const rawModel = store.getSetting('codex_model') || ''
+      // Map UI value to codex CLI -m arg
+      let modelArg = ''
+      if (rawModel === 'gpt-5.4') modelArg = '-m gpt-5.4'
+      else if (rawModel === 'gpt-5.5') modelArg = '-m gpt-5.5'
+      else if (rawModel === 'gpt-5.5-xhigh') modelArg = '-m gpt-5.5'  // xhigh set via config
+      // else: empty — let config.toml decide
+      return `codex ${modelArg} --dangerously-bypass-approvals-and-sandbox; exec bash -l`.replace(/\s+/g, ' ').trim()
+    },
     // Cursor Agent: `--force` (alias `--yolo`) runs every command unless
     // explicitly denied. `--approve-mcps` pre-approves MCP servers.
     agent: () => 'agent --force --approve-mcps; exec bash -l',
@@ -1350,6 +1363,10 @@ export function createTerminalRoutes(store) {
         cwd,
         scrollbackPath
       )
+      // N30: auto-skip codex update TUI prompt for codex tabs
+      if (tabType === 'codex') {
+        session.enableCodexAutoSkip()
+      }
       session.attach(ws, Math.max(1, cols || 80), Math.max(1, rows || 24))
     }
 
