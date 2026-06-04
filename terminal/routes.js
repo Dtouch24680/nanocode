@@ -930,7 +930,13 @@ export function createTerminalRoutes(store) {
       userText,
     ]
     const escapedArgs = launchArgs.map((a) => sq(a))
-    const launchCmd = `claude ${escapedArgs.join(' ')}`
+    // Use `exec` so bash replaces itself with the claude process in-place.
+    // Without `exec`, the process tree is: bash (proc.pid) → claude (child).
+    // When we proc.kill('SIGINT') we only signal bash; bash exits first and
+    // claude is left as an orphan holding the session lock, causing the next
+    // spawn to fail with "Session ID … is already in use". With `exec`, proc.pid
+    // IS the claude process, so SIGINT reaches it directly and no orphan is created.
+    const launchCmd = `exec claude ${escapedArgs.join(' ')}`
 
     console.log(`[claude:spawn] sessionKey=${sessionKey} turn=${cs.turnCount} len=${userText.length}`)
     const proc = spawn('bash', ['-lc', launchCmd], {
@@ -941,7 +947,7 @@ export function createTerminalRoutes(store) {
       // use" / exit code 1).  See buildClaudeChildEnv() comment for details.
       env: buildClaudeChildEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      // detached:true puts this turn's `bash -lc claude …` into its own process
+      // detached:true puts this turn's `bash -lc exec claude …` into its own process
       // group/session (setsid). This is defense-in-depth for the "Stop must not
       // kill my sub-agents" requirement: the interrupt route sends SIGINT to the
       // single positive pid (never the negative process-group id), so isolating
@@ -959,6 +965,10 @@ export function createTerminalRoutes(store) {
     cs.currentProc = proc
 
     let lineBuffer = ''
+    // Flag set by the stderr handler when claude reports "already in use".
+    // The exit handler checks this to schedule a transparent retry instead of
+    // broadcasting an error result.
+    let _sessionConflict = false
 
     proc.stdout.on('data', (chunk) => {
       lineBuffer += chunk.toString('utf8')
@@ -976,6 +986,14 @@ export function createTerminalRoutes(store) {
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString('utf8').trim()
       if (!text) return
+      // Session-lock conflict: a prior claude subprocess hasn't fully released
+      // the session yet (common after interrupt or rapid back-to-back turns).
+      // Suppress the error and let the exit handler schedule a transparent retry.
+      if (!_sessionConflict && text.includes('is already in use')) {
+        _sessionConflict = true
+        console.warn(`[claude:session-conflict] ${sessionKey}: session still locked, will retry`)
+        return
+      }
       console.warn(`[claude:stderr] ${sessionKey}: ${text.slice(0, 120)}`)
       const event = { type: 'system', subtype: 'stderr', text }
       claudeBroadcast(cs, event)
@@ -984,6 +1002,27 @@ export function createTerminalRoutes(store) {
     proc.on('exit', (code, signal) => {
       cs.busy = false
       cs.currentProc = null
+
+      // Transparent retry on session-lock conflict: undo the turn-count increment
+      // so the same --session-id / --resume arg is used, then wait 1 s for the
+      // previous claude process to fully release the lock before re-trying.
+      if (_sessionConflict) {
+        const attempt = (cs._conflictRetries || 0) + 1
+        if (attempt <= 2) {
+          cs._conflictRetries = attempt
+          cs.turnCount--  // undo so the same sessionArg is produced next time
+          console.warn(`[claude:session-conflict] ${sessionKey}: retry #${attempt} in 1s`)
+          setTimeout(() => {
+            if ((cs._conflictRetries || 0) === attempt) cs._conflictRetries = 0
+            runClaudeTurn(cs, userText, sessionKey, cwd)
+          }, 1000)
+          return  // skip result broadcast and queue drain — retry handles this
+        }
+        // Exhausted retries: fall through to normal error handling so the user
+        // sees the failure rather than being silently stuck.
+        cs._conflictRetries = 0
+      }
+
       // Broadcast a synthetic 'result' event so the frontend knows the turn ended
       // (needed for the thinking-state UI to reset even on interrupt/error)
       const wasInterrupted = signal === 'SIGINT'
