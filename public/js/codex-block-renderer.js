@@ -125,6 +125,23 @@ const PATCH_RE = /^(?:apply_patch|edit_file|write_file|create_file|patch:)/i
 // Codex "turn" separator
 const TURN_SEP_RE = /^[─═]{10,}/
 
+// Box-drawing chars noise filter — codex update notification and TUI borders.
+// Two patterns:
+//   1. Lines that are purely box-drawing + spaces (╭─╮ ╰─╯ borders)
+//   2. Lines that start with │ and contain codex startup info
+//      (│ model: ... │ directory: ... │ permissions: ...)
+//      These are inside the startup TUI box — shown as a subtler system block.
+const BOX_DRAWING_RE = /^[\s╭╮╰╯─│├┤┬┴┼░▒▓]+$/
+const BOX_CONTENT_RE = /^[│]\s+(?:>_\s|model:|directory:|permissions:|Tip:)/
+
+// Codex update/tip banner detector — lines like "✨ Update available!" and
+// "Tip: NEW: Codex can now..." are startup noise. Show once as a subtle notice.
+const UPDATE_NOTICE_RE = /^[✨\s]*Update available!|^Tip:\s/i
+
+// Codex session info line — extract key info from startup banner lines like
+// "│ model:       gpt-5.5 xhigh" → used to show a compact session header
+const SESSION_INFO_RE = /^[│]\s+(model|directory|permissions):\s+(.*)/
+
 // ── Main class ────────────────────────────────────────────────────────────────
 export class CodexBlockRenderer {
   constructor(container, opts = {}) {
@@ -179,6 +196,9 @@ export class CodexBlockRenderer {
 
     // Track thinking state
     this._thinking = false
+
+    // Update/tip notice dedup — only show once per session
+    this._shownUpdateNotice = false
 
     this._connect()
   }
@@ -352,6 +372,32 @@ export class CodexBlockRenderer {
     // xterm title-set echoes: "0;[pek-idc] hostname~/path$ cmd" or "\e]0;..."
     // These are OSC 0 remnants that survive ANSI stripping — silently discard.
     if (XTERM_TITLE_RE.test(line)) {
+      return
+    }
+
+    // Box-drawing char lines (╭─╮ │ ╰─╯ borders from codex update/startup TUI) — noise.
+    if (BOX_DRAWING_RE.test(line)) {
+      return
+    }
+
+    // Codex startup info lines inside the TUI box (│ model: ... │ directory: ...)
+    // Extract key=value and accumulate into a compact session-info block.
+    if (BOX_CONTENT_RE.test(line) && !this._currentBashBlock) {
+      const m = SESSION_INFO_RE.exec(line)
+      if (m) {
+        this._accumulateSessionInfo(m[1].trim(), m[2].trim())
+      }
+      // drop the line regardless (either accumulated or just visual)
+      return
+    }
+
+    // Codex startup tips — "Tip: NEW: …" — silently drop; not task-relevant.
+    if (UPDATE_NOTICE_RE.test(line) && !this._currentBashBlock) {
+      // Show update notice as subtle system block once
+      if (!this._shownUpdateNotice) {
+        this._shownUpdateNotice = true
+        this._addSystemBlock(line.trim())
+      }
       return
     }
 
@@ -588,6 +634,30 @@ export class CodexBlockRenderer {
     pre.textContent = line
     article.appendChild(pre)
     this._scroll.appendChild(article)
+    this._scrollBottom()
+  }
+
+  // ── Session info accumulator (codex startup banner) ──────────────────────────
+
+  _accumulateSessionInfo(key, value) {
+    if (!this._sessionInfoEl) {
+      // Create the session info bar once
+      const bar = document.createElement('div')
+      bar.className = 'cbx-session-info'
+      this._scroll.appendChild(bar)
+      this._sessionInfoEl = bar
+      this._sessionInfoData = {}
+    }
+    this._sessionInfoData[key] = value
+    // Render compact: model / directory / permissions
+    const parts = []
+    if (this._sessionInfoData.model) parts.push(`<span class="cbx-si-model">${escHtml(this._sessionInfoData.model)}</span>`)
+    if (this._sessionInfoData.directory) {
+      const dir = this._sessionInfoData.directory.replace(/^\/storage\/home\/[^/]+\//, '~/')
+      parts.push(`<span class="cbx-si-dir">${escHtml(dir)}</span>`)
+    }
+    if (this._sessionInfoData.permissions) parts.push(`<span class="cbx-si-perm">${escHtml(this._sessionInfoData.permissions)}</span>`)
+    this._sessionInfoEl.innerHTML = parts.join('<span class="cbx-si-sep"> · </span>')
     this._scrollBottom()
   }
 

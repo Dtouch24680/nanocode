@@ -3311,6 +3311,37 @@ body.workspace-active .landing-overlay { display: none; }
   font-weight: 500;
 }
 
+/* ── Session info bar (codex startup model/dir/permissions) ── */
+.cbx-session-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: var(--s-1) var(--s-3);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-left: 2px solid var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.cbx-si-model {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.cbx-si-dir {
+  color: var(--text);
+}
+
+.cbx-si-perm {
+  color: color-mix(in srgb, #5fb87a 80%, var(--text));
+}
+
+.cbx-si-sep {
+  color: var(--border);
+}
+
 /* ── System block ────────────────────────────────  */
 .cbx-block-system {
   background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
