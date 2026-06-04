@@ -138,6 +138,9 @@ const BOX_CONTENT_RE = /^[│]\s+(?:>_\s|model:|directory:|permissions:|Tip:|[�
 // "Tip: NEW: Codex can now..." are startup noise. Show once as a subtle notice.
 const UPDATE_NOTICE_RE = /^[✨\s]*Update available!|^Tip:\s/i
 
+// Codex startup noise: npm update spinner (\|/-), npm error output, "See full release"
+const STARTUP_NOISE_RE = /^(?:[\\|\/\-]{1,4}$|-?npm\s+(?:error|warn|notice|info)\b|Updating\s+Codex\s+via\b|See\s+full\s+release\s+notes?:|Run\s+npm\s+install)/i
+
 // Codex session info line — extract key info from startup banner lines like
 // "│ model:       gpt-5.5 xhigh" → used to show a compact session header
 // Capture up to but not including any trailing │ border char
@@ -392,6 +395,12 @@ export class CodexBlockRenderer {
       return
     }
 
+    // Codex startup noise: npm spinner / npm error lines / "Updating Codex via…"
+    // These appear before the codex TUI starts and are visual clutter.
+    if (STARTUP_NOISE_RE.test(line) && !this._currentBashBlock) {
+      return
+    }
+
     // Codex startup tips — "Tip: NEW: …" — silently drop; not task-relevant.
     if (UPDATE_NOTICE_RE.test(line) && !this._currentBashBlock) {
       // Show update notice as subtle system block once
@@ -449,8 +458,16 @@ export class CodexBlockRenderer {
       return
     }
 
-    // If we're inside a bash block, this is output
+    // If we're inside a bash block, this is output — but still suppress
+    // codex startup noise (npm spinner/errors, TUI box-drawing) that arrive
+    // as bash output while codex itself is initialising (auto-updating, etc.)
     if (this._currentBashBlock) {
+      if (BOX_DRAWING_RE.test(line) || BOX_CONTENT_RE.test(line) || STARTUP_NOISE_RE.test(line)) {
+        // Extract session info even when inside a bash block
+        const m = SESSION_INFO_RE.exec(line)
+        if (m) this._accumulateSessionInfo(m[1].trim(), m[2].trim())
+        return
+      }
       this._appendToBashOutput(line)
       return
     }
