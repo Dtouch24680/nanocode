@@ -307,11 +307,6 @@ function setupChatInput() {
   // Insert before send-btn
   sendBtn.parentNode.insertBefore(stopBtn, sendBtn)
 
-  // Track interrupting state for force-escalation (P0-3).
-  // _interruptingAt: timestamp of last interrupt POST, or null if not interrupting.
-  // Within 3s of an interrupt, a second press escalates to force=1.
-  let _interruptingAt = null
-  const FORCE_WINDOW_MS = 3000
 
   // ── Client-side pending queue ─────────────────────────────────────────────
   // Messages typed while Claude is busy are held here (not sent to server yet).
@@ -378,8 +373,7 @@ function setupChatInput() {
       sendBtn.hidden = true
     } else {
       chatInput.classList.remove('claude-thinking')
-      // Result arrived — reset interrupting state and restore normal send UI.
-      _interruptingAt = null
+      // Result arrived — restore normal send UI.
       stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
       stopBtn.title = 'Stop Claude (interrupt)'
       stopBtn.disabled = false
@@ -417,11 +411,10 @@ function setupChatInput() {
   })
 
   // ── Interrupt helper (shared by Stop btn, Esc, Ctrl+C) ─────────────────────
-  // Posts /interrupt to the backend. If called within FORCE_WINDOW_MS of a
-  // previous interrupt POST, escalates to force=1 (SIGKILL). Updates the Stop
-  // button to an "interrupting…" visual state while waiting for the real result
-  // event. Does NOT call updateThinkingState(false) — that only happens when the
-  // WS 'result' event arrives, preserving the _pendingQueue protection (b67a2b6).
+  // Single Esc interrupts the current turn, same as the Claude CLI. Posts
+  // /interrupt to the backend (SIGINT). Does NOT call updateThinkingState(false)
+  // — that only happens when the WS 'result' event arrives, preserving the
+  // _pendingQueue protection (b67a2b6).
   async function doInterrupt() {
     if (!tabManager) return
     const activeTab = tabManager.tabs?.find((t) => t.id === tabManager.activeId)
@@ -429,38 +422,22 @@ function setupChatInput() {
     const projectId = tabManager.projectId
     const tabId = activeTab.id
 
-    const now = Date.now()
-    const isForce = _interruptingAt !== null && (now - _interruptingAt) < FORCE_WINDOW_MS
-    _interruptingAt = now
-
-    const url = `/api/projects/${projectId}/tabs/${tabId}/interrupt` + (isForce ? '?force=1' : '')
     try {
-      await fetch(url, { method: 'POST' })
+      await fetch(`/api/projects/${projectId}/tabs/${tabId}/interrupt`, { method: 'POST' })
     } catch {}
 
-    // Visual: enter "interrupting…" state. Do NOT hide stopBtn or show sendBtn yet
-    // — the real WS result event will trigger updateThinkingState(false) which does that.
-    // This prevents premature flush of _pendingQueue.
-    chatInput.classList.remove('claude-thinking')
-    if (isForce) {
-      stopBtn.textContent = '强杀中…'
-      stopBtn.title = 'Force-killing Claude process…'
-    } else {
-      stopBtn.textContent = '中断中… (再按强杀)'
-      stopBtn.title = 'Interrupting… press again to force-kill'
+    // Insert CLI-style block in the conversation flow (matches CLI text).
+    if (activePane && typeof activePane.showInterruptBlock === 'function') {
+      activePane.showInterruptBlock()
     }
+
+    // Visual: keep stopBtn visible until the real WS result event triggers
+    // updateThinkingState(false). Do NOT hide stopBtn or show sendBtn yet —
+    // this prevents premature flush of _pendingQueue.
+    chatInput.classList.remove('claude-thinking')
     stopBtn.disabled = false
     stopBtn.hidden = false
     sendBtn.hidden = true
-
-    // Restore stop button icon after 5s in case no result event arrives
-    setTimeout(() => {
-      if (!stopBtn.hidden) {
-        stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
-        stopBtn.title = 'Stop Claude (interrupt)'
-        stopBtn.disabled = false
-      }
-    }, 5000)
   }
 
   // Stop button click: POST interrupt to backend

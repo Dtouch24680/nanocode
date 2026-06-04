@@ -459,7 +459,7 @@ export class ClaudeBlockRenderer {
     // Ctrl+C: POST interrupt API (real interrupt, not a no-op).
     // This is called by the touch toolbar ctrl-c button and legacy callers.
     if (data === '\x03') {
-      this._addSystemBlock('[interrupting…]')
+      this.showInterruptBlock()
       if (this.projectId && this.tabId) {
         fetch(`/api/projects/${this.projectId}/tabs/${this.tabId}/interrupt`, { method: 'POST' })
           .catch(() => {})
@@ -469,6 +469,18 @@ export class ClaudeBlockRenderer {
     if (data === '\x0c') {
       this._scroll.innerHTML = ''
     }
+  }
+
+  /**
+   * Insert a CLI-style interrupted block into the conversation flow.
+   * Called by doInterrupt() (Esc / Stop btn) and sendRaw('\x03') (Ctrl+C / touch toolbar).
+   * Text matches the Claude CLI: "[Request interrupted by user]".
+   */
+  showInterruptBlock() {
+    const article = this._makeBlock('cbr-block-system cbr-block-interrupted')
+    article.innerHTML = `<p class="cbr-system cbr-interrupted">[Request interrupted by user]</p>`
+    this._scroll.appendChild(article)
+    this._scrollBottom()
   }
 
   dispose() {

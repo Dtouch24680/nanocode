@@ -2877,6 +2877,17 @@ body.workspace-active .landing-overlay { display: none; }
   word-break: break-all;
 }
 
+/* ── Interrupted block (CLI-style: "[Request interrupted by user]") ─ */
+
+.cbr-block-interrupted {
+  border-left: 3px solid var(--text-tertiary);
+  opacity: 0.85;
+}
+
+.cbr-interrupted {
+  font-style: normal !important;
+}
+
 /* ── Prompt (user input echo) ───────────────────────────────────── */
 
 .cbr-block-prompt {
