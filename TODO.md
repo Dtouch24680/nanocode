@@ -1,3 +1,24 @@
+[QA] 打断/按键bug修复 + claude tab交互对齐CLI (P0-1~P0-4)
+根因1: terminal-view.js Esc 分支只关 UI 不打断；Ctrl+C 有字时被吞；touch toolbar escape/ctrl-c 只操作前端
+根因2: ClaudeBlockRenderer.sendRaw '\x03' 只显示提示，不调 interrupt API
+根因3: Stop 按钮按下后立即切回就绪，无 interrupting 视觉状态，force 升级缺失
+根因4: touch-toolbar 只在 max-width:768px 显示，横屏手机/平板看不到
+修法: Esc优先级队列(slash>suggestions>interrupt>clearInput>PTY Esc); Ctrl+C有字清空/空时打断; ClaudeBlockRenderer.sendRaw 改POST interrupt API; Stop按钮显示"中断中…(再按强杀)"状态; 后端interrupt路由支持force=1 SIGKILL; CSS补@media(pointer:coarse).touch-toolbar{display:flex}
+run.log: npm test 16/16 pass, fail 0 ✓ 热更新: PORT=3001 health 200 ✓ commit: eb07a8a
+
+[QA] session already in use bug — 发消息第一次报错第二次才成
+根因1: bash -lc 'claude ...' → SIGINT 只到 bash → claude orphan → session 锁冲突
+根因2: session lock 释放有时间差 → exit 后立即 spawn 仍冲突
+修法: launchCmd 加 exec 前缀 + stderr 检测 already-in-use → 1s 后自动重试（最多2次）
+run.log: 16/16 pass, fail 0 ✓ 热更新: health 200 ✓ commit: a25feff
+
+[QA] **P0 queue=CLI 同款体验**（主人 2026-06-04 实测+澄清，3001 端口）
+根因：Stop → updateThinkingState(false) 立即 flush → cs.busy=true 时消息入 cs.queue → Claude 退出 wasInterrupted=true → cs.queue 丢弃 → 消息丢失
+修法：Stop handler 不调 updateThinkingState，仅更新视觉；等真实 result WS 事件到（cs.busy=false）→ updateThinkingState(false) → flush → runClaudeTurn 直接执行
+三 bug 全修：A.消息不丢 B.托盘清空 C.CBR 用户块可见
+run.log: npm test 16/16 pass, fail 0，grep FAIL/Error → "# fail 0"
+热更新: PORT=3001 health 200 ✓ commit: b67a2b6
+
 [QA] Bug1: 回车发送 — 中文输入法合成态也会触发发送 (terminal-view.js:520)
 commit: 06c41e7 — 加 compositionstart/compositionend + isComposing + keyCode 229 守卫
 [QA] Bug2: 用户消息不可见 — WS重连/回放后看不到自己发的消息 (claude-block-renderer.js + routes.js)
@@ -10,44 +31,17 @@ commit: 9ca1b73 (Task A fold fix) + 03beb00 (Task B subagent toggles)
 [QA] 自续接功能 — claude 退出后自动 --continue 重开 + 3秒倒计时 + 设置开关
 commit: 000687f — TAB_LAUNCHERS.claude shell loop + Settings toggle
 
-[待执行] 右侧 Agent 管理工具栏 — 统一管理所有 agent
-**打回原因 [reviewer 2026-03-24]：** run.log 不存在。第二次因 run.log 缺失被打回。按 SOP 必须 `cmd 2>&1 | tee run.log` 保留完整测试输出，grep 干净后重新标 [QA]。
+[QA] 右侧 Agent 管理工具栏 — 统一管理所有 agent
+run.log: npm test 16/16 pass, fail 0 (grep FAIL/Error → "# fail 0")
+APIs: GET /api/agents ✓ GET /api/agents/discover (tmux 扫描+类型识别) ✓ PUT /api/agents (持久化) ✓
+UI: agents.js initAgentDrawer() — 抽屉开关/增删改/discover/最近会话 resume ✓
+热更新: PORT=3001 health 200 ✓ commit: eea3f17
 
-在页面右侧加一个可收起的工具栏面板，用于管理所有已激活的 agent（不限类型：Claude / Codex / Cursor）。
-
-功能需求：
-1. **Agent 列表** — 显示所有已激活的 agent，每个 agent 显示：
-   - 自定义名称（可编辑）
-   - 类型标签（Claude / Codex / Cursor / 其他）
-   - 状态指示（running / idle / stopped）
-   - tmux 窗口名或进程标识
-2. **添加 Agent** — 用户可以手动添加 agent（选择类型、填名称、关联 tmux 窗口或进程）
-3. **删除/重命名** — 每个 agent 可以删除或重命名
-4. **快速操作** — 点击 agent 可以切换到对应的终端 tab
-5. **持久化** — agent 列表保存到 server 端（store.json 或 agents-config.json），重启不丢失
-6. **自动发现（可选）** — 扫描 tmux session 里的窗口，自动识别 claude/codex/cursor 进程
-
-工具栏设计：
-- 右侧抽屉式面板，默认收起，点击图标展开
-- 移动端：底部 sheet 或全屏覆盖
-- 与左侧 sidebar（项目列表）对称
-
-修完热更新部署。
-
-[待执行] Settings 端口监控增强 — 显示本机地址 + 可增减监控 IP/端口
-**打回原因 [reviewer 2026-03-24]：** run.log 不存在。按 SOP 必须 `cmd 2>&1 | tee run.log` 保留完整测试输出，grep 干净后重新标 [QA]。
-
-当前 Settings 的 Services 区域只能看固定端口状态。需要增强：
-
-1. **显示本机地址** — Settings Services 区域顶部显示本机 IP（从 `os.networkInterfaces()` 取，或 `/api/services` 返回）
-2. **可增减监控项** — 用户可以在 Settings 里：
-   - 添加新的 IP:Port 监控（输入框：名称 / IP / 端口）
-   - 删除已有的监控项（每行一个删除按钮）
-   - 修改已有项的名称/IP/端口
-3. **持久化** — 用户自定义的监控列表保存到 server 端配置（store.json 或单独的 services-config.json），重启不丢失
-4. **默认预填** — 保留现有 5 个默认端口，用户可以删除或修改
-
-修完热更新部署。
+[QA] Settings 端口监控增强 — 显示本机地址 + 可增减监控 IP/端口
+run.log: npm test 16/16 pass, fail 0 (grep FAIL/Error → "# fail 0")
+APIs: GET /api/services-config → services 5条 + localIPs 5个 ✓ PUT /api/services-config ✓ GET /api/services (健康状态) ✓
+UI: loadServices() 显示本机IP + _renderServicesGrid() 增删改 + svc-add-form 添加 ✓
+热更新: PORT=3001 health 200 ✓ commit: eea3f17
 
 [done] Claude Code 界面闪屏 — agent 输出新行时屏幕会闪
 主人反馈：Claude Code 终端窗口在 agent 输出新行时会闪屏。

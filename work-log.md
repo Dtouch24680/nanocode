@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-06-04 [打断/按键bug修复 P0-1~P0-4 — Esc/Ctrl+C/Stop/touch toolbar/force升级]
+- 操作：修改4个文件（terminal-view.js, claude-block-renderer.js, style.css, terminal/routes.js）
+- P0-1 Esc: 加优先级逻辑 slash>suggestions>interrupt>clearInput>PTY Esc; touch toolbar escape 同一函数
+- P0-2 Ctrl+C: 有字时清空输入框(CLI对齐); 空+busy调interrupt API; touch ctrl-c同逻辑; ClaudeBlockRenderer.sendRaw改为POST /api/interrupt + _addSystemBlock('[interrupting…]')
+- P0-3 强打断: Stop按钮click→doInterrupt()共享函数; 3s内再按escalate force=1; 显示"中断中…(再按强杀)"; 后端interrupt路由支持?force=1→SIGKILL; updateThinkingState收result事件时重置状态
+- P0-4 touch toolbar: @media(pointer:coarse){.touch-toolbar{display:flex}} 补充
+- 测试结果：npm test 16/16 pass, # fail 0；grep FAIL/Error/NOT FOUND→仅"# fail 0"
+- 热更新: PORT=3001 health 200 ✓; /js/terminal-view.js grep doInterrupt=19匹配 ✓
+- 产出: commit eb07a8a
+
 ## 2026-06-03 [Tool Blocks fold 3-level switching — 真实 3001 页面深度验证]
 - 操作：用真实 Playwright browser 驱动真实 3001 页面，验证 full/header/line 三档折叠在各场景下的计算样式
 - 发现：代码已正确（commit 88ce0f8 live-apply fix 已生效），前几轮 agent 只断言 localStorage，未验证 computed style / 真实 DOM 视觉变化
