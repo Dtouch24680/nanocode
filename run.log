@@ -2,121 +2,121 @@
 > nanocode@1.2.4 test
 > node --test server/tests/*.test.js
 
-(node:65871) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:78916) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 TAP version 13
-# (node:65877) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (node:78922) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 # (Use `node --trace-warnings ...` to show where the warning was created)
 # Subtest: resolveWithFallback — sandbox rules
     # Subtest: relative path within project cwd is allowed
     ok 1 - relative path within project cwd is allowed
       ---
-      duration_ms: 2.422461
+      duration_ms: 1.201942
       type: 'test'
       ...
     # Subtest: relative path traversal outside project cwd is rejected
     ok 2 - relative path traversal outside project cwd is rejected
       ---
-      duration_ms: 1.135262
+      duration_ms: 0.548743
       type: 'test'
       ...
     # Subtest: absolute path inside current project cwd is allowed (crossProject=false)
     ok 3 - absolute path inside current project cwd is allowed (crossProject=false)
       ---
-      duration_ms: 0.363143
+      duration_ms: 0.190688
       type: 'test'
       ...
     # Subtest: absolute path inside another project cwd is allowed (crossProject=true)
     ok 4 - absolute path inside another project cwd is allowed (crossProject=true)
       ---
-      duration_ms: 0.475208
+      duration_ms: 0.22431
       type: 'test'
       ...
     # Subtest: absolute path under HOME_ROOT (no project match) falls back to home-root sandbox
     ok 5 - absolute path under HOME_ROOT (no project match) falls back to home-root sandbox
       ---
-      duration_ms: 0.409115
+      duration_ms: 0.184048
       type: 'test'
       ...
     # Subtest: absolute path outside HOME_ROOT (/etc) is rejected
     ok 6 - absolute path outside HOME_ROOT (/etc) is rejected
       ---
-      duration_ms: 0.468467
+      duration_ms: 0.22098
       type: 'test'
       ...
     # Subtest: absolute path in another user home is rejected
     ok 7 - absolute path in another user home is rejected
       ---
-      duration_ms: 0.384524
+      duration_ms: 0.187648
       type: 'test'
       ...
     # Subtest: absolute path at root / is rejected
     ok 8 - absolute path at root / is rejected
       ---
-      duration_ms: 0.573681
+      duration_ms: 0.270632
       type: 'test'
       ...
     # Subtest: remote project throws REMOTE error
     ok 9 - remote project throws REMOTE error
       ---
-      duration_ms: 0.756518
+      duration_ms: 0.355625
       type: 'test'
       ...
     # Subtest: remote project in store list is skipped for cross-project match
     ok 10 - remote project in store list is skipped for cross-project match
       ---
-      duration_ms: 0.907703
+      duration_ms: 0.446019
       type: 'test'
       ...
     1..10
 ok 1 - resolveWithFallback — sandbox rules
   ---
-  duration_ms: 10.911847
+  duration_ms: 5.37953
   type: 'suite'
   ...
-# (node:65878) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+# (node:78923) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 # (Use `node --trace-warnings ...` to show where the warning was created)
 # Subtest: store
     # Subtest: creates and fetches projects
     ok 1 - creates and fetches projects
       ---
-      duration_ms: 2.560576
+      duration_ms: 2.185183
       type: 'test'
       ...
     # Subtest: lists projects in creation order
     ok 2 - lists projects in creation order
       ---
-      duration_ms: 0.496398
+      duration_ms: 0.501712
       type: 'test'
       ...
     # Subtest: upserts settings and returns the full settings map
     ok 3 - upserts settings and returns the full settings map
       ---
-      duration_ms: 0.605553
+      duration_ms: 0.588165
       type: 'test'
       ...
     # Subtest: removes a project cleanly
     ok 4 - removes a project cleanly
       ---
-      duration_ms: 0.593602
+      duration_ms: 0.585285
       type: 'test'
       ...
     # Subtest: creates a remote project with SSH fields
     ok 5 - creates a remote project with SSH fields
       ---
-      duration_ms: 0.356553
+      duration_ms: 1.363879
       type: 'test'
       ...
     # Subtest: creates a local project with null SSH fields
     ok 6 - creates a local project with null SSH fields
       ---
-      duration_ms: 1.33512
+      duration_ms: 0.257961
       type: 'test'
       ...
     1..6
 ok 2 - store
   ---
-  duration_ms: 7.229
+  duration_ms: 6.659594
   type: 'suite'
   ...
 1..2
@@ -127,4 +127,4 @@ ok 2 - store
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 378.261135
+# duration_ms 161.216015

@@ -411,8 +411,19 @@ function setupChatInput() {
     try {
       await fetch(`/api/projects/${projectId}/tabs/${tabId}/interrupt`, { method: 'POST' })
     } catch {}
-    // Optimistically reset thinking state
-    updateThinkingState(false)
+    // Update UI immediately for responsiveness, but do NOT call updateThinkingState(false)
+    // here. Doing so would flush _pendingQueue while cs.busy is still true (Claude hasn't
+    // exited yet), sending the combined message into cs.queue, which is then discarded by
+    // the exit handler (wasInterrupted=true → cs.queue = []).
+    //
+    // Instead: keep isClaudeThinking=true internally so any messages the user types while
+    // waiting continue to queue client-side. When the real WS 'result' event arrives
+    // (Claude has actually exited, cs.busy=false), it fires nanocode:claude-thinking with
+    // thinking=false → updateThinkingState(false) → _pendingQueue flushes directly to
+    // runClaudeTurn with no server-side queue discard risk.
+    chatInput.classList.remove('claude-thinking')
+    stopBtn.hidden = true
+    sendBtn.hidden = false
   })
 
   // ── Slash-command dropdown for Claude tabs ────────────────────────────────
