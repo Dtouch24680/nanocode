@@ -390,6 +390,9 @@ export class ClaudeBlockRenderer {
     this._reconnectTimer = null
     this._pingInterval = null
 
+    // Track the "Connection lost" system block for in-place update (N34 dedup)
+    this._connLostEl = null
+
     // Track the in-progress assistant message block (partial_message updates)
     this._liveAssistantBlock = null
     this._liveAssistantId = null  // message id if available
@@ -843,6 +846,8 @@ export class ClaudeBlockRenderer {
         this._replayedUuids = new Set()
         this._replayedUserTexts = new Map()
         this._thinking = false
+        // Clear the "Connection lost" dedup block on successful reconnect (N34)
+        this._connLostEl = null
         this._addSystemBlock('[Reconnected. Restoring session history…]')
       }
       // Both first-connect and reconnect: fetch full jsonl history from disk.
@@ -895,7 +900,15 @@ export class ClaudeBlockRenderer {
       if (!this._exited) {
         const delay = Math.min(BACKOFF_BASE * 2 ** this._reconnectAttempts, BACKOFF_MAX)
         this._reconnectAttempts++
-        this._addSystemBlock(`[Connection lost. Reconnecting in ${(delay / 1000).toFixed(1)}s…]`)
+        // N34: update the same "Connection lost" block in-place instead of appending new ones
+        const msg = `[Connection lost. Reconnecting in ${(delay / 1000).toFixed(1)}s…]`
+        if (this._connLostEl) {
+          // Update existing block in-place
+          const p = this._connLostEl.querySelector('p.cbr-system')
+          if (p) p.textContent = msg
+        } else {
+          this._connLostEl = this._addSystemBlock(msg)
+        }
         clearTimeout(this._reconnectTimer)
         this._reconnectTimer = setTimeout(() => this._connect(), delay)
       }
@@ -1561,6 +1574,7 @@ export class ClaudeBlockRenderer {
     article.innerHTML = `<p class="cbr-system">${escHtml(msg)}</p>`
     this._scroll.appendChild(article)
     this._scrollBottom()
+    return article
   }
 
   _appendUserBlock(text) {
