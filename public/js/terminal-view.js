@@ -365,7 +365,7 @@ function setupChatInput() {
     isClaudeThinking = thinking
     if (isClaudeTab && thinking) {
       chatInput.classList.add('claude-thinking')
-      // Restore stop button to default icon/state (in case it was showing "interrupting…")
+      // Restore stop button to default icon/state
       stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
       stopBtn.title = 'Stop Claude (interrupt)'
       stopBtn.disabled = false
