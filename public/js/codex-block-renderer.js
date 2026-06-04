@@ -132,7 +132,7 @@ const TURN_SEP_RE = /^[─═]{10,}/
 //      (│ model: ... │ directory: ... │ permissions: ...)
 //      These are inside the startup TUI box — shown as a subtler system block.
 const BOX_DRAWING_RE = /^[\s╭╮╰╯─│├┤┬┴┼░▒▓]+$/
-const BOX_CONTENT_RE = /^[│]\s+(?:>_\s|model:|directory:|permissions:|Tip:)/
+const BOX_CONTENT_RE = /^[│]\s+(?:>_\s|model:|directory:|permissions:|Tip:|[✨\s]*Update|Run\s+npm)/
 
 // Codex update/tip banner detector — lines like "✨ Update available!" and
 // "Tip: NEW: Codex can now..." are startup noise. Show once as a subtle notice.
@@ -140,7 +140,8 @@ const UPDATE_NOTICE_RE = /^[✨\s]*Update available!|^Tip:\s/i
 
 // Codex session info line — extract key info from startup banner lines like
 // "│ model:       gpt-5.5 xhigh" → used to show a compact session header
-const SESSION_INFO_RE = /^[│]\s+(model|directory|permissions):\s+(.*)/
+// Capture up to but not including any trailing │ border char
+const SESSION_INFO_RE = /^[│]\s+(model|directory|permissions):\s+(.*?)\s*[│]?\s*$/
 
 // ── Main class ────────────────────────────────────────────────────────────────
 export class CodexBlockRenderer {
@@ -651,12 +652,22 @@ export class CodexBlockRenderer {
     this._sessionInfoData[key] = value
     // Render compact: model / directory / permissions
     const parts = []
-    if (this._sessionInfoData.model) parts.push(`<span class="cbx-si-model">${escHtml(this._sessionInfoData.model)}</span>`)
+    if (this._sessionInfoData.model) {
+      // Trim the "/model to change" hint that codex appends after the model name
+      const modelName = this._sessionInfoData.model.replace(/\s*\/model\s+to\s+change.*$/i, '').replace(/\s{2,}/g, ' ').trim()
+      parts.push(`<span class="cbx-si-model">${escHtml(modelName)}</span>`)
+    }
     if (this._sessionInfoData.directory) {
-      const dir = this._sessionInfoData.directory.replace(/^\/storage\/home\/[^/]+\//, '~/')
+      const dir = this._sessionInfoData.directory
+        .replace(/^\/storage\/home\/[^/]+\//, '~/')
+        .replace(/\/storage\/home\/[^/]+\//, '~/')
+        .trim()
       parts.push(`<span class="cbx-si-dir">${escHtml(dir)}</span>`)
     }
-    if (this._sessionInfoData.permissions) parts.push(`<span class="cbx-si-perm">${escHtml(this._sessionInfoData.permissions)}</span>`)
+    if (this._sessionInfoData.permissions) {
+      const perm = this._sessionInfoData.permissions.trim()
+      parts.push(`<span class="cbx-si-perm">${escHtml(perm)}</span>`)
+    }
     this._sessionInfoEl.innerHTML = parts.join('<span class="cbx-si-sep"> · </span>')
     this._scrollBottom()
   }
