@@ -357,27 +357,56 @@ export function createTerminalRoutes(store) {
       rawRows.push(row)
     }
 
-    // De-duplicate assistant rows: for each requestId (streaming session),
-    // keep only the last row (most complete). Rows without requestId are kept as-is.
-    // We process in order and overwrite by requestId.
-    const assistantByRequestId = new Map()  // requestId → row
-    const assistantNoRequestId = []  // rows without requestId (not streaming)
-    const processedUuids = new Set()
+    // N52 fix: de-duplicate assistant rows correctly for Claude CLI stream-json format.
+    //
+    // BACKGROUND: Claude CLI emits MULTIPLE separate assistant rows per turn (one per
+    // content block: thinking → text → tool_use → text). All rows within the same turn
+    // share the SAME requestId. The old logic kept only the LAST row per requestId
+    // (treating it like a progressive streaming case where later rows supersede earlier
+    // ones). But in practice, each row carries a DISTINCT content block type — keeping
+    // only the last drops intermediate content (e.g. the leading "Hello!" text block
+    // before a tool_use, causing N52: text1 visible during live streaming but missing
+    // on history replay).
+    //
+    // NEW STRATEGY: for rows with the same requestId, group them and deduplicate WITHIN
+    // each content-type. If two rows share both requestId AND content block type, keep
+    // only the last (that is the true progressive-streaming case — partial → complete
+    // for the same block). If they have different content types, keep both in order.
+    //
+    // Dedup key: requestId + first-content-block-type (e.g. 'req_xxx:text', 'req_xxx:tool_use').
+    // Rows without requestId are never deduplicated (kept as-is).
+    //
+    // Example for a turn with requestId='req_abc':
+    //   row1: {requestId:'req_abc', content:[{type:'thinking'}]}  → key 'req_abc:thinking'
+    //   row2: {requestId:'req_abc', content:[{type:'text', text:'Hi!'}]}  → key 'req_abc:text'
+    //   row3: {requestId:'req_abc', content:[{type:'tool_use'}]}  → key 'req_abc:tool_use'
+    //   → all THREE are kept (different content types)
+    //
+    // Example for progressive streaming (partial → complete same block):
+    //   row1: {requestId:'req_abc', content:[{type:'text', text:'Hi'}]}  → key 'req_abc:text'
+    //   row2: {requestId:'req_abc', content:[{type:'text', text:'Hi!'}]}  → key 'req_abc:text'
+    //   → only row2 kept (same key, later row wins)
 
+    // Map: dedup_key → row (last-wins within same content-type under same requestId)
+    const assistantByKey = new Map()  // key → row
+    // Track insertion order of dedup keys so we can walk rawRows efficiently
     for (const row of rawRows) {
       if (row.type !== 'assistant') continue
       const rid = row.requestId
-      if (rid) {
-        assistantByRequestId.set(rid, row)  // overwrite → last wins
-      } else {
-        assistantNoRequestId.push(row)
-      }
+      if (!rid) continue  // no requestId — keep as-is during the walk below
+      const msg = row.message
+      if (!msg || !Array.isArray(msg.content) || msg.content.length === 0) continue
+      // Use the first content block's type as the discriminator
+      const firstType = msg.content[0]?.type || 'unknown'
+      const key = `${rid}:${firstType}`
+      assistantByKey.set(key, row)  // overwrite → last row of this type wins
     }
 
-    // Build the final event list in document order
-    // We want: user rows interleaved with the de-duped assistant rows, in original order.
-    // Walk rawRows; for assistant rows with requestId, only emit when it's the LAST
-    // occurrence of that requestId (i.e., when we reach the row we stored in the map).
+    // Build the final event list in document order.
+    // For rows with requestId: emit only when the row is the winner for its dedup key.
+    // For rows without requestId: always emit.
+    // Track which keys have already been emitted to handle the rare case of two passes.
+    const emittedKeys = new Set()
     for (const row of rawRows) {
       if (row.type === 'user') {
         const msg = row.message
@@ -395,8 +424,12 @@ export function createTerminalRoutes(store) {
         if (!msg || !Array.isArray(msg.content)) continue
         const rid = row.requestId
         if (rid) {
-          // Only emit the last row for this requestId
-          if (assistantByRequestId.get(rid) !== row) continue
+          // Only emit the winning row for each (requestId, content-type) key
+          const firstType = msg.content[0]?.type || 'unknown'
+          const key = `${rid}:${firstType}`
+          if (assistantByKey.get(key) !== row) continue  // not the winner — skip
+          if (emittedKeys.has(key)) continue  // already emitted (shouldn't happen, defensive)
+          emittedKeys.add(key)
         }
         events.push({
           type: 'assistant',

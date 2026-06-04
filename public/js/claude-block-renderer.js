@@ -1157,7 +1157,17 @@ export class ClaudeBlockRenderer {
 
     // ── Main agent assistant ────────────────────────────────────────────────────
 
-    // Finalize main agent live block (does NOT touch _liveSubagentBlock)
+    // N47/N52 fix: remove the live assistant block from DOM (not just null the
+    // reference). Previously, only the JS reference was cleared; the live DOM
+    // element stayed, causing either:
+    //   • Duplicate text1 (live partial + final rendered text)
+    //   • Ghost empty block with cbr-live border when partial was empty
+    //   • text1 appearing BEFORE the tool placeholder if partial streamed ahead
+    // Now we physically remove it so the final _renderContentPart calls produce
+    // a clean, ordered DOM with no stale fragments.
+    if (this._liveAssistantBlock && this._liveAssistantBlock.parentNode) {
+      this._liveAssistantBlock.parentNode.removeChild(this._liveAssistantBlock)
+    }
     this._liveAssistantBlock = null
     this._liveAssistantId = null
 
@@ -1257,9 +1267,16 @@ export class ClaudeBlockRenderer {
       return
     }
 
-    // Main agent partial: live-update for the single-text-part case (existing behaviour)
-    if (parts.length === 1 && parts[0].type === 'text') {
-      const text = parts[0].text || ''
+    // N52 fix: live-update the text part of a partial message even when there
+    // are additional non-text parts (e.g. tool_use being streamed alongside
+    // commentary text). Previously the condition required EXACTLY one text part
+    // with no other parts; any mixed content was silently skipped, leaving text1
+    // invisible during streaming (showing only after the final assistant event).
+    // Now: extract the FIRST text part from any partial (regardless of other
+    // parts in the same message) and keep the live text block updated.
+    const firstTextPart = parts.find((p) => p.type === 'text')
+    if (firstTextPart) {
+      const text = firstTextPart.text || ''
       if (!this._liveAssistantBlock) {
         const article = this._makeBlock('cbr-block-text cbr-live')
         this._scroll.appendChild(article)
@@ -1291,7 +1308,14 @@ export class ClaudeBlockRenderer {
   }
 
   _handleResult(event) {
-    // End-of-turn: flush live blocks, exit thinking state
+    // End-of-turn: flush live blocks, exit thinking state.
+    // N47/N52 fix: also physically remove the live assistant block from DOM
+    // (see parallel fix in _handleAssistant). When claude --print sends an
+    // error result without a preceding assistant event, the live block might
+    // still be in DOM. Remove it here so no stale cbr-live element lingers.
+    if (this._liveAssistantBlock && this._liveAssistantBlock.parentNode) {
+      this._liveAssistantBlock.parentNode.removeChild(this._liveAssistantBlock)
+    }
     this._liveAssistantBlock = null
     this._liveAssistantId = null
     if (this._liveSubagentBlock) {
