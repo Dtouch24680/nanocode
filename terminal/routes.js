@@ -715,6 +715,12 @@ export function createTerminalRoutes(store) {
     //   4. if the user presses any key, falls through to `exec bash -l`
     // When auto-resume is disabled, falls back to simple one-shot + bash.
     claude: () => {
+      // 暂时禁用 --continue：避免抢占用户本机会话（主人 2026-06-04 要求）
+      // 原逻辑：读取 claude_autoresume 设置，enabled 时用 shell loop + `claude --continue` 续接；
+      // 恢复方法：删除本行注释及下方强制 return，恢复原来的 autoResume 判断分支即可。
+      return 'claude --dangerously-skip-permissions; exec bash -l'
+
+      // eslint-disable-next-line no-unreachable
       const autoResume = store.getSetting('claude_autoresume')
       // Default is enabled (null means not yet set → treat as enabled)
       const enabled = autoResume !== '0'

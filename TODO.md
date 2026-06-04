@@ -1,3 +1,7 @@
+[QA] 暂时禁用 --continue 自续接（避免抢占用户本机Claude会话）
+terminal/routes.js:717 强制 return plain claude，dead code 保留注释，恢复只需删3行
+run.log: 16/16 pass, fail 0 ✓ 热更新: health 200 ✓ doInterrupt ✓ --continue=0 ✓
+
 [QA] 打断/按键bug修复 + claude tab交互对齐CLI (P0-1~P0-4)
 根因1: terminal-view.js Esc 分支只关 UI 不打断；Ctrl+C 有字时被吞；touch toolbar escape/ctrl-c 只操作前端
 根因2: ClaudeBlockRenderer.sendRaw '\x03' 只显示提示，不调 interrupt API

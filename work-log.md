@@ -1,5 +1,13 @@
 # Work Log
 
+## 2026-06-04 [暂时禁用 --continue 自续接 — 避免 3001 测试实例抢占用户本机Claude会话]
+- 操作：修改 terminal/routes.js 第 717 行，claude launcher 强制 return plain `claude --dangerously-skip-permissions; exec bash -l`
+- 原 autoResume 判断 + shell loop + `claude --continue` 代码保留为 dead code，加注释说明恢复方法
+- 测试结果：npm test 16/16 pass, # fail 0；grep FAIL/Error/NOT FOUND→仅"REMOTE error"测试名，无真实错误
+- 重启 3001：kill 224110 → PORT=3001 nohup node server/index.js（PID 52877）→ health 200 ✓
+- 验证：curl /js/terminal-view.js grep doInterrupt=5匹配（eb07a8a修复存在）✓；/js/app.js grep --continue=0 ✓
+- 产出：commit 见下
+
 ## 2026-06-04 [打断/按键bug修复 P0-1~P0-4 — Esc/Ctrl+C/Stop/touch toolbar/force升级]
 - 操作：修改4个文件（terminal-view.js, claude-block-renderer.js, style.css, terminal/routes.js）
 - P0-1 Esc: 加优先级逻辑 slash>suggestions>interrupt>clearInput>PTY Esc; touch toolbar escape 同一函数
