@@ -3261,6 +3261,341 @@ body.workspace-active .landing-overlay { display: none; }
   background: var(--bg-tertiary);
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   Codex Block Renderer (cbx-*) — PTY-aware block renderer for Codex tabs
+   ══════════════════════════════════════════════════════════════════ */
+
+.cbx-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cbx-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--s-3) var(--s-4) var(--s-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Base block */
+.cbx-block {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  animation: cbx-fadein 0.12s ease;
+}
+
+@keyframes cbx-fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── User prompt block ─────────────────────────── */
+.cbx-block-user {
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--primary);
+  padding: var(--s-2) var(--s-3);
+}
+
+.cbx-user-prompt {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ── System block ────────────────────────────────  */
+.cbx-block-system {
+  background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+  border: 1px dashed var(--border);
+  padding: var(--s-1) var(--s-3);
+}
+
+.cbx-system {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Text block ───────────────────────────────── */
+.cbx-block-text {
+  background: var(--bg);
+  padding: var(--s-2) 0;
+}
+
+.cbx-text-pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Status banner ─────────────────────────────── */
+.cbx-status-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-3);
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.cbx-status-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: cbx-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes cbx-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cbx-status-text {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+/* ── Bash command block ──────────────────────────── */
+.cbx-block-bash {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.cbx-bash-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header row — always visible regardless of fold state */
+.cbx-bash-header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  min-height: 36px;
+  flex-wrap: wrap;
+}
+
+.cbx-bash-icon {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+  flex-shrink: 0;
+  width: 14px;
+}
+
+.cbx-bash-cmd-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cbx-bash-cmd {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: none;
+  padding: 0;
+}
+
+/* Status badges */
+.cbx-bash-status {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.cbx-bash-running {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  color: var(--primary);
+  animation: cbx-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cbx-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.cbx-bash-ok {
+  background: color-mix(in srgb, #5fb87a 15%, transparent);
+  color: #5fb87a;
+}
+
+.cbx-bash-err {
+  background: color-mix(in srgb, #e26159 15%, transparent);
+  color: #e26159;
+}
+
+.cbx-bash-done {
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+  color: var(--text-muted);
+}
+
+.cbx-fold-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.cbx-fold-btn:hover { color: var(--primary); background: var(--bg); }
+
+/* Bash output — shown in 'full' state, hidden in 'header'/'line' */
+.cbx-bash-output {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary, var(--text));
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+
+/* ── Fold states for bash blocks ─────────────────── */
+
+/* full: show everything */
+.cbx-block-bash[data-fold='full'] .cbx-bash-output {
+  display: block;
+}
+
+/* header: show header only, hide output */
+.cbx-block-bash[data-fold='header'] .cbx-bash-output {
+  display: none;
+}
+
+/* line: collapse to bare stripe */
+.cbx-block-bash[data-fold='line'] .cbx-bash-header {
+  padding: 4px var(--s-3);
+  min-height: 24px;
+}
+.cbx-block-bash[data-fold='line'] .cbx-bash-output {
+  display: none;
+}
+.cbx-block-bash[data-fold='line'] .cbx-bash-cmd-text {
+  max-width: 160px;
+}
+.cbx-block-bash[data-fold='line'] .cbx-bash-icon,
+.cbx-block-bash[data-fold='line'] .cbx-bash-cmd,
+.cbx-block-bash[data-fold='line'] .cbx-bash-status {
+  font-size: 0.7rem;
+}
+
+/* Default (no data-fold): same as full */
+.cbx-block-bash:not([data-fold]) .cbx-bash-output {
+  display: block;
+}
+
+/* ── Exit code block ─────────────────────────────── */
+.cbx-block-exit {
+  padding: var(--s-1) var(--s-3);
+  background: transparent;
+}
+
+.cbx-exit-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.cbx-exit-ok {
+  background: color-mix(in srgb, #5fb87a 12%, transparent);
+  color: #5fb87a;
+  border: 1px solid color-mix(in srgb, #5fb87a 30%, transparent);
+}
+
+.cbx-exit-err {
+  background: color-mix(in srgb, #e26159 12%, transparent);
+  color: #e26159;
+  border: 1px solid color-mix(in srgb, #e26159 30%, transparent);
+}
+
+/* ── Patch/edit block ────────────────────────────── */
+.cbx-block-patch {
+  background: color-mix(in srgb, #d3a45a 8%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, #d3a45a 20%, transparent);
+  cursor: pointer;
+}
+
+.cbx-patch-header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+}
+
+.cbx-patch-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.cbx-patch-label {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+/* ── URL auto-link ──────────────────────────────── */
+.cbx-url {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+/* ── Mobile tweaks ──────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .cbx-scroll {
+    padding: var(--s-3) var(--s-3) var(--s-5);
+    gap: var(--s-2);
+  }
+  .cbx-bash-cmd {
+    font-size: 0.75rem;
+  }
+  .cbx-bash-output {
+    font-size: 0.72rem;
+    max-height: 200px;
+  }
+}
+
 /* ── Mobile tweaks ──────────────────────────────────────────────── */
 
 @media (max-width: 768px) {

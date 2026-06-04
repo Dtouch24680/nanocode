@@ -11,6 +11,7 @@
 
 import { TerminalPane } from './terminal-pane.js'
 import { ClaudeBlockRenderer } from './claude-block-renderer.js'
+import { CodexBlockRenderer } from './codex-block-renderer.js'
 import { fetchTabs, createTab, deleteTab, patchTab } from './api.js'
 
 const ACTIVE_KEY_PREFIX = 'activeTab:'
@@ -366,11 +367,19 @@ export class TabManager {
 
     // Claude tabs use a DOM block renderer by default (rich text, mobile-friendly).
     // If the global renderMode setting is 'terminal', use raw PTY instead.
+    // Codex tabs use CodexBlockRenderer — a PTY-aware block renderer that detects
+    // bash blocks, exit codes, and status banners from raw Codex CLI output.
     const renderMode = (() => { try { return window.__nanocodeState?.renderMode || 'block' } catch { return 'block' } })()
-    const useBlockRenderer = type === 'claude' && renderMode !== 'terminal'
-    const pane = useBlockRenderer
-      ? new ClaudeBlockRenderer(paneEl, paneOpts)
-      : new TerminalPane(paneEl, paneOpts)
+    const useClaudeRenderer = type === 'claude' && renderMode !== 'terminal'
+    const useCodexRenderer = type === 'codex' && renderMode !== 'terminal'
+    let pane
+    if (useClaudeRenderer) {
+      pane = new ClaudeBlockRenderer(paneEl, paneOpts)
+    } else if (useCodexRenderer) {
+      pane = new CodexBlockRenderer(paneEl, paneOpts)
+    } else {
+      pane = new TerminalPane(paneEl, paneOpts)
+    }
 
     this.tabs.push({ id, label, type, pane, paneEl })
     // Track grew; keep the visible position pinned to the active tab.
