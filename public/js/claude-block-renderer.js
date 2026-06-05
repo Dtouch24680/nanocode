@@ -40,15 +40,33 @@ const HISTORY_PAGE_SIZE = 50
 
 // ── Tool-block fold level ──────────────────────────────────────────────────────
 // Three levels (persisted in localStorage):
-//   'full'    — show tool name + full input/output content (default)
-//   'header'  — show only the tool name header
-//   'line'    — collapse to a single thin line (just a coloured stripe)
+//   'full'    — show tool name + full input/output content
+//   'header'  — show only the tool name header (block state)
+//   'line'    — collapse to a single thin line (default, Q4 answer C)
+//
+// Cycle order (Q2 answer A): full → header → line → full → …
+// Default is 'line' (most screen-efficient, user-requested).
 const TOOL_FOLD_KEY = 'cbr_tool_fold'
 const TOOL_FOLD_LEVELS = ['full', 'header', 'line']
 
+// 3-state cycle map: full → header → line → full
+const TOOL_FOLD_CYCLE = { full: 'header', header: 'line', line: 'full' }
+
 function getToolFoldLevel() {
   const v = localStorage.getItem(TOOL_FOLD_KEY)
-  return TOOL_FOLD_LEVELS.includes(v) ? v : 'full'
+  // Default: 'line' (Q4 answer C — most screen-efficient)
+  return TOOL_FOLD_LEVELS.includes(v) ? v : 'line'
+}
+
+/**
+ * Cycle a tool block's data-fold attribute through the 3 states.
+ * full → header → line → full → …  (Q2 answer A)
+ * Works for both .cbr-block-tool and .cbr-block-tool-result articles.
+ */
+function cycleToolFold(article) {
+  const cur = article.getAttribute('data-fold') || getToolFoldLevel()
+  const next = TOOL_FOLD_CYCLE[cur] || 'full'
+  article.setAttribute('data-fold', next)
 }
 
 // ── Subagent visibility toggles ───────────────────────────────────────────────
@@ -1477,100 +1495,74 @@ export class ClaudeBlockRenderer {
       article.style.display = 'none'
     }
 
-    // ── Header click: toggle fold between full ↔ header ────────────────────────
-    // Clicking the header row (the "Bash" bar) toggles the block between
-    // expanded (full) and folded (header-only). This is the primary interaction.
+    // ── Unified 3-state cycle handler (R17 architecture refactor) ──────────────
+    // All Claude tool_use blocks share the same cycle: full → header → line → full
+    // (Q2 answer A). The header element is the primary tap/click target.
+    // In line mode, the entire article becomes the tap target (min-height 44px).
     //
-    // iOS Safari note: non-interactive div elements need cursor:pointer for click
-    // events from touch. We also add a touchend handler as belt-and-suspenders:
-    // iOS synthesizes click after touchend, but touchend fires first and avoids
-    // the 300ms delay. We use a flag to prevent double-firing.
+    // Unified cycle function — works from any state:
+    //   full  → header   (fold to header-only)
+    //   header → line    (fold to thin stripe)
+    //   line  → full     (expand back to full)
+    //
+    // iOS Safari: touchend fires before the 300ms synthesized click. We use a
+    // _touchHandled flag to prevent double-firing. The flag is per-article so
+    // header-tap and article-tap don't interfere.
+    article.style.cursor = 'pointer'
+
+    let _touchHandled = false
+
+    const _onCycle = (e) => {
+      // Suppress if user taps a copy button or link
+      const target = e.target
+      if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
+      cycleToolFold(article)
+      e.stopPropagation()
+    }
+
+    // Attach to both header AND article so:
+    //   - In full/header state: header tap cycles (header is visible)
+    //   - In line state: article tap cycles (header is hidden, article = stripe)
+    //
+    // To avoid double-fire (article click fires after header click bubbles up),
+    // headerEl click calls stopPropagation, but we still need article fallback
+    // for the line-state where the header is hidden.
     const headerEl = article.querySelector('.cbr-tool-header')
+
+    // Shared touch/click listeners for the header element
     if (headerEl) {
-      let _touchHandled = false
-
-      const _toggleFold = (e) => {
-        // Suppress if the user is clicking a copy button or link inside the header
-        const target = e.target
-        if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
-        const cur = article.getAttribute('data-fold') || 'full'
-        // Toggle: full → header, header → full (skip 'line' state)
-        const next = cur === 'full' ? 'header' : 'full'
-        article.setAttribute('data-fold', next)
-        // Stop propagation so the article-level handler below doesn't also fire
-        e.stopPropagation()
-      }
-
-      // touchend: fires before the 300ms click delay on iOS Safari.
-      // Only fires if the touch didn't scroll (touchmove resets _touchHandled).
-      headerEl.addEventListener('touchstart', (e) => {
-        _touchHandled = false
-      }, { passive: true })
-
-      headerEl.addEventListener('touchmove', () => {
-        _touchHandled = true  // scrolled — don't treat as tap
-      }, { passive: true })
-
+      headerEl.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
+      headerEl.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
       headerEl.addEventListener('touchend', (e) => {
-        if (_touchHandled) return  // was a scroll, not a tap
+        if (_touchHandled) return
         _touchHandled = true
-        _toggleFold(e)
-        e.preventDefault()  // prevent the delayed click from also firing
+        _onCycle(e)
+        e.preventDefault()
       }, { passive: false })
-
-      // click: fires on desktop/non-touch or as fallback if touchend wasn't handled
       headerEl.addEventListener('click', (e) => {
-        if (_touchHandled) {
-          _touchHandled = false  // reset for next interaction
-          return  // already handled by touchend
-        }
-        _toggleFold(e)
+        if (_touchHandled) { _touchHandled = false; return }
+        _onCycle(e)
       })
     }
 
-    // Clicking the article itself (the ::before stripe in line mode) cycles back
-    // from line → full. This keeps the line-stripe mode usable even though it's
-    // no longer reachable via normal header clicks.
-    // R15 fix: add touchstart/touchmove/touchend to the article element so that
-    // mobile tap on the line stripe expands the block reliably (the 6px ::before
-    // stripe tap target was impossible to hit; article now has min-height: 44px).
-    article.style.cursor = 'pointer'
-
-    let _articleTouchHandled = false
-
-    const _articleToggleLine = (e) => {
-      const target = e.target
-      if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || 'full'
-      if (cur === 'line') {
-        article.setAttribute('data-fold', 'full')
-      }
-    }
-
-    article.addEventListener('touchstart', () => {
-      _articleTouchHandled = false
-    }, { passive: true })
-
-    article.addEventListener('touchmove', () => {
-      _articleTouchHandled = true // scroll gesture — don't treat as tap
-    }, { passive: true })
-
+    // Article-level listeners (primary tap target in line state)
+    article.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
+    article.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
     article.addEventListener('touchend', (e) => {
-      if (_articleTouchHandled) return
-      const cur = article.getAttribute('data-fold') || 'full'
-      // Only handle in line mode — in full/header mode, header's own touchend fires first
+      if (_touchHandled) return
+      // Only handle at article level when in line state (header invisible)
+      // In full/header state the header's own touchend already handled it
+      const cur = article.getAttribute('data-fold') || getToolFoldLevel()
       if (cur !== 'line') return
-      _articleTouchHandled = true
-      _articleToggleLine(e)
-      e.preventDefault() // prevent the synthesised click from also firing
+      _touchHandled = true
+      _onCycle(e)
+      e.preventDefault()
     }, { passive: false })
-
     article.addEventListener('click', (e) => {
-      if (_articleTouchHandled) {
-        _articleTouchHandled = false
-        return // already handled by touchend
-      }
-      _articleToggleLine(e)
+      if (_touchHandled) { _touchHandled = false; return }
+      const cur = article.getAttribute('data-fold') || getToolFoldLevel()
+      if (cur !== 'line') return  // header already handled non-line states
+      _onCycle(e)
     })
     // Subagent-prompt blocks: always start at 'full' so the prompt text is
     // visible even when the global tool-fold level is 'header' or 'line'.
@@ -1659,6 +1651,27 @@ export class ClaudeBlockRenderer {
       }
       article.innerHTML = resultHtml
       applyToolFold(article)
+
+      // R17: attach 3-state cycle handler to standalone result blocks
+      article.style.cursor = 'pointer'
+      let _resultTouchHandled = false
+      const _onResultCycle = (e) => {
+        if (e.target.closest('.cbr-copy-btn') || e.target.closest('a') || e.target.tagName === 'A') return
+        cycleToolFold(article)
+      }
+      article.addEventListener('touchstart', () => { _resultTouchHandled = false }, { passive: true })
+      article.addEventListener('touchmove', () => { _resultTouchHandled = true }, { passive: true })
+      article.addEventListener('touchend', (e) => {
+        if (_resultTouchHandled) return
+        _resultTouchHandled = true
+        _onResultCycle(e)
+        e.preventDefault()
+      }, { passive: false })
+      article.addEventListener('click', (e) => {
+        if (_resultTouchHandled) { _resultTouchHandled = false; return }
+        _onResultCycle(e)
+      })
+
       this._scroll.appendChild(article)
       this._scrollBottom()
     }
