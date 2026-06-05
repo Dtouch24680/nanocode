@@ -36,6 +36,41 @@ function getFoldLevel() {
   return FOLD_LEVELS.includes(v) ? v : 'full'
 }
 
+/**
+ * Attach fold toggle interaction to a header element.
+ * Handles both click (desktop) and touchend (iOS Safari) to toggle
+ * the article's data-fold attribute between 'full' and 'header'.
+ *
+ * iOS Safari does not reliably fire 'click' on non-interactive (div)
+ * elements — using touchend as a primary handler avoids the 300ms delay
+ * and ensures consistent tap response.
+ */
+function _attachFoldToggle(headerEl, article) {
+  if (!headerEl) return
+  let _touchHandled = false
+
+  const _doToggle = (e) => {
+    if (e.target.closest('a') || e.target.tagName === 'A') return
+    const cur = article.getAttribute('data-fold') || 'full'
+    article.setAttribute('data-fold', cur === 'full' ? 'header' : 'full')
+    e.stopPropagation()
+  }
+
+  headerEl.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
+  headerEl.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
+  headerEl.addEventListener('touchend', (e) => {
+    if (_touchHandled) return
+    _touchHandled = true
+    _doToggle(e)
+    e.preventDefault()  // prevent delayed synthesized click from firing too
+  }, { passive: false })
+
+  headerEl.addEventListener('click', (e) => {
+    if (_touchHandled) { _touchHandled = false; return }
+    _doToggle(e)
+  })
+}
+
 // ── Alt-screen detection ──────────────────────────────────────────────────────
 // Codex CLI uses the VT100 alternate screen buffer for its full-screen TUI.
 // ESC[?1049h = enter alt-screen (save cursor + switch to alt buffer)
@@ -808,7 +843,7 @@ export class CodexBlockRenderer {
       `<span class="cbx-altscreen-icon">${iconText}</span>` +
       `<span class="cbx-altscreen-label">${labelText}</span>` +
       (isWelcome ? '' : `<span class="cbx-altscreen-done">✓ done</span>`) +
-      `<button class="cbx-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
@@ -825,14 +860,9 @@ export class CodexBlockRenderer {
       bodyEl.appendChild(lineEl)
     }
 
-    // Click header to toggle fold: full ↔ header
+    // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('a') || e.target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || 'full'
-      const next = cur === 'full' ? 'header' : 'full'
-      article.setAttribute('data-fold', next)
-    })
+    _attachFoldToggle(header, article)
     article.style.cursor = 'pointer'
 
     this._scroll.appendChild(article)
@@ -1014,7 +1044,7 @@ export class CodexBlockRenderer {
       `<span class="cbx-altscreen-icon">◈</span>` +
       `<span class="cbx-altscreen-label">Codex Response</span>` +
       `<span class="cbx-altscreen-done">✓ done</span>` +
-      `<button class="cbx-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
@@ -1024,14 +1054,9 @@ export class CodexBlockRenderer {
     // Set text content safely (no HTML injection)
     article.querySelector('.cbx-altscreen-body').textContent = text
 
-    // Click header to toggle fold: full ↔ header
+    // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('a') || e.target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || 'full'
-      const next = cur === 'full' ? 'header' : 'full'
-      article.setAttribute('data-fold', next)
-    })
+    _attachFoldToggle(header, article)
     article.style.cursor = 'pointer'
 
     this._scroll.appendChild(article)
@@ -1173,21 +1198,16 @@ export class CodexBlockRenderer {
       `<span class="cbx-bash-icon">$</span>` +
       `<span class="cbx-bash-cmd-text">${cmdHtml}</span>` +
       `<span class="cbx-bash-status cbx-bash-running">running…</span>` +
-      `<button class="cbx-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
       `<pre class="cbx-bash-output cbx-bash-body"></pre>` +
       `</div>`
 
-    // Click header to toggle fold: full ↔ header
+    // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-bash-header')
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('a') || e.target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || 'full'
-      const next = cur === 'full' ? 'header' : 'full'
-      article.setAttribute('data-fold', next)
-    })
+    _attachFoldToggle(header, article)
     article.style.cursor = 'pointer'
 
     this._scroll.appendChild(article)

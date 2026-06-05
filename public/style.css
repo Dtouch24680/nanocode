@@ -3013,6 +3013,8 @@ body.workspace-active .landing-overlay { display: none; }
   cursor: pointer;
   min-height: 44px; /* mobile tap target */
   user-select: none;
+  touch-action: manipulation; /* iOS: no 300ms double-tap delay */
+  -webkit-tap-highlight-color: transparent; /* iOS: no gray flash on tap */
   transition: background var(--duration-fast, 0.12s);
 }
 .cbr-tool-header:hover {
@@ -3460,6 +3462,8 @@ body.workspace-active .landing-overlay { display: none; }
   flex-wrap: wrap;
   cursor: pointer;
   user-select: none;
+  touch-action: manipulation; /* iOS: no 300ms double-tap delay */
+  -webkit-tap-highlight-color: transparent;
   transition: background var(--duration-fast, 0.12s);
 }
 .cbx-bash-header:hover {
@@ -3738,6 +3742,8 @@ body.workspace-active .landing-overlay { display: none; }
   min-height: 44px; /* mobile tap target */
   cursor: pointer;
   user-select: none;
+  touch-action: manipulation; /* iOS: no 300ms double-tap delay */
+  -webkit-tap-highlight-color: transparent;
   transition: background var(--duration-fast, 0.12s);
 }
 .cbx-altscreen-header:hover {

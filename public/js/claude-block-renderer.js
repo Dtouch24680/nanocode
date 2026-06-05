@@ -1459,7 +1459,7 @@ export class ClaudeBlockRenderer {
       `<span class="cbr-tool-name">${toolName}</span>` +
       (isSubagentTool ? `<span class="cbr-subagent-badge">subagent</span>` : '') +
       (isLoading ? `<span class="cbr-tool-running-badge">running…</span>` : '') +
-      `<button class="cbr-tool-fold-btn" title="Toggle fold" aria-label="Toggle fold">` +
+      `<button class="cbr-tool-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
@@ -1478,11 +1478,18 @@ export class ClaudeBlockRenderer {
     }
 
     // ── Header click: toggle fold between full ↔ header ────────────────────────
-    // Clicking the header row (the "🔧 Bash" bar) toggles the block between
+    // Clicking the header row (the "Bash" bar) toggles the block between
     // expanded (full) and folded (header-only). This is the primary interaction.
+    //
+    // iOS Safari note: non-interactive div elements need cursor:pointer for click
+    // events from touch. We also add a touchend handler as belt-and-suspenders:
+    // iOS synthesizes click after touchend, but touchend fires first and avoids
+    // the 300ms delay. We use a flag to prevent double-firing.
     const headerEl = article.querySelector('.cbr-tool-header')
     if (headerEl) {
-      headerEl.addEventListener('click', (e) => {
+      let _touchHandled = false
+
+      const _toggleFold = (e) => {
         // Suppress if the user is clicking a copy button or link inside the header
         const target = e.target
         if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
@@ -1492,6 +1499,32 @@ export class ClaudeBlockRenderer {
         article.setAttribute('data-fold', next)
         // Stop propagation so the article-level handler below doesn't also fire
         e.stopPropagation()
+      }
+
+      // touchend: fires before the 300ms click delay on iOS Safari.
+      // Only fires if the touch didn't scroll (touchmove resets _touchHandled).
+      headerEl.addEventListener('touchstart', (e) => {
+        _touchHandled = false
+      }, { passive: true })
+
+      headerEl.addEventListener('touchmove', () => {
+        _touchHandled = true  // scrolled — don't treat as tap
+      }, { passive: true })
+
+      headerEl.addEventListener('touchend', (e) => {
+        if (_touchHandled) return  // was a scroll, not a tap
+        _touchHandled = true
+        _toggleFold(e)
+        e.preventDefault()  // prevent the delayed click from also firing
+      }, { passive: false })
+
+      // click: fires on desktop/non-touch or as fallback if touchend wasn't handled
+      headerEl.addEventListener('click', (e) => {
+        if (_touchHandled) {
+          _touchHandled = false  // reset for next interaction
+          return  // already handled by touchend
+        }
+        _toggleFold(e)
       })
     }
 
