@@ -284,6 +284,7 @@ const CLAUDE_SLASH_COMMANDS = [
   { cmd: '/exit',    hint: 'Exit Claude Code' },
   { cmd: '/status',  hint: 'Show session status' },
   { cmd: '/restart', hint: 'Restart session' },
+  { cmd: '/resume',  hint: 'Resume previous session' },
 ]
 
 function setupChatInput() {

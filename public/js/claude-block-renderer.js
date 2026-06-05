@@ -1112,6 +1112,16 @@ export class ClaudeBlockRenderer {
       this._addSystemBlock(`[queued: ${event.text}]`)
     } else if (event.subtype === 'info') {
       this._addSystemBlock(`[${event.text}]`)
+    } else if (event.subtype === 'resume-trigger') {
+      // Server intercepted /resume and resolved the target session.
+      // Show feedback then dispatch the same event that Recent Agents uses.
+      const label = event.projectName
+        ? `Resuming session in ${event.projectName}…`
+        : 'Resuming previous session…'
+      this._addSystemBlock(`[${label}]`)
+      document.dispatchEvent(new CustomEvent('nanocode:resume-session', {
+        detail: { projectId: event.projectId, sessionId: event.sessionId, cwd: event.cwd },
+      }))
     }
   }
 

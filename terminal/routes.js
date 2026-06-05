@@ -1275,6 +1275,41 @@ export function createTerminalRoutes(store) {
       let msg
       try { msg = JSON.parse(raw) } catch { return }
       if (msg.type === 'claude-input' && typeof msg.text === 'string' && msg.text.trim()) {
+        // ── /resume interception ─────────────────────────────────────────────
+        // claude --print (non-interactive) blocks /resume with "isn't available
+        // in this environment". Intercept here and route to nanocode's own
+        // session-resume mechanism instead.
+        if (msg.text.trim() === '/resume') {
+          // Find the most-recent session for this project from cache (or any session
+          // different from the current one if the cache has data).
+          const cache = _recentAgentsCache || []
+          // Prefer entries matching the current project cwd, fall back to global most-recent
+          const projectEntries = cache.filter(e => e.cwd === project.cwd)
+          const candidates = projectEntries.length ? projectEntries : cache
+          // Skip the session already loaded in this tab so we go "back" to the previous one
+          const entry = candidates.find(e => e.sessionId !== cs.claudeSessionId) || candidates[0]
+          if (entry && entry.sessionId) {
+            // Tell the client to trigger the resume flow (same as clicking in Recent Agents)
+            const resumeEvent = {
+              type: 'system',
+              subtype: 'resume-trigger',
+              projectId,
+              sessionId: entry.sessionId,
+              projectName: entry.projectName || '',
+              cwd: entry.cwd || project.cwd,
+            }
+            try { ws.send(JSON.stringify({ type: 'claude-event', event: resumeEvent })) } catch {}
+          } else {
+            // No previous session found — show an info message
+            const infoEvent = {
+              type: 'system',
+              subtype: 'info',
+              text: 'No previous session found. Start a new conversation to create one.',
+            }
+            try { ws.send(JSON.stringify({ type: 'claude-event', event: infoEvent })) } catch {}
+          }
+          return
+        }
         // Store a synthetic 'user' event in history so reconnecting clients can
         // replay user turns and see their own messages after a WS disconnect.
         // The event includes a unique nonce so the client can deduplicate against
