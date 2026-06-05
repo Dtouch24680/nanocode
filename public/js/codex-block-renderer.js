@@ -825,13 +825,12 @@ export class CodexBlockRenderer {
       bodyEl.appendChild(lineEl)
     }
 
-    // Click header to cycle fold states
+    // Click header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
     header.addEventListener('click', (e) => {
       if (e.target.closest('a') || e.target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || getFoldLevel()
-      const idx = FOLD_LEVELS.indexOf(cur)
-      const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
+      const cur = article.getAttribute('data-fold') || 'full'
+      const next = cur === 'full' ? 'header' : 'full'
       article.setAttribute('data-fold', next)
     })
     article.style.cursor = 'pointer'
@@ -1025,13 +1024,12 @@ export class CodexBlockRenderer {
     // Set text content safely (no HTML injection)
     article.querySelector('.cbx-altscreen-body').textContent = text
 
-    // Click header to cycle fold states
+    // Click header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
     header.addEventListener('click', (e) => {
       if (e.target.closest('a') || e.target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || getFoldLevel()
-      const idx = FOLD_LEVELS.indexOf(cur)
-      const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
+      const cur = article.getAttribute('data-fold') || 'full'
+      const next = cur === 'full' ? 'header' : 'full'
       article.setAttribute('data-fold', next)
     })
     article.style.cursor = 'pointer'
@@ -1182,13 +1180,12 @@ export class CodexBlockRenderer {
       `<pre class="cbx-bash-output cbx-bash-body"></pre>` +
       `</div>`
 
-    // Fold click on header cycles fold states
+    // Click header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-bash-header')
     header.addEventListener('click', (e) => {
       if (e.target.closest('a') || e.target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || getFoldLevel()
-      const idx = FOLD_LEVELS.indexOf(cur)
-      const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
+      const cur = article.getAttribute('data-fold') || 'full'
+      const next = cur === 'full' ? 'header' : 'full'
       article.setAttribute('data-fold', next)
     })
     article.style.cursor = 'pointer'

@@ -1477,21 +1477,37 @@ export class ClaudeBlockRenderer {
       article.style.display = 'none'
     }
 
-    // Clicking anywhere on the article (including the ::before stripe in line mode)
-    // cycles through all three fold states: full → header → line → full.
-    // The handler lives on the article root so it is ALWAYS reachable even when
-    // the inner card is hidden (line state).
+    // ── Header click: toggle fold between full ↔ header ────────────────────────
+    // Clicking the header row (the "🔧 Bash" bar) toggles the block between
+    // expanded (full) and folded (header-only). This is the primary interaction.
+    const headerEl = article.querySelector('.cbr-tool-header')
+    if (headerEl) {
+      headerEl.addEventListener('click', (e) => {
+        // Suppress if the user is clicking a copy button or link inside the header
+        const target = e.target
+        if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
+        const cur = article.getAttribute('data-fold') || 'full'
+        // Toggle: full → header, header → full (skip 'line' state)
+        const next = cur === 'full' ? 'header' : 'full'
+        article.setAttribute('data-fold', next)
+        // Stop propagation so the article-level handler below doesn't also fire
+        e.stopPropagation()
+      })
+    }
+
+    // Clicking the article itself (the ::before stripe in line mode) cycles back
+    // from line → full. This keeps the line-stripe mode usable even though it's
+    // no longer reachable via normal header clicks.
     article.style.cursor = 'pointer'
     article.addEventListener('click', (e) => {
-      // Suppress if the user is clicking a copy button or interactive element
-      // inside the card (but still allow clicks on the fold button or header).
+      // Only handle clicks when in 'line' mode (header click handles full/header toggle).
+      // Also suppress copy buttons and links.
       const target = e.target
       if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
-      const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-      // Cycle: full → header → line → full
-      const idx = TOOL_FOLD_LEVELS.indexOf(cur)
-      const next = TOOL_FOLD_LEVELS[(idx + 1) % TOOL_FOLD_LEVELS.length]
-      article.setAttribute('data-fold', next)
+      const cur = article.getAttribute('data-fold') || 'full'
+      if (cur === 'line') {
+        article.setAttribute('data-fold', 'full')
+      }
     })
     // Subagent-prompt blocks: always start at 'full' so the prompt text is
     // visible even when the global tool-fold level is 'header' or 'line'.

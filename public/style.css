@@ -3010,6 +3010,13 @@ body.workspace-active .landing-overlay { display: none; }
   padding: var(--s-1) var(--s-3);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  min-height: 44px; /* mobile tap target */
+  user-select: none;
+  transition: background var(--duration-fast, 0.12s);
+}
+.cbr-tool-header:hover {
+  background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
 }
 
 .cbr-tool-name {
@@ -3075,6 +3082,10 @@ body.workspace-active .landing-overlay { display: none; }
 .cbr-block-tool[data-fold="header"] .cbr-tool-output,
 .cbr-block-tool-result[data-fold="header"] .cbr-tool-result {
   display: none;
+}
+/* No border-bottom when body is hidden (nothing below the header) */
+.cbr-block-tool[data-fold="header"] .cbr-tool-header {
+  border-bottom: none;
 }
 .cbr-block-tool[data-fold="header"] .cbr-tool-fold-btn svg {
   transform: rotate(-90deg);
@@ -3445,8 +3456,18 @@ body.workspace-active .landing-overlay { display: none; }
   padding: var(--s-2) var(--s-3);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  min-height: 36px;
+  min-height: 44px; /* mobile tap target */
   flex-wrap: wrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--duration-fast, 0.12s);
+}
+.cbx-bash-header:hover {
+  background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
+}
+/* No border-bottom when body is hidden (folded to header-only) */
+.cbx-block-bash[data-fold='header'] .cbx-bash-header {
+  border-bottom: none;
 }
 
 .cbx-bash-icon {
@@ -3714,7 +3735,18 @@ body.workspace-active .landing-overlay { display: none; }
   padding: var(--s-2) var(--s-3);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  min-height: 36px;
+  min-height: 44px; /* mobile tap target */
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--duration-fast, 0.12s);
+}
+.cbx-altscreen-header:hover {
+  background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
+}
+/* No border-bottom when body is hidden (folded to header-only) */
+.cbx-block-altscreen[data-fold='header'] .cbx-altscreen-header,
+.cbx-block-sync[data-fold='header'] .cbx-altscreen-header {
+  border-bottom: none;
 }
 
 .cbx-altscreen-icon {
