@@ -1531,16 +1531,46 @@ export class ClaudeBlockRenderer {
     // Clicking the article itself (the ::before stripe in line mode) cycles back
     // from line → full. This keeps the line-stripe mode usable even though it's
     // no longer reachable via normal header clicks.
+    // R15 fix: add touchstart/touchmove/touchend to the article element so that
+    // mobile tap on the line stripe expands the block reliably (the 6px ::before
+    // stripe tap target was impossible to hit; article now has min-height: 44px).
     article.style.cursor = 'pointer'
-    article.addEventListener('click', (e) => {
-      // Only handle clicks when in 'line' mode (header click handles full/header toggle).
-      // Also suppress copy buttons and links.
+
+    let _articleTouchHandled = false
+
+    const _articleToggleLine = (e) => {
       const target = e.target
       if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
       const cur = article.getAttribute('data-fold') || 'full'
       if (cur === 'line') {
         article.setAttribute('data-fold', 'full')
       }
+    }
+
+    article.addEventListener('touchstart', () => {
+      _articleTouchHandled = false
+    }, { passive: true })
+
+    article.addEventListener('touchmove', () => {
+      _articleTouchHandled = true // scroll gesture — don't treat as tap
+    }, { passive: true })
+
+    article.addEventListener('touchend', (e) => {
+      if (_articleTouchHandled) return
+      const cur = article.getAttribute('data-fold') || 'full'
+      // Only handle in line mode — in full/header mode, header's own touchend fires first
+      if (cur !== 'line') return
+      _articleTouchHandled = true
+      _articleToggleLine(e)
+      e.preventDefault() // prevent the synthesised click from also firing
+    }, { passive: false })
+
+    article.addEventListener('click', (e) => {
+      if (_articleTouchHandled) {
+        _articleTouchHandled = false
+        return // already handled by touchend
+      }
+      _articleToggleLine(e)
     })
     // Subagent-prompt blocks: always start at 'full' so the prompt text is
     // visible even when the global tool-fold level is 'header' or 'line'.
