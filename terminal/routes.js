@@ -498,26 +498,34 @@ export function createTerminalRoutes(store) {
     if (jsonlPath && existsSync(jsonlPath)) {
       resolvedPath = jsonlPath
     } else {
-      // Fallback: find newest jsonl in this project's directory
-      const newest = findNewestJsonl(projectDir)
-      if (newest) {
-        resolvedPath = newest.path
-        resolvedSessionId = newest.sessionId
-        fallback = true
-        // Update the store so --resume uses the right session
-        if (store.updateTabMetadata && resolvedSessionId !== sessionId) {
-          store.updateTabMetadata(req.params.id, req.params.tabId, {
-            claudeSessionId: resolvedSessionId,
-          })
-          // Also update the in-memory claudeSessions map if the session exists
-          const sessionKey = `${req.params.id}:claude:${req.params.tabId}`
-          const cs = claudeSessions.get(sessionKey)
-          if (cs) {
-            cs.claudeSessionId = resolvedSessionId
-            cs.turnCount = 0  // reset so next turn uses --session-id not --resume with wrong id
+      // Fallback: find newest jsonl in this project's directory.
+      // ONLY do this when auto-resume is enabled (default). When disabled, a new
+      // tab must not inherit a previous session's history — return empty instead.
+      const autoResumeSetting = store.getSetting('claude_autoresume')
+      const autoResumeEnabled = autoResumeSetting !== '0'
+      if (autoResumeEnabled) {
+        const newest = findNewestJsonl(projectDir)
+        if (newest) {
+          resolvedPath = newest.path
+          resolvedSessionId = newest.sessionId
+          fallback = true
+          // Update the store so --resume uses the right session
+          if (store.updateTabMetadata && resolvedSessionId !== sessionId) {
+            store.updateTabMetadata(req.params.id, req.params.tabId, {
+              claudeSessionId: resolvedSessionId,
+            })
+            // Also update the in-memory claudeSessions map if the session exists
+            const sessionKey = `${req.params.id}:claude:${req.params.tabId}`
+            const cs = claudeSessions.get(sessionKey)
+            if (cs) {
+              cs.claudeSessionId = resolvedSessionId
+              cs.turnCount = 0  // reset so next turn uses --session-id not --resume with wrong id
+            }
           }
+          console.log(`[history:fallback] tab=${req.params.tabId} using newest jsonl: ${resolvedSessionId}`)
         }
-        console.log(`[history:fallback] tab=${req.params.tabId} using newest jsonl: ${resolvedSessionId}`)
+      } else {
+        console.log(`[history:fallback-skipped] tab=${req.params.tabId} auto-resume disabled, returning empty history`)
       }
     }
 
@@ -748,12 +756,6 @@ export function createTerminalRoutes(store) {
     //   4. if the user presses any key, falls through to `exec bash -l`
     // When auto-resume is disabled, falls back to simple one-shot + bash.
     claude: () => {
-      // 暂时禁用 --continue：避免抢占用户本机会话（主人 2026-06-04 要求）
-      // 原逻辑：读取 claude_autoresume 设置，enabled 时用 shell loop + `claude --continue` 续接；
-      // 恢复方法：删除本行注释及下方强制 return，恢复原来的 autoResume 判断分支即可。
-      return 'claude --dangerously-skip-permissions; exec bash -l'
-
-      // eslint-disable-next-line no-unreachable
       const autoResume = store.getSetting('claude_autoresume')
       // Default is enabled (null means not yet set → treat as enabled)
       const enabled = autoResume !== '0'
