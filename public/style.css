@@ -3021,6 +3021,19 @@ body.workspace-active .landing-overlay { display: none; }
   background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
 }
 
+/* P2-1: tool icon wrapper */
+.cbr-tool-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.cbr-tool-icon {
+  display: block;
+  color: var(--text-secondary);
+}
+
 .cbr-tool-name {
   font-family: var(--font-mono);
   font-size: 0.8rem;
