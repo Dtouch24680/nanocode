@@ -276,16 +276,68 @@ function updateActiveTabChip(opts = {}) {
   }
 }
 
-// Claude slash commands for the dropdown
-const CLAUDE_SLASH_COMMANDS = [
-  { cmd: '/clear',   hint: 'Clear conversation history' },
-  { cmd: '/compact', hint: 'Compact context' },
-  { cmd: '/help',    hint: 'Show help' },
-  { cmd: '/exit',    hint: 'Exit Claude Code' },
-  { cmd: '/status',  hint: 'Show session status' },
-  { cmd: '/restart', hint: 'Restart session' },
-  { cmd: '/resume',  hint: 'Resume previous session' },
+// Claude slash commands for the dropdown.
+// Populated dynamically from GET /api/claude/slash-commands (which reads the installed
+// claude CLI's init event so it's always up-to-date and includes user/plugin commands).
+// The fallback list below is used during initial load or when the API is unavailable.
+const _SLASH_FALLBACK = [
+  { cmd: '/clear',    hint: 'Clear conversation history' },
+  { cmd: '/compact',  hint: 'Compact context to reduce token usage' },
+  { cmd: '/help',     hint: 'Show help and available commands' },
+  { cmd: '/exit',     hint: 'Exit Claude Code' },
+  { cmd: '/status',   hint: 'Show session status and info' },
+  { cmd: '/resume',   hint: 'Resume previous session' },
+  { cmd: '/model',    hint: 'Switch Claude model' },
 ]
+
+// Hints for well-known commands (used to annotate the dynamic list)
+const _SLASH_HINTS = {
+  '/clear':         'Clear conversation history',
+  '/compact':       'Compact context to reduce token usage',
+  '/help':          'Show help and available commands',
+  '/exit':          'Exit Claude Code',
+  '/status':        'Show session status and info',
+  '/restart':       'Restart session',
+  '/resume':        'Resume previous session',
+  '/add-dir':       'Add working directory to session',
+  '/agents':        'List and manage sub-agents',
+  '/bug':           'Report a bug to Anthropic',
+  '/config':        'Open Claude Code configuration',
+  '/context':       'Show current context window usage',
+  '/cost':          'Show token cost for this session',
+  '/doctor':        'Check Claude Code installation health',
+  '/hooks':         'Manage Claude Code hooks',
+  '/ide':           'Connect to IDE integration',
+  '/init':          'Initialize project with CLAUDE.md',
+  '/login':         'Log in to Claude / Anthropic',
+  '/logout':        'Log out from Claude',
+  '/mcp':           'Manage MCP server connections',
+  '/memory':        'Edit Claude memory files',
+  '/model':         'Switch Claude model',
+  '/permissions':   'Manage tool permissions',
+  '/pr-comments':   'Review and reply to PR comments',
+  '/release-notes': 'Show recent release notes',
+  '/review':        'Review code changes',
+  '/settings':      'Edit Claude Code settings',
+  '/todos':         'Show and manage TODO items',
+  '/vim':           'Toggle vim keybindings mode',
+}
+
+let CLAUDE_SLASH_COMMANDS = [..._SLASH_FALLBACK]
+
+// Fetch live slash commands from the server (non-blocking)
+fetch('/api/claude/slash-commands')
+  .then((r) => r.ok ? r.json() : null)
+  .then((data) => {
+    if (data && Array.isArray(data.commands) && data.commands.length > 0) {
+      CLAUDE_SLASH_COMMANDS = data.commands.map(({ cmd }) => ({
+        cmd,
+        hint: _SLASH_HINTS[cmd] || '',
+      }))
+      console.log(`[slash-commands] loaded ${CLAUDE_SLASH_COMMANDS.length} commands from server`)
+    }
+  })
+  .catch(() => { /* keep fallback */ })
 
 function setupChatInput() {
   const chatInput = document.getElementById('chat-input')

@@ -1,7 +1,7 @@
 /** Terminal routes — Express Router + WebSocket handler. */
 
 import { Router } from 'express'
-import { execFile, spawn } from 'node:child_process'
+import { execFile, spawn, spawnSync } from 'node:child_process'
 import { platform } from 'node:os'
 import { readdirSync, readFileSync, existsSync, statSync, openSync, readSync, closeSync, unlinkSync } from 'node:fs'
 import { resolve, relative, isAbsolute, join } from 'node:path'
@@ -495,7 +495,20 @@ export function createTerminalRoutes(store) {
     let resolvedSessionId = sessionId
     let fallback = false
 
-    if (jsonlPath && existsSync(jsonlPath)) {
+    // Guard: if the tab's stored claudeSessionId is the active main Claude Code session,
+    // do NOT use it — this would try to --resume a live locked session and fail.
+    // Nullify the resolved path so the fallback branch runs and assigns a fresh UUID.
+    const _mainSessionId = process.env.CLAUDE_CODE_SESSION_ID
+    let _activeSessionBlocked = false
+    if (_mainSessionId && sessionId === _mainSessionId) {
+      console.log(
+        `[history:active-guard] tab=${req.params.tabId} stored session ${sessionId} ` +
+        `matches main Claude Code session — skipping to avoid lock conflict`
+      )
+      _activeSessionBlocked = true
+    }
+
+    if (!_activeSessionBlocked && jsonlPath && existsSync(jsonlPath)) {
       resolvedPath = jsonlPath
     } else {
       // Fallback: find newest jsonl in this project's directory.
@@ -506,23 +519,67 @@ export function createTerminalRoutes(store) {
       if (autoResumeEnabled) {
         const newest = findNewestJsonl(projectDir)
         if (newest) {
-          resolvedPath = newest.path
-          resolvedSessionId = newest.sessionId
-          fallback = true
-          // Update the store so --resume uses the right session
-          if (store.updateTabMetadata && resolvedSessionId !== sessionId) {
-            store.updateTabMetadata(req.params.id, req.params.tabId, {
-              claudeSessionId: resolvedSessionId,
-            })
-            // Also update the in-memory claudeSessions map if the session exists
-            const sessionKey = `${req.params.id}:claude:${req.params.tabId}`
-            const cs = claudeSessions.get(sessionKey)
-            if (cs) {
-              cs.claudeSessionId = resolvedSessionId
-              cs.turnCount = 0  // reset so next turn uses --session-id not --resume with wrong id
-            }
+          // Guard: do NOT fallback to a session that is currently active.
+          // An active session is one that satisfies ANY of:
+          //   (a) matches the main Claude Code process session (CLAUDE_CODE_SESSION_ID), OR
+          //   (b) has had its jsonl written within the last 30 seconds (recent write = live session), OR
+          //   (c) the jsonl file is currently held open by any process (lsof check — most robust,
+          //       works even when CLAUDE_CODE_SESSION_ID is not exported to nanocode's env).
+          // Grabbing an active session causes --resume to hit a locked session file,
+          // producing repeated "claude exited with code 1" errors.
+          const mainSessionId = process.env.CLAUDE_CODE_SESSION_ID
+          const isMainSession = mainSessionId && newest.sessionId === mainSessionId
+          const ACTIVE_THRESHOLD_MS = 30_000
+          let isRecentlyWritten = false
+          try {
+            const st = statSync(newest.path)
+            isRecentlyWritten = (Date.now() - st.mtimeMs) < ACTIVE_THRESHOLD_MS
+          } catch {}
+          // lsof check: synchronously probe whether any process has the file open.
+          // Non-zero exit (no holders) is expected and treated as not-held.
+          let isFileHeld = false
+          if (!isMainSession && !isRecentlyWritten) {
+            try {
+              const r = spawnSync('lsof', ['-t', newest.path], { encoding: 'utf8', timeout: 1000 })
+              isFileHeld = r.status === 0 && r.stdout.trim().length > 0
+            } catch {}
           }
-          console.log(`[history:fallback] tab=${req.params.tabId} using newest jsonl: ${resolvedSessionId}`)
+          if (isMainSession || isRecentlyWritten || isFileHeld) {
+            console.log(
+              `[history:fallback-skipped] tab=${req.params.tabId} newest jsonl ${newest.sessionId} ` +
+              `is active (mainSession=${isMainSession}, recentWrite=${isRecentlyWritten}, lsof=${isFileHeld}) — starting fresh`
+            )
+            // Leave resolvedPath null so the tab starts with a clean new session.
+            // IMPORTANT: also assign a fresh UUID as resolvedSessionId so the client
+            // does NOT store the active session's ID (which would cause repeated
+            // session-lock collisions on every spawn attempt).
+            const freshId = randomUUID()
+            resolvedSessionId = freshId
+            if (store.updateTabMetadata) {
+              store.updateTabMetadata(req.params.id, req.params.tabId, { claudeSessionId: freshId })
+            }
+            console.log(
+              `[history:fallback-skipped] tab=${req.params.tabId} assigned fresh sessionId=${freshId}`
+            )
+          } else {
+            resolvedPath = newest.path
+            resolvedSessionId = newest.sessionId
+            fallback = true
+            // Update the store so --resume uses the right session
+            if (store.updateTabMetadata && resolvedSessionId !== sessionId) {
+              store.updateTabMetadata(req.params.id, req.params.tabId, {
+                claudeSessionId: resolvedSessionId,
+              })
+              // Also update the in-memory claudeSessions map if the session exists
+              const sessionKey = `${req.params.id}:claude:${req.params.tabId}`
+              const cs = claudeSessions.get(sessionKey)
+              if (cs) {
+                cs.claudeSessionId = resolvedSessionId
+                cs.turnCount = 0  // reset so next turn uses --session-id not --resume with wrong id
+              }
+            }
+            console.log(`[history:fallback] tab=${req.params.tabId} using newest jsonl: ${resolvedSessionId}`)
+          }
         }
       } else {
         console.log(`[history:fallback-skipped] tab=${req.params.tabId} auto-resume disabled, returning empty history`)
@@ -536,6 +593,163 @@ export function createTerminalRoutes(store) {
     const events = parseJsonlHistory(resolvedPath)
     console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
     res.json({ events, sessionId: resolvedSessionId, fallback })
+  })
+
+  // ── GET /api/claude/slash-commands ──────────────────────────────────────────
+  //
+  // Returns the live list of slash commands supported by the installed claude CLI.
+  // Spawns `claude` once with --output-format=stream-json, reads the `init` event
+  // which contains a `slash_commands` string[] array, and caches the result for
+  // TTL_SLASH_MS (1 hour).  Supports ?refresh=1 to force a cache bust.
+  //
+  // On first call (cache cold) we do NOT block the response — we return the
+  // built-in fallback list immediately and kick off the background fetch.
+  // Subsequent calls (cache warm) return immediately.
+  //
+  // Response: { commands: [{ cmd: string, hint: string }] }
+  //
+  let _slashCommandsCache = null   // { items: [{cmd,hint}][], ts: number }
+  const TTL_SLASH_MS = 60 * 60 * 1000  // 1 hour
+  // Fallback list used before the first successful fetch (kept intentionally small
+  // — the dynamic fetch will replace it).
+  const SLASH_FALLBACK = [
+    { cmd: '/clear',    hint: 'Clear conversation history' },
+    { cmd: '/compact',  hint: 'Compact context to reduce token usage' },
+    { cmd: '/help',     hint: 'Show help and available commands' },
+    { cmd: '/exit',     hint: 'Exit Claude Code' },
+    { cmd: '/status',   hint: 'Show session status and info' },
+    { cmd: '/resume',   hint: 'Resume previous session' },
+    { cmd: '/model',    hint: 'Switch Claude model' },
+  ]
+
+  let _slashFetchInFlight = false
+
+  /** Spawn claude once, pull slash_commands from the init event.
+   *  Resolves with an array of { cmd, hint } objects, or null on failure. */
+  function _fetchSlashCommandsFromClaude() {
+    return new Promise((resolve) => {
+      if (_slashFetchInFlight) { resolve(null); return }
+      _slashFetchInFlight = true
+
+      const initMsg = JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: 'OK' }] },
+      })
+
+      let proc
+      try {
+        proc = spawn('claude', [
+          '--print',
+          '--output-format=stream-json',
+          '--input-format=stream-json',
+          '--verbose',
+          '--dangerously-skip-permissions',
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env },
+          cwd: home,
+        })
+      } catch (err) {
+        console.warn('[slash-commands] failed to spawn claude:', err.message)
+        _slashFetchInFlight = false
+        resolve(null)
+        return
+      }
+
+      let buf = ''
+      let done = false
+      const TIMEOUT = 15_000
+
+      const timer = setTimeout(() => {
+        if (!done) {
+          done = true
+          _slashFetchInFlight = false
+          try { proc.kill('SIGTERM') } catch {}
+          console.warn('[slash-commands] timed out waiting for claude init event')
+          resolve(null)
+        }
+      }, TIMEOUT)
+
+      proc.stdout.on('data', (chunk) => {
+        if (done) return
+        buf += chunk.toString()
+        const lines = buf.split('\n')
+        buf = lines.pop()   // keep partial last line
+        for (const line of lines) {
+          if (!line.trim()) continue
+          let obj
+          try { obj = JSON.parse(line) } catch { continue }
+          if (obj.type === 'system' && obj.subtype === 'init' && Array.isArray(obj.slash_commands)) {
+            done = true
+            clearTimeout(timer)
+            _slashFetchInFlight = false
+            try { proc.kill('SIGTERM') } catch {}
+            const items = obj.slash_commands.map((name) => ({ cmd: `/${name}`, hint: '' }))
+            console.log(`[slash-commands] fetched ${items.length} commands from claude init event`)
+            resolve(items)
+          }
+        }
+      })
+
+      proc.on('error', (err) => {
+        if (!done) {
+          done = true
+          clearTimeout(timer)
+          _slashFetchInFlight = false
+          console.warn('[slash-commands] claude spawn error:', err.message)
+          resolve(null)
+        }
+      })
+
+      proc.on('close', () => {
+        if (!done) {
+          done = true
+          clearTimeout(timer)
+          _slashFetchInFlight = false
+          resolve(null)
+        }
+      })
+
+      // Write user turn and close stdin so claude exits after the first response
+      try {
+        proc.stdin.write(initMsg + '\n')
+        proc.stdin.end()
+      } catch {}
+    })
+  }
+
+  router.get('/api/claude/slash-commands', async (req, res) => {
+    const forceRefresh = req.query.refresh === '1'
+    const now = Date.now()
+
+    // Return cached result if fresh and no force-refresh
+    if (!forceRefresh && _slashCommandsCache && (now - _slashCommandsCache.ts) < TTL_SLASH_MS) {
+      return res.json({ commands: _slashCommandsCache.items, cached: true })
+    }
+
+    // If cache is stale but still exists, return stale immediately and refresh in background
+    if (!forceRefresh && _slashCommandsCache) {
+      res.json({ commands: _slashCommandsCache.items, cached: true, stale: true })
+      _fetchSlashCommandsFromClaude().then((items) => {
+        if (items) _slashCommandsCache = { items, ts: Date.now() }
+      })
+      return
+    }
+
+    // Cache cold (first call) or force refresh: await the fetch but with a 5s cap
+    // so the UI isn't blocked. Return fallback if it takes too long.
+    const raceResult = await Promise.race([
+      _fetchSlashCommandsFromClaude(),
+      new Promise((r) => setTimeout(() => r(null), 5000)),
+    ])
+
+    if (raceResult) {
+      _slashCommandsCache = { items: raceResult, ts: Date.now() }
+      return res.json({ commands: raceResult, cached: false })
+    }
+
+    // Fetch timed out or failed — return fallback
+    return res.json({ commands: _slashCommandsCache?.items ?? SLASH_FALLBACK, cached: false, fallback: true })
   })
 
   // ── GET /api/recent-agents ────────────────────────────────────────────────
