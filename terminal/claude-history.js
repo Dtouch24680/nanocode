@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { closeSync, existsSync, openSync, readSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 export function cwdToClaudeProjectDir(home, cwd) {
@@ -168,47 +168,59 @@ export function parseJsonlHistory(jsonlPath) {
  */
 const TAIL_BYTES = 4 * 1024 * 1024  // 4 MB
 
-export function parseJsonlHistoryTail(jsonlPath) {
+/**
+ * Internal helper: read TAIL_BYTES ending at `endOffset` (exclusive) from a file.
+ * Returns parsed raw rows array, or null on error.
+ * `endOffset` defaults to file end if not provided.
+ */
+function _readChunkBefore(jsonlPath, endOffset) {
   let fileSize = 0
-  try { fileSize = statSync(jsonlPath).size } catch { return [] }
+  try { fileSize = statSync(jsonlPath).size } catch { return null }
 
-  // Small file: use the full parser (no point seeking)
-  if (fileSize <= TAIL_BYTES) return parseJsonlHistory(jsonlPath)
+  const safeEnd = Math.min(endOffset ?? fileSize, fileSize)
+  if (safeEnd <= 0) return []
 
-  // Large file: read the last TAIL_BYTES bytes
+  const readStart = Math.max(0, safeEnd - TAIL_BYTES)
+  const readLen = safeEnd - readStart
+
   let chunk
   try {
     const fd = openSync(jsonlPath, 'r')
-    const buf = Buffer.allocUnsafe(TAIL_BYTES)
+    const buf = Buffer.allocUnsafe(readLen)
     let bytesRead = 0
     try {
-      bytesRead = readSync(fd, buf, 0, TAIL_BYTES, fileSize - TAIL_BYTES)
+      bytesRead = readSync(fd, buf, 0, readLen, readStart)
     } finally {
       closeSync(fd)
     }
     chunk = buf.slice(0, bytesRead).toString('utf-8')
   } catch {
-    return []
+    return null
   }
 
-  // The first line in the chunk is likely a partial (we jumped mid-line).
-  // Drop everything before the first newline to ensure we only parse complete JSON lines.
-  const firstNewline = chunk.indexOf('\n')
-  const safeChunk = firstNewline >= 0 ? chunk.slice(firstNewline + 1) : chunk
-
-  // Delegate to the same per-line parser logic (inline to avoid full-file read)
-  const lines = safeChunk.split('\n').filter((l) => l.trim())
-  const replayState = { userTextCounts: new Map() }
-  const events = []
+  // First line may be partial if we jumped mid-line; drop it.
+  if (readStart > 0) {
+    const firstNewline = chunk.indexOf('\n')
+    chunk = firstNewline >= 0 ? chunk.slice(firstNewline + 1) : ''
+  }
 
   const rawRows = []
-  for (const line of lines) {
+  for (const line of chunk.split('\n')) {
+    if (!line.trim()) continue
     let row
     try { row = JSON.parse(line) } catch { continue }
     rawRows.push(row)
   }
+  return rawRows
+}
 
-  // Same dedup logic as parseJsonlHistory
+/**
+ * Convert raw rows to events using the same dedup logic as parseJsonlHistory.
+ */
+function _rawRowsToEvents(rawRows) {
+  const replayState = { userTextCounts: new Map() }
+  const events = []
+
   const assistantByKey = new Map()
   for (const row of rawRows) {
     if (row.type !== 'assistant') continue
@@ -253,8 +265,117 @@ export function parseJsonlHistoryTail(jsonlPath) {
       })
     }
   }
-
   return events
+}
+
+export function parseJsonlHistoryTail(jsonlPath) {
+  let fileSize = 0
+  try { fileSize = statSync(jsonlPath).size } catch { return [] }
+
+  // Small file: use the full parser (no point seeking)
+  if (fileSize <= TAIL_BYTES) return parseJsonlHistory(jsonlPath)
+
+  const rawRows = _readChunkBefore(jsonlPath, fileSize)
+  if (!rawRows) return []
+  return _rawRowsToEvents(rawRows)
+}
+
+/**
+ * Parse events BEFORE a given event UUID in a large jsonl.
+ * Strategy:
+ *   1. Scan the full file to find the byte offset of the line containing `beforeUuid`.
+ *   2. Read TAIL_BYTES ending at that offset.
+ *   3. Parse and return events; include hasMore=true if there are bytes before the window.
+ *
+ * Returns { events, hasMore, firstUuid } where firstUuid is the uuid of the oldest
+ * returned event (for the next pagination request).
+ */
+export function parseJsonlHistoryBefore(jsonlPath, beforeUuid) {
+  let fileSize = 0
+  try { fileSize = statSync(jsonlPath).size } catch { return { events: [], hasMore: false } }
+
+  // We need to find the byte offset of the line with beforeUuid.
+  // For a 73MB file, scanning line by line with node's fs is too slow.
+  // Strategy: read in TAIL_BYTES chunks from the end until we find it,
+  // or fall back to a full scan if the uuid is very old.
+  // We track the byte offset by scanning the file in reverse chunks.
+
+  let targetEndOffset = null  // byte offset just before the line containing beforeUuid
+
+  // Walk the file in TAIL_BYTES chunks from the end
+  let scanEnd = fileSize
+  let found = false
+  const MAX_SCAN_CHUNKS = 20  // scan at most 80 MB backward — enough for any session
+  for (let attempt = 0; attempt < MAX_SCAN_CHUNKS && !found; attempt++) {
+    const scanStart = Math.max(0, scanEnd - TAIL_BYTES)
+    let chunkBuf
+    try {
+      const fd = openSync(jsonlPath, 'r')
+      const buf = Buffer.allocUnsafe(scanEnd - scanStart)
+      let br = 0
+      try { br = readSync(fd, buf, 0, buf.length, scanStart) } finally { closeSync(fd) }
+      chunkBuf = buf.slice(0, br).toString('utf-8')
+    } catch { break }
+
+    // Drop partial first line if we didn't start at position 0
+    let chunkLines
+    let lineStartOffset = scanStart  // byte offset of chunk start
+    if (scanStart > 0) {
+      const fi = chunkBuf.indexOf('\n')
+      if (fi >= 0) {
+        lineStartOffset = scanStart + fi + 1
+        chunkBuf = chunkBuf.slice(fi + 1)
+      }
+    }
+
+    // Split into lines and track byte offsets
+    // (approximate: assume utf-8 byte length equals char count for ASCII lines)
+    const rawLines = chunkBuf.split('\n')
+    let bytePos = lineStartOffset
+    const lineInfos = []
+    for (const rawLine of rawLines) {
+      const lineByteLen = Buffer.byteLength(rawLine, 'utf-8') + 1  // +1 for \n
+      if (rawLine.trim()) {
+        lineInfos.push({ line: rawLine, startOffset: bytePos })
+      }
+      bytePos += lineByteLen
+    }
+
+    // Search for beforeUuid (iterate backwards within chunk to find the line)
+    for (let li = lineInfos.length - 1; li >= 0; li--) {
+      const { line, startOffset } = lineInfos[li]
+      if (!line.includes(beforeUuid)) continue
+      let row
+      try { row = JSON.parse(line) } catch { continue }
+      if (row.uuid === beforeUuid) {
+        targetEndOffset = startOffset  // read events ending just before this line
+        found = true
+        break
+      }
+    }
+
+    if (scanStart === 0) break  // scanned entire file
+    scanEnd = scanStart + 1  // overlap by 1 byte to avoid missing lines at chunk boundary
+  }
+
+  if (!found || targetEndOffset === null) {
+    // UUID not found — return empty; front-end will hide the button
+    return { events: [], hasMore: false }
+  }
+
+  if (targetEndOffset === 0) {
+    // The found event is the very first line — nothing before it
+    return { events: [], hasMore: false }
+  }
+
+  const hasMore = targetEndOffset > TAIL_BYTES
+  const rawRows = _readChunkBefore(jsonlPath, targetEndOffset)
+  if (!rawRows) return { events: [], hasMore: false }
+
+  const events = _rawRowsToEvents(rawRows)
+  const firstUuid = events.length > 0 ? (events[0].uuid || null) : null
+
+  return { events, hasMore, firstUuid }
 }
 
 /**
@@ -405,14 +526,29 @@ export function createClaudeHistoryService({ store, home, recentAgents, sessionC
       return res.json({ events: [], sessionId: resolvedSessionId, fallback })
     }
 
+    // ── Pagination: ?before=<uuid> fetches events older than the given uuid ──
+    const beforeUuid = typeof req.query.before === 'string' ? req.query.before.trim() : null
+    if (beforeUuid) {
+      // Load earlier page — do NOT update primeReplayHistory (that's for initial load only)
+      const { events, hasMore, firstUuid } = parseJsonlHistoryBefore(resolvedPath, beforeUuid)
+      console.log(`[history:before] tab=${req.params.tabId} before=${beforeUuid} events=${events.length} hasMore=${hasMore}`)
+      return res.json({ events, hasMore, firstUuid, sessionId: resolvedSessionId })
+    }
+
     // Use tail-reader for large files to avoid loading the entire jsonl into memory.
     // parseJsonlHistoryTail reads only the last 4 MB (≈500-2000 events) which is
     // more than enough for the front-end's INITIAL_HISTORY_BLOCKS (200) + lazy pages.
     const events = parseJsonlHistoryTail(resolvedPath)
+    // Determine if there's more history before the tail window
+    let fileSize = 0
+    try { fileSize = statSync(resolvedPath).size } catch {}
+    const hasMore = fileSize > TAIL_BYTES
+    const firstUuid = events.length > 0 ? (events[0].uuid || null) : null
+
     sessionController.primeReplayHistory(req.params.id, req.params.tabId, events)
     recentAgents.primeRecentAgentsCache()
-    console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
-    res.json({ events, sessionId: resolvedSessionId, fallback })
+    console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} hasMore=${hasMore} fallback=${fallback}`)
+    res.json({ events, hasMore, firstUuid, sessionId: resolvedSessionId, fallback })
   }
 
   return {

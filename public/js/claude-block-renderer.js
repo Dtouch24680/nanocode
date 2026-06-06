@@ -804,6 +804,10 @@ export class ClaudeBlockRenderer {
     // would be rendered again when a WS reconnect replays cs.history.
     this._replayCache.rememberFetchedEvents(events)
 
+    // Capture server pagination state
+    this._replayCache.historyHasServerMore = !!data?.hasMore
+    this._replayCache.historyFirstUuid = data?.firstUuid || (events.length > 0 ? (events[0].uuid || null) : null)
+
     // ── Determine which slice to render initially ────────────────────────────
     // We render the last INITIAL_HISTORY_BLOCKS events (most recent), so the
     // user lands at the bottom seeing the newest messages. Everything before
@@ -812,7 +816,7 @@ export class ClaudeBlockRenderer {
     const initialStart = Math.max(0, totalEvents - INITIAL_HISTORY_BLOCKS)
     this._replayCache.historyRenderedStart = initialStart
 
-    const hasOlderHistory = initialStart > 0
+    const hasOlderHistory = initialStart > 0 || this._replayCache.historyHasServerMore
 
     // Show a subtle separator. If we truncated, note how many older events exist.
     if (hasOlderHistory) {
@@ -859,9 +863,24 @@ export class ClaudeBlockRenderer {
     sentinel.className = 'cbr-history-sentinel'
     sentinel.setAttribute('aria-hidden', 'true')
     // Minimal visual indicator: a thin loading stripe that disappears once all
-    // history is loaded. Height=1px ensures IntersectionObserver fires reliably.
-    sentinel.style.cssText = 'height:32px;display:flex;align-items:center;justify-content:center;color:var(--text-muted,#888);font-size:12px;opacity:0.6;'
-    sentinel.textContent = '↑ scroll up to load older messages'
+    // history is loaded. Height=32px ensures IntersectionObserver fires reliably.
+    sentinel.style.cssText = 'height:32px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--text-muted,#888);font-size:12px;opacity:0.7;'
+
+    // Add a clickable "Load earlier" button for server-side pagination
+    const loadBtn = document.createElement('button')
+    loadBtn.className = 'cbr-history-load-btn'
+    loadBtn.style.cssText = 'background:none;border:1px solid var(--border,#444);border-radius:4px;color:inherit;cursor:pointer;font-size:11px;padding:2px 8px;opacity:0.8;'
+    loadBtn.textContent = '↑ Load earlier'
+    loadBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this._loadEarlierFromServer()
+    })
+    sentinel.appendChild(loadBtn)
+
+    const hint = document.createElement('span')
+    hint.textContent = 'scroll up to auto-load'
+    sentinel.appendChild(hint)
+
     this._replayCache.historyLoadingSentinel = sentinel
 
     // Prepend: must be the very first child so it's at the top visually
@@ -895,8 +914,13 @@ export class ClaudeBlockRenderer {
   _loadMoreHistory() {
     if (this._replayCache.historyLoading) return
     if (this._replayCache.historyRenderedStart <= 0) {
-      // Nothing more to load — remove sentinel and observer
-      this._removeHistorySentinel()
+      // Local events exhausted — try server-side pagination if available
+      if (this._replayCache.historyHasServerMore && !this._replayCache.historyServerLoading) {
+        this._loadEarlierFromServer()
+      } else if (!this._replayCache.historyHasServerMore) {
+        // Nothing more to load — remove sentinel
+        this._removeHistorySentinel()
+      }
       return
     }
 
@@ -971,9 +995,12 @@ export class ClaudeBlockRenderer {
 
     this._replayCache.historyLoading = false
 
-    // If we just rendered all remaining history, remove the sentinel
+    // If we just rendered all remaining in-memory history, check server
     if (startIdx <= 0) {
-      this._removeHistorySentinel()
+      if (!this._replayCache.historyHasServerMore) {
+        this._removeHistorySentinel()
+      }
+      // else: sentinel stays — user can click "Load earlier" or scroll triggers _loadEarlierFromServer
     }
   }
 
@@ -991,6 +1018,125 @@ export class ClaudeBlockRenderer {
         this._replayCache.historyLoadingSentinel.parentNode.removeChild(this._replayCache.historyLoadingSentinel)
       }
       this._replayCache.historyLoadingSentinel = null
+    }
+  }
+
+  /**
+   * Fetch an older page of history from the server using ?before=<uuid> pagination.
+   * Called when local in-memory events are exhausted but server indicated hasMore=true.
+   * Prepends the fetched events to the DOM and updates pagination state.
+   */
+  async _loadEarlierFromServer() {
+    if (this._replayCache.historyServerLoading) return
+    if (!this._replayCache.historyHasServerMore) return
+
+    const beforeUuid = this._replayCache.historyFirstUuid
+    if (!beforeUuid) {
+      // No anchor UUID — can't paginate; hide button
+      this._replayCache.historyHasServerMore = false
+      this._updateSentinelBtn()
+      return
+    }
+
+    this._replayCache.historyServerLoading = true
+    this._updateSentinelBtn(true)
+
+    const url = `/api/projects/${this.projectId}/tabs/${this.tabId}/history?before=${encodeURIComponent(beforeUuid)}`
+    let data
+    try {
+      const resp = await fetch(url)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      data = await resp.json()
+    } catch (err) {
+      console.warn('[cbr] _loadEarlierFromServer failed:', err)
+      this._replayCache.historyServerLoading = false
+      this._updateSentinelBtn(false)
+      return
+    }
+
+    const events = data?.events
+    if (!Array.isArray(events) || events.length === 0) {
+      // Server returned nothing — no more history
+      this._replayCache.historyHasServerMore = false
+      this._replayCache.historyServerLoading = false
+      this._removeHistorySentinel()
+      return
+    }
+
+    // Register new events for dedup
+    for (const event of events) {
+      const key = this._replayCache.getEventReplayKey(event)
+      if (key) this._replayCache.transportKeys.add(key)
+    }
+
+    // Update pagination cursors
+    this._replayCache.historyHasServerMore = !!data?.hasMore
+    this._replayCache.historyFirstUuid = data?.firstUuid || (events[0].uuid || null)
+
+    // Prepend events to DOM with scroll compensation
+    const scrollEl = this._scroll
+    const scrollHeightBefore = scrollEl.scrollHeight
+    const scrollTopBefore = scrollEl.scrollTop
+
+    const tempContainer = document.createElement('div')
+    const realScroll = this._scroll
+    this._scroll = tempContainer
+    this._replayMode = true
+    try {
+      for (const event of events) {
+        this._handleEvent(event, { fromReplay: true })
+      }
+    } finally {
+      this._replayMode = false
+      this._scroll = realScroll
+    }
+
+    const frag = document.createDocumentFragment()
+    while (tempContainer.firstChild) frag.appendChild(tempContainer.firstChild)
+
+    const sentinel = this._replayCache.historyLoadingSentinel
+    if (sentinel && sentinel.parentNode === scrollEl) {
+      const nextSibling = sentinel.nextSibling
+      if (nextSibling) {
+        scrollEl.insertBefore(frag, nextSibling)
+      } else {
+        scrollEl.appendChild(frag)
+      }
+    } else {
+      if (scrollEl.firstChild) {
+        scrollEl.insertBefore(frag, scrollEl.firstChild)
+      } else {
+        scrollEl.appendChild(frag)
+      }
+    }
+
+    // Compensate scroll position
+    const scrollHeightAfter = scrollEl.scrollHeight
+    scrollEl.scrollTop = scrollTopBefore + (scrollHeightAfter - scrollHeightBefore)
+
+    this._replayCache.historyServerLoading = false
+
+    if (!this._replayCache.historyHasServerMore) {
+      this._removeHistorySentinel()
+    } else {
+      this._updateSentinelBtn(false)
+    }
+  }
+
+  /**
+   * Update the sentinel button text/state based on loading status.
+   */
+  _updateSentinelBtn(loading) {
+    const sentinel = this._replayCache.historyLoadingSentinel
+    if (!sentinel) return
+    const btn = sentinel.querySelector('.cbr-history-load-btn')
+    if (!btn) return
+    if (loading) {
+      btn.textContent = '↑ Loading…'
+      btn.disabled = true
+    } else {
+      btn.textContent = this._replayCache.historyHasServerMore ? '↑ Load earlier' : '↑ No more history'
+      btn.disabled = !this._replayCache.historyHasServerMore
     }
   }
 
@@ -1252,6 +1398,8 @@ export class ClaudeBlockRenderer {
       this._addSystemBlock(`[stderr: ${event.text}]`)
     } else if (event.subtype === 'spawn_error') {
       this._addSystemBlock(`[Failed to start claude: ${event.text}]`)
+    } else if (event.subtype === 'sdk_error_fallback') {
+      this._addSdkFallbackBanner(event.text)
     } else if (event.subtype === 'queued') {
       // Message was queued while server was busy — show feedback inline
       this._addSystemBlock(`[queued: ${event.text}]`)
@@ -1719,6 +1867,18 @@ export class ClaudeBlockRenderer {
 
   _addSystemBlock(msg) {
     const article = createSystemBlock(msg, { escHtml })
+    this._scroll.appendChild(article)
+    this._scrollBottom()
+    return article
+  }
+
+  _addSdkFallbackBanner(text) {
+    const article = document.createElement('article')
+    article.className = 'cbr-block cbr-block-sdk-fallback'
+    article.innerHTML = `<div class="cbr-sdk-fallback-banner">
+      <span class="cbr-sdk-fallback-icon">&#9888;</span>
+      <span class="cbr-sdk-fallback-text">${escHtml(text || 'SDK error — 已自动切回 CLI 这一 turn')}</span>
+    </div>`
     this._scroll.appendChild(article)
     this._scrollBottom()
     return article

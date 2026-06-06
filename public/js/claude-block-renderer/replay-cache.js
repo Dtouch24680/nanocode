@@ -15,6 +15,10 @@ export class ReplayCache {
     this.historyLoadingSentinel = null
     this.historyObserver = null
     this.historyLoading = false
+    // Server-side pagination state (for fetching events older than the tail window)
+    this.historyHasServerMore = false   // server indicated there's history before the 4MB tail
+    this.historyFirstUuid = null        // uuid of oldest event in current historyEvents
+    this.historyServerLoading = false   // in-flight server fetch for older page
   }
 
   getEventReplayKey(event) {
