@@ -98,6 +98,35 @@ store.ensureStarterProject()
 setNtfyStore(store)
 
 const { router: terminalRouter, handleTerminalWs, handleTabsWs } = createTerminalRoutes(store)
+
+// ─── Token auth middleware ─────────────────────────────────────────────────
+// Setting: nanocode_auth_token (string). Default '' = auth disabled.
+// When non-empty, all /api/* requests must supply a matching token via:
+//   - Header:      X-Nanocode-Token: <token>
+//   - Query param: ?token=<token>
+// WebSocket upgrades are also checked via the ?token= query param.
+// /api/health is intentionally exempt so monitors can check liveness.
+
+function getAuthToken() {
+  return store.getSetting('nanocode_auth_token') || ''
+}
+
+function checkApiToken(req, res, next) {
+  const expected = getAuthToken()
+  if (!expected) return next()  // auth disabled
+  const provided = req.headers['x-nanocode-token'] || req.query.token || ''
+  if (provided !== expected) {
+    return res.status(401).json({ error: 'Unauthorized: invalid or missing token' })
+  }
+  next()
+}
+
+// Apply token check to all /api/* except /api/health
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next()
+  checkApiToken(req, res, next)
+})
+
 app.use(terminalRouter)
 app.use(createFileRoutes(store))
 
@@ -437,7 +466,20 @@ const tabsWss = new WebSocketServer({ noServer: true })
 const notifyWss = new WebSocketServer({ noServer: true })
 
 server.on('upgrade', (req, socket, head) => {
-  const { pathname } = new URL(req.url, `http://${req.headers.host}`)
+  const parsed = new URL(req.url, `http://${req.headers.host}`)
+  const { pathname, searchParams } = parsed
+
+  // WebSocket token auth: if auth is enabled, check ?token= query param
+  const expectedWsToken = getAuthToken()
+  if (expectedWsToken) {
+    const provided = searchParams.get('token') || req.headers['x-nanocode-token'] || ''
+    if (provided !== expectedWsToken) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nUnauthorized')
+      socket.destroy()
+      return
+    }
+  }
+
   if (pathname === '/ws/terminal') {
     terminalWss.handleUpgrade(req, socket, head, (ws) => {
       terminalWss.emit('connection', ws, req)
