@@ -5,6 +5,7 @@ import { platform } from 'node:os'
 import { join } from 'node:path'
 import * as sessions from './sessions.js'
 import { buildReplaySeed, buildUserReplayId } from './claude-history.js'
+import { createClaudeSdkDriver } from './claude-sdk-driver.js'
 
 export function createClaudeSessionController({ store, home, recentAgents }) {
   const IS_WIN = platform() === 'win32'
@@ -110,6 +111,17 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     }
   }
 
+  function getClaudeDriver() {
+    return store.getSetting('claude_driver') === 'sdk' ? 'sdk' : 'cli'
+  }
+
+  let dispatchClaudeTurn = null
+  const sdkDriver = createClaudeSdkDriver({
+    store,
+    claudeBroadcast,
+    rerunTurn: (...args) => dispatchClaudeTurn(...args),
+  })
+
   let _lastGcMs = 0
   function gcClaudeSessions() {
     const now = Date.now()
@@ -150,7 +162,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return env
   }
 
-  function runClaudeTurn(cs, userText, sessionKey, cwd) {
+  function runClaudeCliTurn(cs, userText, sessionKey, cwd) {
     if (cs.busy) {
       if (!Array.isArray(cs.queue)) cs.queue = []
       cs.queue.push(userText)
@@ -251,7 +263,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
           cs.turnCount--
           console.warn(`[claude:session-conflict] ${sessionKey}: retry #${attempt} in 1s`)
           setTimeout(() => {
-            runClaudeTurn(cs, userText, sessionKey, cwd)
+            runClaudeCliTurn(cs, userText, sessionKey, cwd)
           }, 1000)
           return
         }
@@ -286,7 +298,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         const allQueued = cs.queue.splice(0)
         const combinedText = allQueued.join('\n\n')
         console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) as one turn`)
-        setImmediate(() => runClaudeTurn(cs, combinedText, sessionKey, cwd))
+        setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
       }
     })
 
@@ -301,9 +313,16 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         const allQueued = cs.queue.splice(0)
         const combinedText = allQueued.join('\n\n')
         console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) after spawn error`)
-        setImmediate(() => runClaudeTurn(cs, combinedText, sessionKey, cwd))
+        setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
       }
     })
+  }
+
+  dispatchClaudeTurn = (cs, userText, sessionKey, cwd) => {
+    if (getClaudeDriver() === 'sdk') {
+      return sdkDriver.runSdkTurn(cs, userText, sessionKey, cwd)
+    }
+    return runClaudeCliTurn(cs, userText, sessionKey, cwd)
   }
 
   function attachClaudeSession(ws, { projectId, tabId, project }) {
@@ -411,7 +430,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
           _nonce: msg._nonce || null,
         }
         claudeBroadcast(cs, userEvent)
-        runClaudeTurn(cs, msg.text, sessionKey, project.cwd)
+        dispatchClaudeTurn(cs, msg.text, sessionKey, project.cwd)
       } else if (msg.type === 'ping') {
         try { ws.send(JSON.stringify({ type: 'pong', id: msg.id })) } catch {}
       }
