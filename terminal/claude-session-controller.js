@@ -359,9 +359,17 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         // in this environment". Intercept here and route to nanocode's own
         // session-resume mechanism instead.
         if (msg.text.trim() === '/resume') {
-          // Find the most-recent session for this project from cache (or any session
-          // different from the current one if the cache has data).
-          const cache = recentAgents.getCachedEntries()
+          // Always send a result event first so the client exits thinking state
+          // (sendInputWithEcho set thinking=true; without result the UI stays
+          // frozen waiting for a turn that never comes).
+          const doneEvent = { type: 'result', subtype: 'success' }
+          try { ws.send(JSON.stringify({ type: 'claude-event', event: doneEvent })) } catch {}
+
+          // Use getRecentAgentsCached() (not getCachedEntries()) to guarantee a
+          // fresh scan even if primeRecentAgentsCache() hasn't run yet (e.g. the
+          // user typed /resume before the history API call completed).
+          let cache
+          try { cache = recentAgents.getRecentAgentsCached() } catch { cache = [] }
           // Prefer entries matching the current project cwd, fall back to global most-recent
           const projectEntries = cache.filter(e => e.cwd === project.cwd)
           const candidates = projectEntries.length ? projectEntries : cache
