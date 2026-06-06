@@ -306,13 +306,68 @@ function stripXmlCaveats(text) {
   return out.trim()
 }
 
-function renderMarkdown(text) {
+// ── P3-1: Streaming code-block closing-backtick guard ─────────────────────────
+//
+// When streaming, marked.parse() on text with an unclosed ``` fence wraps
+// ALL remaining text inside the code block, causing layout chaos (giant
+// monospace block). We detect unclosed fences and omit them from the render
+// pass — the next chunk that closes the fence will trigger a proper render.
+//
+// Strategy (adapted from open-webui):
+//   Count the number of ``` fence openings that lack a closing partner.
+//   If the text ends "inside" a fence (odd fence count after splitting by ```),
+//   trim the text to just before the last unpaired opening fence for rendering.
+//   When rendering is frozen/final we always render the full text as-is.
+//
+// Returns { safe: string, truncated: boolean }
+function guardUnclosedFences(text) {
+  if (!text) return { safe: text, truncated: false }
+
+  // Split on ``` boundaries (triple backtick, possibly followed by a lang tag)
+  // We count opening vs closing fences:
+  //   A ``` at the START of a line is a fence delimiter.
+  //   Odd count means we're still inside a fence.
+  const lines = text.split('\n')
+  let fenceOpen = false
+  let lastFenceStart = -1  // char offset of the last unpaired ``` opening
+
+  let charOffset = 0
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^```/.test(line)) {
+      if (!fenceOpen) {
+        fenceOpen = true
+        lastFenceStart = charOffset
+      } else {
+        fenceOpen = false
+        lastFenceStart = -1
+      }
+    }
+    charOffset += line.length + 1  // +1 for the \n
+  }
+
+  if (fenceOpen && lastFenceStart > 0) {
+    // There is an unclosed fence — trim to just before it for streaming render
+    return { safe: text.slice(0, lastFenceStart).trimEnd(), truncated: true }
+  }
+  return { safe: text, truncated: false }
+}
+
+function renderMarkdown(text, { streaming = false } = {}) {
   if (!text) return ''
   text = stripXmlCaveats(text)
   if (!text) return ''
+
+  // P3-1: for streaming renders, omit unclosed code fences to prevent layout chaos
+  let renderText = text
+  if (streaming) {
+    const { safe } = guardUnclosedFences(text)
+    renderText = safe || text  // fall back to full text if safe is empty
+  }
+
   try {
     if (window.marked && window.DOMPurify) {
-      let html = window.DOMPurify.sanitize(window.marked.parse(text))
+      let html = window.DOMPurify.sanitize(window.marked.parse(renderText))
       // Open all markdown-rendered links in a new tab. Without this, clicking a
       // link (e.g. a viewer URL in an assistant response) navigates the nanocode
       // page away in the same tab — reloading the app and losing in-flight messages
@@ -325,7 +380,7 @@ function renderMarkdown(text) {
     }
   } catch {}
   // Minimal fallback
-  const lines = text.split('\n')
+  const lines = renderText.split('\n')
   let out = ''
   for (const line of lines) {
     const safe = line
@@ -1442,7 +1497,8 @@ export class ClaudeBlockRenderer {
           const bodyEl = this._liveSubagentBlock.querySelector('.cbr-subagent-stream-body')
           if (bodyEl) {
             let html
-            try { html = renderMarkdown(text) } catch { html = `<p>${escHtml(text)}</p>` }
+            // P3-1: streaming render — guard unclosed fences
+            try { html = renderMarkdown(text, { streaming: true }) } catch { html = `<p>${escHtml(text)}</p>` }
             bodyEl.innerHTML = html
           }
           this._scrollBottom()
@@ -1480,7 +1536,8 @@ export class ClaudeBlockRenderer {
           // P1-5: skip frozen blocks — they are finalized and don't need re-render
           if (this._liveAssistantBlock.dataset.frozen === '1') return
           let html
-          try { html = renderMarkdown(latestText) } catch { html = `<p>${escHtml(latestText)}</p>` }
+          // P3-1: pass streaming:true so unclosed ``` fences are trimmed before parse
+          try { html = renderMarkdown(latestText, { streaming: true }) } catch { html = `<p>${escHtml(latestText)}</p>` }
           this._liveAssistantBlock.innerHTML = `<div class="cbr-text">${html}</div>`
           // Scroll only if user is near bottom (avoid fighting manual scroll)
           const s = this._scroll
