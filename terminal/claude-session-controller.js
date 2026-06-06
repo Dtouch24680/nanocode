@@ -332,11 +332,17 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       }
 
       if (!Array.isArray(cs.queue)) cs.queue = []
-      // On interrupt: keep pending queue intact — user can resubmit or clear manually.
-      if (!wasInterrupted && cs.queue.length > 0) {
-        const allQueued = cs.queue.splice(0)
-        const combinedText = allQueued.join('\n\n')
-        setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
+      // On interrupt: auto-flush queued messages unless setting disabled.
+      const autoFlushOnInterrupt = store.getSetting('auto_flush_queue_on_interrupt') !== '0'
+      if (cs.queue.length > 0) {
+        if (!wasInterrupted || autoFlushOnInterrupt) {
+          const allQueued = cs.queue.splice(0)
+          const combinedText = allQueued.join('\n\n')
+          if (wasInterrupted) {
+            claudeBroadcast(cs, { type: 'system', subtype: 'info', text: `Resuming with ${allQueued.length} queued message${allQueued.length !== 1 ? 's' : ''}…` })
+          }
+          setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
+        }
       }
     })
 
@@ -544,13 +550,19 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       }
 
       if (!Array.isArray(cs.queue)) cs.queue = []
-      // On interrupt: keep pending queue intact — user can resubmit or clear manually.
-      // (No "Queue cleared" broadcast — CLI has no such concept.)
-      if (!wasInterrupted && cs.queue.length > 0) {
-        const allQueued = cs.queue.splice(0)
-        const combinedText = allQueued.join('\n\n')
-        console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) as one turn`)
-        setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
+      // On interrupt: auto-flush queued messages as a new turn unless setting disabled.
+      // default true — matches user expectation: interrupt clears the run, queued msgs fire next.
+      const autoFlushOnInterrupt = store.getSetting('auto_flush_queue_on_interrupt') !== '0'
+      if (cs.queue.length > 0) {
+        if (!wasInterrupted || autoFlushOnInterrupt) {
+          const allQueued = cs.queue.splice(0)
+          const combinedText = allQueued.join('\n\n')
+          console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) as one turn (interrupted=${wasInterrupted})`)
+          if (wasInterrupted) {
+            claudeBroadcast(cs, { type: 'system', subtype: 'info', text: `Resuming with ${allQueued.length} queued message${allQueued.length !== 1 ? 's' : ''}…` })
+          }
+          setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
+        }
       }
     })
 

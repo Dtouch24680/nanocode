@@ -187,6 +187,21 @@
               </div>
             </div>
 
+            <!-- Queue auto-flush on interrupt -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">打断后自动发送队列 <span class="settings-hint-inline">Esc/Stop 后自动执行排队消息</span></div>
+              <div class="settings-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" id="auto-flush-queue-on-interrupt-enabled" checked />
+                  <span>打断当前回合后自动发送所有排队消息</span>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="auto-flush-queue-on-interrupt-save-btn">Save</button>
+                <span class="settings-status" id="auto-flush-queue-on-interrupt-status"></span>
+              </div>
+            </div>
+
             <!-- Auth Status (P1-4) -->
             <div class="settings-subsection" id="auth-status-subsection">
               <div class="settings-label-row">账号状态 <span class="settings-hint-inline">claude auth status</span></div>

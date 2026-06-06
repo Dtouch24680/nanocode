@@ -676,6 +676,37 @@ if (autoResumeSaveBtn) {
   })
 }
 
+// ─── Queue auto-flush on interrupt ───────────────────────────────────────────
+
+const autoFlushQueueSaveBtn = document.getElementById('auto-flush-queue-on-interrupt-save-btn')
+if (autoFlushQueueSaveBtn) {
+  // Load current setting on init
+  fetch('/api/settings')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) return
+      const el = document.getElementById('auto-flush-queue-on-interrupt-enabled')
+      if (el && data.auto_flush_queue_on_interrupt !== undefined) {
+        el.checked = data.auto_flush_queue_on_interrupt !== '0'
+      }
+    })
+    .catch(() => {})
+
+  autoFlushQueueSaveBtn.addEventListener('click', async () => {
+    const el = document.getElementById('auto-flush-queue-on-interrupt-enabled')
+    const enabled = el ? el.checked : true
+    try {
+      await updateSetting('auto_flush_queue_on_interrupt', enabled ? '1' : '0')
+    } catch {}
+    const statusEl = document.getElementById('auto-flush-queue-on-interrupt-status')
+    if (statusEl) {
+      statusEl.textContent = 'Saved'
+      statusEl.className = 'settings-status success'
+      setTimeout(() => { statusEl.textContent = '' }, 2500)
+    }
+  })
+}
+
 // ─── P1-4: Auth status ───────────────────────────────────────────────────────
 
 async function loadAuthStatus() {
