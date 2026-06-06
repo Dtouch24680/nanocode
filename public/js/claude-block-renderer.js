@@ -1327,6 +1327,8 @@ export class ClaudeBlockRenderer {
           this._streamRafPending = false
           const latestText = this._streamPendingText
           if (!latestText || !this._liveAssistantBlock) return
+          // P1-5: skip frozen blocks — they are finalized and don't need re-render
+          if (this._liveAssistantBlock.dataset.frozen === '1') return
           let html
           try { html = renderMarkdown(latestText) } catch { html = `<p>${escHtml(latestText)}</p>` }
           this._liveAssistantBlock.innerHTML = `<div class="cbr-text">${html}</div>`
@@ -1356,6 +1358,12 @@ export class ClaudeBlockRenderer {
       this._liveSubagentBlock.style.opacity = ''
       this._liveSubagentBlock = null
     }
+    // P1-5: freeze all live assistant blocks that are now complete so rAF
+    // callbacks skip re-running marked.parse() on already-finalized content.
+    this._scroll.querySelectorAll('.cbr-block-text.cbr-live').forEach((el) => {
+      el.dataset.frozen = '1'
+      el.classList.remove('cbr-live')
+    })
     this._setThinking(false)
 
     if (event.subtype === 'success' || event.subtype === 'error_max_turns') {
