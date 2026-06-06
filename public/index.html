@@ -121,8 +121,12 @@
         <div class="settings-container">
 
           <!-- ══ 会话 ══ -->
-          <section class="settings-section">
-            <h3 class="settings-section-title settings-group-title">会话</h3>
+          <section class="settings-section" data-section="session">
+            <h3 class="settings-section-title settings-group-title settings-section-toggle" data-target="session">
+              <span class="settings-section-label">会话</span>
+              <span class="settings-section-chevron">&#9660;</span>
+            </h3>
+            <div class="settings-section-body" data-body="session">
 
             <!-- CLI Provider -->
             <div class="settings-subsection">
@@ -255,11 +259,16 @@
                 <span class="settings-status" id="claude-driver-status"></span>
               </div>
             </div>
+            </div><!-- /settings-section-body[session] -->
           </section>
 
           <!-- ══ 显示 ══ -->
-          <section class="settings-section">
-            <h3 class="settings-section-title settings-group-title">显示</h3>
+          <section class="settings-section" data-section="display">
+            <h3 class="settings-section-title settings-group-title settings-section-toggle" data-target="display">
+              <span class="settings-section-label">显示</span>
+              <span class="settings-section-chevron">&#9660;</span>
+            </h3>
+            <div class="settings-section-body" data-body="display">
 
             <!-- Tool fold -->
             <div class="settings-subsection">
@@ -308,11 +317,16 @@
                 <span class="settings-status" id="font-size-status"></span>
               </div>
             </div>
+            </div><!-- /settings-section-body[display] -->
           </section>
 
           <!-- ══ 服务监控 ══ -->
-          <section class="settings-section">
-            <h3 class="settings-section-title settings-group-title">服务监控</h3>
+          <section class="settings-section" data-section="monitor">
+            <h3 class="settings-section-title settings-group-title settings-section-toggle" data-target="monitor">
+              <span class="settings-section-label">服务监控</span>
+              <span class="settings-section-chevron">&#9660;</span>
+            </h3>
+            <div class="settings-section-body" data-body="monitor">
 
             <!-- Services -->
             <div class="settings-subsection">
@@ -428,6 +442,7 @@
                 <div class="tts-log-panel" id="tts-log-panel"></div>
               </details>
             </div>
+            </div><!-- /settings-section-body[monitor] -->
           </section>
 
         </div>

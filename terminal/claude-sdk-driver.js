@@ -32,6 +32,7 @@ export function createClaudeSdkDriver({
   store,
   claudeBroadcast,
   rerunTurn,
+  runCliFallback,
   queryImpl = defaultQuery,
 }) {
   async function runSdkTurn(cs, userText, sessionKey, cwd) {
@@ -64,6 +65,7 @@ export function createClaudeSdkDriver({
     let sawInit = false
     let lastSessionId = cs.claudeSessionId
     let finalSubtype = 'success'
+    let _cliFallbackTriggered = false
 
     try {
       const q = queryImpl({
@@ -110,9 +112,33 @@ export function createClaudeSdkDriver({
       finalSubtype = wasInterrupted ? 'interrupted' : 'error'
       const text = err?.message || String(err)
       if (!wasInterrupted) {
-        claudeBroadcast(cs, { type: 'system', subtype: 'spawn_error', text })
+        // If we have a CLI fallback, broadcast sdk_error_fallback and retry this turn via CLI
+        if (typeof runCliFallback === 'function') {
+          const reason = text.length > 120 ? text.slice(0, 120) + '…' : text
+          claudeBroadcast(cs, {
+            type: 'system',
+            subtype: 'sdk_error_fallback',
+            text: `SDK error: ${reason}，已自动切回 CLI 这一 turn`,
+          })
+          _cliFallbackTriggered = true
+          sawResult = true  // suppress the finally result broadcast
+        } else {
+          claudeBroadcast(cs, { type: 'system', subtype: 'spawn_error', text })
+        }
       }
     } finally {
+      // When the CLI fallback is triggered, the CLI takes over cs ownership.
+      // Skip the standard finally cleanup to avoid corrupting cs.busy / queue.
+      if (_cliFallbackTriggered) {
+        // Hand off to CLI: reset cs state for CLI and dispatch
+        cs.busy = false
+        cs.currentProc = null
+        // Decrement turn count so CLI uses the correct session option for this turn
+        cs.turnCount -= 1
+        setImmediate(() => runCliFallback(cs, userText, sessionKey, cwd))
+        return
+      }
+
       const wasInterrupted = cs.currentProc?._nanocodeInterrupted === true
       cs.busy = false
       cs.currentProc = null

@@ -156,6 +156,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     store,
     claudeBroadcast,
     rerunTurn: (...args) => dispatchClaudeTurn(...args),
+    runCliFallback: (...args) => runClaudeCliTurn(...args),
   })
   let dispatchCodexTurn = null
   const codexSdkDriver = createCodexSdkDriver({

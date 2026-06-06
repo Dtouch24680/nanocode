@@ -816,6 +816,124 @@ if (claudeDriverSaveBtn) {
   })
 }
 
+// ─── Settings section collapse/expand toggles ────────────────────────────────
+
+const SETTINGS_COLLAPSED_KEY = 'nanocodeSettingsCollapsed'
+
+function _getCollapsedSections() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_COLLAPSED_KEY)) || {} } catch { return {} }
+}
+
+function _saveCollapsedSections(map) {
+  try { localStorage.setItem(SETTINGS_COLLAPSED_KEY, JSON.stringify(map)) } catch {}
+}
+
+function initSettingsSectionToggles() {
+  const collapsed = _getCollapsedSections()
+  document.querySelectorAll('.settings-section[data-section]').forEach((section) => {
+    const key = section.dataset.section
+    if (collapsed[key]) section.setAttribute('data-collapsed', 'true')
+    const toggle = section.querySelector('.settings-section-toggle')
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        const isCollapsed = section.getAttribute('data-collapsed') === 'true'
+        if (isCollapsed) {
+          section.removeAttribute('data-collapsed')
+        } else {
+          section.setAttribute('data-collapsed', 'true')
+        }
+        const map = _getCollapsedSections()
+        map[key] = !isCollapsed
+        _saveCollapsedSections(map)
+      })
+    }
+  })
+}
+
+// ─── Dynamic model list from /api/claude/init-snapshot ───────────────────────
+
+let _initSnapshotCache = null  // { data, ts }
+const TTL_SNAPSHOT_MS = 60 * 60 * 1000  // 1h client-side
+
+async function fetchInitSnapshot(forceRefresh = false) {
+  const now = Date.now()
+  if (!forceRefresh && _initSnapshotCache && (now - _initSnapshotCache.ts) < TTL_SNAPSHOT_MS) {
+    return _initSnapshotCache.data
+  }
+  try {
+    const url = forceRefresh ? '/api/claude/init-snapshot?refresh=1' : '/api/claude/init-snapshot'
+    const resp = await fetch(url)
+    if (!resp.ok) return null
+    const data = await resp.json()
+    _initSnapshotCache = { data, ts: Date.now() }
+    return data
+  } catch {
+    return null
+  }
+}
+
+function _applyDynamicModelOptions(snapshot) {
+  const sel = document.getElementById('claude-model-select')
+  if (!sel || !snapshot) return
+
+  const currentVal = sel.value
+
+  // Build model options: always include the blank "default" option
+  const options = [{ value: '', label: '默认（CLI 决定）' }]
+
+  // If snapshot has a current model, add it as first real option
+  if (snapshot.model) {
+    // Check if we already have this model in the hardcoded list
+    const knownModels = [
+      'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5',
+      'claude-opus-4', 'claude-sonnet-4',
+    ]
+    const isKnown = knownModels.some(m => snapshot.model.includes(m.split('-').slice(0, 2).join('-')))
+    if (!isKnown) {
+      options.push({ value: snapshot.model, label: `${snapshot.model} (current)` })
+    }
+  }
+
+  // Add standard hardcoded models
+  options.push(
+    { value: 'claude-opus-4-5', label: 'claude-opus-4-5' },
+    { value: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
+    { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
+    { value: 'claude-opus-4', label: 'claude-opus-4' },
+    { value: 'claude-sonnet-4', label: 'claude-sonnet-4' },
+  )
+
+  // Rebuild select options
+  sel.innerHTML = ''
+  for (const opt of options) {
+    const el = document.createElement('option')
+    el.value = opt.value
+    el.textContent = opt.label
+    sel.appendChild(el)
+  }
+
+  // Restore selection
+  if (currentVal) {
+    sel.value = currentVal
+    // If the value doesn't match (model no longer in list), reset to default
+    if (sel.value !== currentVal) sel.value = ''
+  }
+
+  // Add hint below select showing current active model
+  const hint = sel.parentElement?.querySelector('.settings-current-model-hint')
+  if (snapshot.model) {
+    if (!hint) {
+      const h = document.createElement('div')
+      h.className = 'settings-current-model-hint settings-hint-inline'
+      h.style.cssText = 'margin-top:4px;font-size:10px;'
+      h.textContent = `当前 CLI 默认: ${snapshot.model}`
+      sel.parentElement?.appendChild(h)
+    } else {
+      hint.textContent = `当前 CLI 默认: ${snapshot.model}`
+    }
+  }
+}
+
 // ─── Settings panel tab switch ────────────────────────────────────────────────
 
 const settingsPanel = document.getElementById('settings-panel')
@@ -830,6 +948,10 @@ async function openSettingsPanel() {
   loadSettings(serverSettings)
   loadServices()
   loadAuthStatus()  // P1-4: refresh auth status on each open
+  // Load dynamic model options in background
+  fetchInitSnapshot().then((snapshot) => {
+    if (snapshot) _applyDynamicModelOptions(snapshot)
+  })
 }
 
 function closeSettingsPanel() {
@@ -927,6 +1049,7 @@ async function init() {
   initThemeToggle()
   initNotifyWs()
   initAgentDrawer()
+  initSettingsSectionToggles()
   try { state.projects = await fetchProjects() } catch { state.projects = [] }
   initSidebar(onProjectSwitch)
 

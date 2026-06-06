@@ -460,6 +460,145 @@ export function createTerminalRoutes(store) {
     return res.json({ commands: _slashCommandsCache?.items ?? SLASH_FALLBACK, cached: false, fallback: true })
   })
 
+  // ── GET /api/claude/init-snapshot ────────────────────────────────────────────
+  //
+  // Spawn claude once and capture the full init event to expose model, tools,
+  // plugins, skills, agents, and slash_commands to the settings panel.
+  // Cached for 1 hour (same TTL as slash-commands). Returns:
+  //   { model, tools[], plugins[], skills[], agents[], slash_commands[], cached }
+  //
+  let _initSnapshotCache = null  // { data: {...}, ts: number }
+  let _initSnapshotInFlight = false
+  const TTL_INIT_MS = 60 * 60 * 1000  // 1 hour
+
+  function _fetchInitSnapshot() {
+    return new Promise((resolve) => {
+      if (_initSnapshotInFlight) { resolve(null); return }
+      _initSnapshotInFlight = true
+
+      const initMsg = JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: 'OK' }] },
+      })
+
+      let proc
+      try {
+        proc = spawn('claude', [
+          '--print',
+          '--output-format=stream-json',
+          '--input-format=stream-json',
+          '--verbose',
+          '--dangerously-skip-permissions',
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env },
+          cwd: home,
+        })
+      } catch (err) {
+        console.warn('[init-snapshot] failed to spawn claude:', err.message)
+        _initSnapshotInFlight = false
+        resolve(null)
+        return
+      }
+
+      let buf = ''
+      let done = false
+      const TIMEOUT = 15_000
+
+      const timer = setTimeout(() => {
+        if (!done) {
+          done = true
+          _initSnapshotInFlight = false
+          try { proc.kill('SIGTERM') } catch {}
+          console.warn('[init-snapshot] timed out waiting for claude init event')
+          resolve(null)
+        }
+      }, TIMEOUT)
+
+      proc.stdout.on('data', (chunk) => {
+        if (done) return
+        buf += chunk.toString()
+        const lines = buf.split('\n')
+        buf = lines.pop()
+        for (const line of lines) {
+          if (!line.trim()) continue
+          let obj
+          try { obj = JSON.parse(line) } catch { continue }
+          if (obj.type === 'system' && obj.subtype === 'init') {
+            done = true
+            clearTimeout(timer)
+            _initSnapshotInFlight = false
+            try { proc.kill('SIGTERM') } catch {}
+            const data = {
+              model: obj.model || null,
+              tools: Array.isArray(obj.tools) ? obj.tools : [],
+              plugins: Array.isArray(obj.plugins) ? obj.plugins : [],
+              skills: Array.isArray(obj.skills) ? obj.skills : [],
+              agents: Array.isArray(obj.agents) ? obj.agents : [],
+              slash_commands: Array.isArray(obj.slash_commands) ? obj.slash_commands : [],
+              fast_mode_state: obj.fast_mode_state ?? null,
+            }
+            console.log(`[init-snapshot] fetched model=${data.model} tools=${data.tools.length}`)
+            resolve(data)
+          }
+        }
+      })
+
+      proc.on('error', (err) => {
+        if (!done) {
+          done = true
+          clearTimeout(timer)
+          _initSnapshotInFlight = false
+          console.warn('[init-snapshot] claude spawn error:', err.message)
+          resolve(null)
+        }
+      })
+
+      proc.on('close', () => {
+        if (!done) {
+          done = true
+          clearTimeout(timer)
+          _initSnapshotInFlight = false
+          resolve(null)
+        }
+      })
+
+      try {
+        proc.stdin.write(initMsg + '\n')
+        proc.stdin.end()
+      } catch {}
+    })
+  }
+
+  router.get('/api/claude/init-snapshot', async (req, res) => {
+    const forceRefresh = req.query.refresh === '1'
+    const now = Date.now()
+
+    if (!forceRefresh && _initSnapshotCache && (now - _initSnapshotCache.ts) < TTL_INIT_MS) {
+      return res.json({ ...(_initSnapshotCache.data), cached: true })
+    }
+
+    if (!forceRefresh && _initSnapshotCache) {
+      res.json({ ...(_initSnapshotCache.data), cached: true, stale: true })
+      _fetchInitSnapshot().then((data) => {
+        if (data) _initSnapshotCache = { data, ts: Date.now() }
+      })
+      return
+    }
+
+    const result = await Promise.race([
+      _fetchInitSnapshot(),
+      new Promise((r) => setTimeout(() => r(null), 8000)),
+    ])
+
+    if (result) {
+      _initSnapshotCache = { data: result, ts: Date.now() }
+      return res.json({ ...result, cached: false })
+    }
+
+    return res.json({ model: null, tools: [], plugins: [], skills: [], agents: [], slash_commands: [], cached: false, fallback: true })
+  })
+
   // ── GET /api/recent-agents ────────────────────────────────────────────────
   //
   // Scan ~/.claude/projects/*/*.jsonl by mtime descending.
