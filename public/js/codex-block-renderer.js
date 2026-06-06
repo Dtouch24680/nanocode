@@ -443,6 +443,9 @@ export class CodexBlockRenderer {
     this._prevSyncDump = ''    // last committed frame's dump (for dedup)
     this._syncSpinnerEl = null // shared spinner element while sync is active
     this._syncFrameCount = 0   // total frames committed this session
+    this._lastWelcomeBlockEl = null   // reuse welcome block for in-place update
+    this._lastResponseBlockEl = null  // reuse response block during rapid-fire frames
+    this._lastResponseBlockTs = 0     // timestamp of last response block commit
 
     // P2: Welcome screen dedup — track content fingerprints already rendered
     this._renderedContentHashes = new Set()
@@ -474,6 +477,9 @@ export class CodexBlockRenderer {
     this._appendUserBlock(text)
     this._send({ type: 'input', data: text + '\r' })
     this._setThinking(true)
+    // Reset response block tracking: new turn always starts a fresh block
+    this._lastResponseBlockEl = null
+    this._lastResponseBlockTs = 0
   }
 
   sendRaw(data) {
@@ -748,12 +754,6 @@ export class CodexBlockRenderer {
 
     // P2: Dedup frames — if this frame is identical to the last, skip
     if (dump === this._prevSyncDump) return
-
-    // Compute a lightweight content fingerprint for welcome screen dedup
-    // (first 200 chars are usually enough for identity check)
-    const fingerprint = dump.slice(0, 200)
-    if (this._renderedContentHashes.has(fingerprint)) return
-    this._renderedContentHashes.add(fingerprint)
     this._prevSyncDump = dump
 
     // Remove the spinner once we get actual content
@@ -771,8 +771,48 @@ export class CodexBlockRenderer {
       return
     }
 
+    // Welcome/startup frames: replace the previous welcome block in-place instead
+    // of appending. Codex 0.134+ sends many startup frames during startup;
+    // appending all of them creates DOM pollution. Replace in-place so the startup
+    // sequence resolves to exactly one welcome block showing the final state.
+    if (isWelcomeScreen && this._lastWelcomeBlockEl && this._lastWelcomeBlockEl.isConnected) {
+      this._updateSyncScreenResultBlock(this._lastWelcomeBlockEl, dump)
+      this._scrollBottom()
+      return
+    }
+
+    // Non-welcome frames: check fingerprint dedup to avoid rendering duplicate
+    // response frames (e.g. same result shown twice after interruption).
+    if (!isWelcomeScreen) {
+      const fingerprint = dump.slice(0, 200)
+      if (this._renderedContentHashes.has(fingerprint)) return
+      this._renderedContentHashes.add(fingerprint)
+    }
+
+    // Non-welcome response frames that arrive rapidly (within 300ms of the last
+    // block): replace the last response block in-place. Codex 0.134+ animates
+    // text character-by-character during startup, producing dozens of
+    // nearly-identical frames in a burst. Replacing in-place keeps DOM clean.
+    const now = Date.now()
+    if (!isWelcomeScreen &&
+        this._lastResponseBlockEl &&
+        this._lastResponseBlockEl.isConnected &&
+        now - this._lastResponseBlockTs < 300) {
+      this._updateSyncScreenResultBlock(this._lastResponseBlockEl, dump)
+      this._lastResponseBlockTs = now
+      this._scrollBottom()
+      return
+    }
+
     // Render as a sync-screen result block (same style as alt-screen)
-    this._addSyncScreenResultBlock(dump, isWelcomeScreen)
+    const blockEl = this._addSyncScreenResultBlock(dump, isWelcomeScreen)
+    if (isWelcomeScreen) {
+      this._lastWelcomeBlockEl = blockEl
+    } else {
+      // Track the latest response block for rapid-frame replacement
+      this._lastResponseBlockEl = blockEl
+      this._lastResponseBlockTs = now
+    }
 
     if (!isWelcomeScreen) {
       this._setThinking(false)
@@ -867,6 +907,24 @@ export class CodexBlockRenderer {
 
     this._scroll.appendChild(article)
     this._scrollBottom()
+    return article
+  }
+
+  /**
+   * Update an existing sync-screen result block in-place (for welcome screen
+   * in-place refresh — avoids appending new blocks for each startup frame).
+   */
+  _updateSyncScreenResultBlock(article, text) {
+    const bodyEl = article.querySelector('.cbx-sync-body')
+    if (!bodyEl) return
+    bodyEl.innerHTML = ''
+    const lines = text.split('\n')
+    for (const line of lines) {
+      const lineEl = document.createElement('div')
+      lineEl.className = 'cbx-sync-line'
+      lineEl.textContent = line
+      bodyEl.appendChild(lineEl)
+    }
   }
 
   /**

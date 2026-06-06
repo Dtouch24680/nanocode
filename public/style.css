@@ -3584,6 +3584,7 @@ body.workspace-active .landing-overlay { display: none; }
   border-radius: var(--radius-md);
   overflow: hidden;
   animation: cbx-fadein 0.12s ease;
+  flex-shrink: 0; /* prevent flex parent from squashing blocks when many frames arrive */
 }
 
 @keyframes cbx-fadein {
