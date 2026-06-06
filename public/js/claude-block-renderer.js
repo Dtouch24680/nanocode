@@ -1404,11 +1404,53 @@ export class ClaudeBlockRenderer {
     if (!part) return
     if (part.type === 'text') {
       this._renderTextPart(part.text || '', live)
+    } else if (part.type === 'thinking') {
+      // P1-6: render thinking block as a collapsible faded panel
+      this._renderThinkingPart(part.thinking || '')
     } else if (part.type === 'tool_use') {
       this._renderToolUsePart(part)
     } else if (part.type === 'tool_result') {
       this._renderToolResultPart(part)
     }
+  }
+
+  _renderThinkingPart(text) {
+    if (!text) return
+    const charCount = text.length
+    const article = this._makeBlock('cbr-block-thinking')
+    article.dataset.collapsed = '1'
+    article.innerHTML =
+      `<div class="cbr-thinking-header" role="button" tabindex="0" aria-expanded="false">` +
+      `<svg class="cbr-thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+      `<span class="cbr-thinking-label">Thinking</span>` +
+      `<span class="cbr-thinking-count">${charCount.toLocaleString()} chars</span>` +
+      `</div>` +
+      `<div class="cbr-thinking-body" hidden><pre class="cbr-pre cbr-thinking-pre">${escHtml(text)}</pre></div>`
+
+    const header = article.querySelector('.cbr-thinking-header')
+    const body = article.querySelector('.cbr-thinking-body')
+    const chevron = article.querySelector('.cbr-thinking-chevron')
+
+    const toggle = () => {
+      const collapsed = article.dataset.collapsed === '1'
+      if (collapsed) {
+        article.dataset.collapsed = '0'
+        body.hidden = false
+        header.setAttribute('aria-expanded', 'true')
+        chevron.style.transform = 'rotate(180deg)'
+      } else {
+        article.dataset.collapsed = '1'
+        body.hidden = true
+        header.setAttribute('aria-expanded', 'false')
+        chevron.style.transform = ''
+      }
+    }
+
+    header.addEventListener('click', toggle)
+    header.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } })
+
+    this._scroll.appendChild(article)
+    this._scrollBottom()
   }
 
   _renderTextPart(text, live) {
