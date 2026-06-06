@@ -142,9 +142,9 @@
             <!-- Codex Model: removed R9 — use codex /model command instead -->
             <!-- (The /model slash command opens codex's native model picker TUI) -->
 
-            <!-- Render Mode -->
+            <!-- Render Mode (Claude tab) -->
             <div class="settings-subsection">
-              <div class="settings-label-row">渲染模式 <span class="settings-hint-inline">block=富文本 / terminal=PTY 兜底</span></div>
+              <div class="settings-label-row">渲染模式 (claude tab) <span class="settings-hint-inline">block=富文本 / terminal=PTY 兜底</span></div>
               <div class="settings-radio-group" id="render-mode-group">
                 <label class="settings-radio-label"><input type="radio" name="render-mode" value="block" checked /> Block（默认，富文本）</label>
                 <label class="settings-radio-label"><input type="radio" name="render-mode" value="terminal" /> Terminal（PTY raw，兜底）</label>
@@ -152,6 +152,19 @@
               <div class="settings-actions">
                 <button type="button" class="btn btn-primary" id="render-mode-save-btn">Save</button>
                 <span class="settings-status" id="render-mode-status"></span>
+              </div>
+            </div>
+
+            <!-- Render Mode (Codex tab) -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">渲染模式 (codex tab) <span class="settings-hint-inline">terminal=PTY raw 最稳 / block=实验性富文本</span></div>
+              <div class="settings-radio-group" id="codex-render-mode-group">
+                <label class="settings-radio-label"><input type="radio" name="codex-render-mode" value="terminal" checked /> Terminal（默认，PTY raw 兜底）</label>
+                <label class="settings-radio-label"><input type="radio" name="codex-render-mode" value="block" /> Block（实验，富文本+折叠）</label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="codex-render-mode-save-btn">Save</button>
+                <span class="settings-status" id="codex-render-mode-status"></span>
               </div>
             </div>
 
@@ -167,6 +180,64 @@
               <div class="settings-actions">
                 <button type="button" class="btn btn-primary" id="claude-autoresume-save-btn">Save</button>
                 <span class="settings-status" id="claude-autoresume-status"></span>
+              </div>
+            </div>
+
+            <!-- Auth Status (P1-4) -->
+            <div class="settings-subsection" id="auth-status-subsection">
+              <div class="settings-label-row">账号状态 <span class="settings-hint-inline">claude auth status</span></div>
+              <div id="auth-status-display" style="font-size:13px;color:var(--text-secondary,#aaa);padding:4px 0">加载中…</div>
+            </div>
+
+            <!-- Model selector (P1-3) -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Claude 模型 <span class="settings-hint-inline">空=CLI 默认</span></div>
+              <div class="settings-field">
+                <select id="claude-model-select" class="settings-input">
+                  <option value="">默认（CLI 决定）</option>
+                  <option value="claude-opus-4-5">claude-opus-4-5</option>
+                  <option value="claude-sonnet-4-5">claude-sonnet-4-5</option>
+                  <option value="claude-haiku-4-5">claude-haiku-4-5</option>
+                  <option value="claude-opus-4">claude-opus-4</option>
+                  <option value="claude-sonnet-4">claude-sonnet-4</option>
+                </select>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="claude-model-save-btn">Save</button>
+                <span class="settings-status" id="claude-model-status"></span>
+              </div>
+            </div>
+
+            <!-- Effort selector (P1-3) -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Effort 级别 <span class="settings-hint-inline">空=CLI 默认</span></div>
+              <div class="settings-field">
+                <select id="claude-effort-select" class="settings-input">
+                  <option value="">默认</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="xhigh">xhigh</option>
+                  <option value="max">max</option>
+                </select>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="claude-effort-save-btn">Save</button>
+                <span class="settings-status" id="claude-effort-status"></span>
+              </div>
+            </div>
+
+            <!-- Permission mode (P2-5) -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Permission 模式 <span class="settings-hint-inline">默认 bypass（跳过所有确认）</span></div>
+              <div class="settings-radio-group" id="claude-permission-mode-group">
+                <label class="settings-radio-label"><input type="radio" name="claude-permission-mode" value="bypass" checked /> bypass（默认，跳过所有确认）</label>
+                <label class="settings-radio-label"><input type="radio" name="claude-permission-mode" value="auto" /> auto（--permission-mode auto）</label>
+                <label class="settings-radio-label"><input type="radio" name="claude-permission-mode" value="accept-edits" /> accept-edits（--permission-mode acceptEdits）</label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="claude-permission-mode-save-btn">Save</button>
+                <span class="settings-status" id="claude-permission-mode-status"></span>
               </div>
             </div>
           </section>

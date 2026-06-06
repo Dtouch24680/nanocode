@@ -314,7 +314,7 @@ for (const type of ['done', 'blocked', 'qa']) {
   }
 }
 
-// ─── Settings panel (CLI provider + font size + ntfy + renderMode) ────────────
+// ─── Settings panel (CLI provider + font size + ntfy + renderMode + codexRenderMode) ──
 
 const cliProviderGroup = document.getElementById('cli-provider-group')
 const cliSaveBtn = document.getElementById('cli-save-btn')
@@ -329,12 +329,25 @@ const renderModeGroup = document.getElementById('render-mode-group')
 const renderModeSaveBtn = document.getElementById('render-mode-save-btn')
 const renderModeStatusEl = document.getElementById('render-mode-status')
 
+const codexRenderModeGroup = document.getElementById('codex-render-mode-group')
+const codexRenderModeSaveBtn = document.getElementById('codex-render-mode-save-btn')
+const codexRenderModeStatusEl = document.getElementById('codex-render-mode-status')
+
 // N43-R9: Codex Model selector removed — use /model command inside codex instead
 // const codexModelGroup / codexModelSaveBtn / codexModelStatusEl removed
 
 function loadRenderModeSettings(serverSettings) {
   const mode = (serverSettings?.renderMode) || 'block'
   const radios = renderModeGroup?.querySelectorAll('input[name="render-mode"]')
+  if (radios) {
+    for (const radio of radios) radio.checked = radio.value === mode
+  }
+}
+
+function loadCodexRenderModeSettings(serverSettings) {
+  // Default to 'terminal' — xterm raw is the stable default for codex
+  const mode = (serverSettings?.codexRenderMode) || 'terminal'
+  const radios = codexRenderModeGroup?.querySelectorAll('input[name="codex-render-mode"]')
   if (radios) {
     for (const radio of radios) radio.checked = radio.value === mode
   }
@@ -357,7 +370,11 @@ function loadSettings(serverSettings) {
   loadAutoResumeSettings()
   loadSubagentVisSettings()
   loadRenderModeSettings(serverSettings)
+  loadCodexRenderModeSettings(serverSettings)
   // loadCodexModelSettings removed — N43-R9
+  loadClaudeModelSettings(serverSettings)
+  loadClaudeEffortSettings(serverSettings)
+  loadPermissionModeSettings(serverSettings)
 }
 
 if (cliSaveBtn) {
@@ -402,6 +419,31 @@ if (renderModeSaveBtn) {
         renderModeStatusEl.textContent = err.message
         renderModeStatusEl.className = 'settings-status error'
         setTimeout(() => { renderModeStatusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
+// ─── Codex render mode save ──────────────────────────────────────────────────
+
+if (codexRenderModeSaveBtn) {
+  codexRenderModeSaveBtn.addEventListener('click', async () => {
+    const selected = codexRenderModeGroup?.querySelector('input[name="codex-render-mode"]:checked')
+    if (!selected) return
+    const mode = selected.value === 'block' ? 'block' : 'terminal'
+    try {
+      await updateSetting('codexRenderMode', mode)
+      state.codexRenderMode = mode
+      if (codexRenderModeStatusEl) {
+        codexRenderModeStatusEl.textContent = 'Saved — 新 codex tab 生效'
+        codexRenderModeStatusEl.className = 'settings-status success'
+        setTimeout(() => { codexRenderModeStatusEl.textContent = '' }, 3000)
+      }
+    } catch (err) {
+      if (codexRenderModeStatusEl) {
+        codexRenderModeStatusEl.textContent = err.message
+        codexRenderModeStatusEl.className = 'settings-status error'
+        setTimeout(() => { codexRenderModeStatusEl.textContent = '' }, 3000)
       }
     }
   })
@@ -633,6 +675,117 @@ if (autoResumeSaveBtn) {
   })
 }
 
+// ─── P1-4: Auth status ───────────────────────────────────────────────────────
+
+async function loadAuthStatus() {
+  const el = document.getElementById('auth-status-display')
+  if (!el) return
+  try {
+    const resp = await fetch('/api/auth/status')
+    const data = await resp.json()
+    if (data.loggedIn) {
+      const parts = []
+      if (data.email) parts.push(data.email)
+      if (data.authMethod) parts.push(`(${data.authMethod})`)
+      if (data.orgName) parts.push(`/ ${data.orgName}`)
+      el.textContent = '登录账号：' + (parts.join(' ') || '已登录')
+      el.style.color = 'var(--text-success, #4caf50)'
+    } else {
+      el.textContent = '未登录 — 请在终端运行 claude auth login'
+      el.style.color = 'var(--text-error, #f44336)'
+    }
+  } catch {
+    el.textContent = '无法获取账号状态'
+    el.style.color = 'var(--text-secondary, #aaa)'
+  }
+}
+
+// ─── P1-3: Model + Effort selectors ──────────────────────────────────────────
+
+function loadClaudeModelSettings(serverSettings) {
+  const sel = document.getElementById('claude-model-select')
+  if (sel) sel.value = serverSettings?.claude_model || ''
+}
+
+function loadClaudeEffortSettings(serverSettings) {
+  const sel = document.getElementById('claude-effort-select')
+  if (sel) sel.value = serverSettings?.claude_effort || ''
+}
+
+const claudeModelSaveBtn = document.getElementById('claude-model-save-btn')
+if (claudeModelSaveBtn) {
+  claudeModelSaveBtn.addEventListener('click', async () => {
+    const sel = document.getElementById('claude-model-select')
+    const statusEl = document.getElementById('claude-model-status')
+    try {
+      await updateSetting('claude_model', sel?.value || '')
+      if (statusEl) {
+        statusEl.textContent = 'Saved'
+        statusEl.className = 'settings-status success'
+        setTimeout(() => { statusEl.textContent = '' }, 2500)
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = err.message
+        statusEl.className = 'settings-status error'
+        setTimeout(() => { statusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
+const claudeEffortSaveBtn = document.getElementById('claude-effort-save-btn')
+if (claudeEffortSaveBtn) {
+  claudeEffortSaveBtn.addEventListener('click', async () => {
+    const sel = document.getElementById('claude-effort-select')
+    const statusEl = document.getElementById('claude-effort-status')
+    try {
+      await updateSetting('claude_effort', sel?.value || '')
+      if (statusEl) {
+        statusEl.textContent = 'Saved'
+        statusEl.className = 'settings-status success'
+        setTimeout(() => { statusEl.textContent = '' }, 2500)
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = err.message
+        statusEl.className = 'settings-status error'
+        setTimeout(() => { statusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
+// ─── P2-5: Permission mode selector ──────────────────────────────────────────
+
+function loadPermissionModeSettings(serverSettings) {
+  const mode = serverSettings?.claude_permission_mode || 'bypass'
+  const radios = document.querySelectorAll('input[name="claude-permission-mode"]')
+  for (const r of radios) r.checked = r.value === mode
+}
+
+const permissionModeSaveBtn = document.getElementById('claude-permission-mode-save-btn')
+if (permissionModeSaveBtn) {
+  permissionModeSaveBtn.addEventListener('click', async () => {
+    const selected = document.querySelector('input[name="claude-permission-mode"]:checked')
+    const statusEl = document.getElementById('claude-permission-mode-status')
+    try {
+      await updateSetting('claude_permission_mode', selected?.value || 'bypass')
+      if (statusEl) {
+        statusEl.textContent = 'Saved — 新 session 生效'
+        statusEl.className = 'settings-status success'
+        setTimeout(() => { statusEl.textContent = '' }, 2500)
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = err.message
+        statusEl.className = 'settings-status error'
+        setTimeout(() => { statusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
 // ─── Settings panel tab switch ────────────────────────────────────────────────
 
 const settingsPanel = document.getElementById('settings-panel')
@@ -646,6 +799,7 @@ async function openSettingsPanel() {
   try { serverSettings = await fetchSettings() } catch {}
   loadSettings(serverSettings)
   loadServices()
+  loadAuthStatus()  // P1-4: refresh auth status on each open
 }
 
 function closeSettingsPanel() {
@@ -751,6 +905,8 @@ async function init() {
     if (settings.cli_provider) state.cliProvider = settings.cli_provider
     if (settings.font_size) state.fontSize = settings.font_size
     if (settings.renderMode) state.renderMode = settings.renderMode
+    // codexRenderMode defaults to 'terminal' — only override if explicitly set
+    if (settings.codexRenderMode) state.codexRenderMode = settings.codexRenderMode
   } catch {}
 
   const backBtn = document.getElementById('back-to-menu')

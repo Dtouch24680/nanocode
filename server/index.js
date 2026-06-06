@@ -125,6 +125,40 @@ app.put('/api/settings', (req, res) => {
   res.json({ ok: true })
 })
 
+// ─── Auth status (P1-4) ────────────────────────────────────────────────────
+
+let _authStatusCache = null
+let _authStatusCacheAt = 0
+const AUTH_CACHE_MS = 60_000  // 60 seconds
+
+app.get('/api/auth/status', async (_req, res) => {
+  const now = Date.now()
+  if (_authStatusCache && now - _authStatusCacheAt < AUTH_CACHE_MS) {
+    return res.json(_authStatusCache)
+  }
+  try {
+    const result = await new Promise((resolve, reject) => {
+      execFile('claude', ['auth', 'status', '--json'], { timeout: 5000 }, (err, stdout, stderr) => {
+        if (err) {
+          // Return a graceful not-logged-in response if claude auth status fails
+          resolve({ loggedIn: false, error: err.message })
+        } else {
+          try {
+            resolve(JSON.parse(stdout.trim()))
+          } catch {
+            resolve({ loggedIn: false, error: 'parse error', raw: stdout.slice(0, 200) })
+          }
+        }
+      })
+    })
+    _authStatusCache = result
+    _authStatusCacheAt = now
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ loggedIn: false, error: err.message })
+  }
+})
+
 // ─── TTS proxy — forwards text to a local GPT-SoVITS v3 service ──────────
 
 const TTS_BASE = process.env.TTS_URL || 'http://127.0.0.1:9880'

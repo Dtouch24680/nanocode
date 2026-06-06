@@ -1265,16 +1265,45 @@ export function createTerminalRoutes(store) {
       : `--resume=${cs.claudeSessionId}`
     cs.turnCount++
 
+    // P1-3: read model + effort from settings
+    const claudeModel = store.getSetting('claude_model') || ''
+    const claudeEffort = store.getSetting('claude_effort') || ''
+
+    // P2-5: read permission_mode from settings (default = bypass)
+    const permMode = store.getSetting('claude_permission_mode') || 'bypass'
+
+    // P3-3: read session name from tab label
+    const tabLabel = cs.tabLabel || ''
+
     const launchArgs = [
       '--print',
       '--output-format=stream-json',
       '--verbose',
       '--include-partial-messages',
-      '--dangerously-skip-permissions',
-      sessionArg,
-      '--',     // end of flags
-      userText,
     ]
+
+    // Permission mode — map to claude --permission-mode flag
+    // bypass → --dangerously-skip-permissions (legacy alias, maintained for backward compat)
+    // accept-edits → --permission-mode acceptEdits
+    // auto → --permission-mode auto
+    if (permMode === 'bypass') {
+      launchArgs.push('--dangerously-skip-permissions')
+    } else if (permMode === 'accept-edits') {
+      launchArgs.push('--permission-mode', 'acceptEdits')
+    } else if (permMode === 'auto') {
+      launchArgs.push('--permission-mode', 'auto')
+    }
+
+    // Model + effort
+    if (claudeModel) launchArgs.push('--model', claudeModel)
+    if (claudeEffort) launchArgs.push('--effort', claudeEffort)
+
+    // Session name (P3-3)
+    if (tabLabel) launchArgs.push('--name', tabLabel)
+
+    launchArgs.push(sessionArg)
+    launchArgs.push('--')     // end of flags
+    launchArgs.push(userText)
     const escapedArgs = launchArgs.map((a) => sq(a))
     // Use `exec` so bash replaces itself with the claude process in-place.
     // Without `exec`, the process tree is: bash (proc.pid) → claude (child).
@@ -1466,6 +1495,8 @@ export function createTerminalRoutes(store) {
         turnCount: 0,
         cwd: project.cwd,
         currentProc: null,
+        // P3-3: tab label used as --name for the claude session
+        tabLabel: tab?.label || '',
         // FIFO queue for messages arriving while busy.
         // On interrupt (SIGINT) we clear the queue — an interrupted turn means
         // the user wants to change direction, so stale queued messages are
