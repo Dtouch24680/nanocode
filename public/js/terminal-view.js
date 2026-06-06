@@ -373,6 +373,39 @@ function setupChatInput() {
   // When Claude becomes idle, all pending items are combined into one turn.
   // This matches CLI behaviour: silent auto-queue + ↑ to edit last item.
   let _pendingQueue = []
+  // Track which (projectId, tabId) the current _pendingQueue belongs to.
+  let _queueProjectId = null
+  let _queueTabId = null
+
+  // ── Queue persistence helpers ─────────────────────────────────────────────
+  // Debounced PUT so rapid mutations (splice loop) only fire one request.
+  let _persistTimer = null
+  function _schedulePersist() {
+    if (!_queueProjectId || !_queueTabId) return
+    clearTimeout(_persistTimer)
+    _persistTimer = setTimeout(() => {
+      const pid = _queueProjectId
+      const tid = _queueTabId
+      const snapshot = [..._pendingQueue]
+      fetch(`/api/projects/${pid}/tabs/${tid}/queue`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queue: snapshot }),
+      }).catch(() => { /* non-fatal */ })
+    }, 200)
+  }
+
+  async function _hydrateQueue(projectId, tabId) {
+    try {
+      const r = await fetch(`/api/projects/${projectId}/tabs/${tabId}/queue`)
+      if (!r.ok) return
+      const data = await r.json()
+      if (Array.isArray(data.queue) && data.queue.length > 0) {
+        _pendingQueue = data.queue
+        updateQueueTray()
+      }
+    } catch { /* non-fatal */ }
+  }
 
   // Inject the queue tray (above .input-row) at init time.
   const queueTray = document.createElement('div')
@@ -403,6 +436,7 @@ function setupChatInput() {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         _pendingQueue.splice(+btn.dataset.idx, 1)
+        _schedulePersist()
         updateQueueTray()
       })
     })
@@ -414,6 +448,7 @@ function setupChatInput() {
         if (_pendingQueue.length === 0) return
         // Grab all queued messages before interrupting
         const all = _pendingQueue.splice(0)
+        _schedulePersist()
         updateQueueTray()
         // Interrupt the current turn, then wait for the result event (thinking=false)
         // before sending so the backend is idle and ready for the new turn.
@@ -493,6 +528,7 @@ function setupChatInput() {
       // as one combined turn (matches CLI "send all at once when idle" behaviour).
       if (!thinking && isClaudeTab && _pendingQueue.length > 0) {
         const all = _pendingQueue.splice(0)
+        _schedulePersist()
         updateQueueTray()
         const combined = all.join('\n\n')
         if (activePane) activePane.sendInputWithEcho(combined)
@@ -513,6 +549,21 @@ function setupChatInput() {
     sendBtn.classList.remove('codex-thinking-btn')
     sendBtn.disabled = false
     updateInputBarForTabType()  // updates isClaudeTab + isCodexTab first
+
+    // Hydrate the pending queue from the backend when switching to a claude tab.
+    const newTabId = e.detail?.tabId || null
+    const newProjectId = currentProjectId
+    const switchedTab = newTabId !== _queueTabId || newProjectId !== _queueProjectId
+    if (switchedTab) {
+      // Clear in-memory queue before loading the new tab's queue
+      _pendingQueue = []
+      _queueProjectId = newProjectId
+      _queueTabId = newTabId
+      if (_activeTabType === 'claude' && newProjectId && newTabId) {
+        _hydrateQueue(newProjectId, newTabId)
+      }
+    }
+
     updateQueueTray()           // then update tray with fresh isClaudeTab
   })
 
@@ -961,6 +1012,7 @@ function setupChatInput() {
     // Claude finishes. To interrupt instead, use the Stop button.
     if (isClaudeTab && isClaudeThinking) {
       _pendingQueue.push(text)
+      _schedulePersist()
       chatInput.value = ''
       autoResize()
       hideSuggestions()
@@ -1094,6 +1146,7 @@ function setupChatInput() {
       // Mirrors CLI "press up to edit queued messages" behaviour.
       if (isClaudeTab && _pendingQueue.length > 0 && chatInput.value === '') {
         chatInput.value = _pendingQueue.pop()
+        _schedulePersist()
         updateQueueTray()
         autoResize()
         chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length)
@@ -1186,6 +1239,7 @@ function setupChatInput() {
           // Same as keyboard ↑: pop pending queue first if applicable
           if (isClaudeTab && _pendingQueue.length > 0 && chatInput.value === '') {
             chatInput.value = _pendingQueue.pop()
+            _schedulePersist()
             updateQueueTray()
             autoResize()
             break

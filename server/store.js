@@ -143,12 +143,18 @@ export function createStore(filePath = ':memory:') {
     if (!data.tabs[projectId]) return null
     const tab = data.tabs[projectId].find((t) => t.id === tabId)
     if (!tab) return null
-    const allowed = ['claudeSessionId', 'claudeSessionStarted', 'codexThreadId']
+    const allowed = ['claudeSessionId', 'claudeSessionStarted', 'codexThreadId', 'pendingQueue']
     let changed = false
     for (const key of allowed) {
-      if (Object.prototype.hasOwnProperty.call(patch, key) && tab[key] !== patch[key]) {
-        tab[key] = patch[key]
-        changed = true
+      if (Object.prototype.hasOwnProperty.call(patch, key)) {
+        if (key === 'pendingQueue') {
+          // Always update array — deep-equality check is expensive and not needed
+          tab[key] = Array.isArray(patch[key]) ? patch[key] : []
+          changed = true
+        } else if (tab[key] !== patch[key]) {
+          tab[key] = patch[key]
+          changed = true
+        }
       }
     }
     if (changed) save()

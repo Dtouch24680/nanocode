@@ -618,6 +618,43 @@ export function createTerminalRoutes(store) {
   router.get('/api/recent-agents', (req, res) => {
     res.json(recentAgents.getRecentAgentsCached())
   })
+  // ── Pending queue persistence ─────────────────────────────────────────────
+  //
+  // GET  /api/projects/:id/tabs/:tabId/queue  → { queue: string[] }
+  // PUT  /api/projects/:id/tabs/:tabId/queue  body: { queue: string[] } → { queue: string[] }
+  //
+  // The client-side _pendingQueue is persisted here so it survives page
+  // refreshes and device switches. Queue is attached to the tab record and
+  // saved to data/nanocode.json on every write.
+
+  router.get('/api/projects/:id/tabs/:tabId/queue', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+    const tab = store.getTab ? store.getTab(req.params.id, req.params.tabId) : null
+    if (!tab) return res.status(404).json({ error: 'tab not found' })
+    res.json({ queue: Array.isArray(tab.pendingQueue) ? tab.pendingQueue : [] })
+  })
+
+  router.put('/api/projects/:id/tabs/:tabId/queue', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+    const tab = store.getTab ? store.getTab(req.params.id, req.params.tabId) : null
+    if (!tab) return res.status(404).json({ error: 'tab not found' })
+    const rawQueue = req.body?.queue
+    if (!Array.isArray(rawQueue)) {
+      return res.status(400).json({ error: 'queue must be an array' })
+    }
+    // Sanitise: keep only non-empty strings, cap at 100 items
+    const queue = rawQueue
+      .filter((item) => typeof item === 'string' && item.trim().length > 0)
+      .slice(0, 100)
+    const updated = store.updateTabMetadata
+      ? store.updateTabMetadata(req.params.id, req.params.tabId, { pendingQueue: queue })
+      : null
+    if (!updated) return res.status(404).json({ error: 'update failed' })
+    res.json({ queue: Array.isArray(updated.pendingQueue) ? updated.pendingQueue : [] })
+  })
+
   router.post('/api/projects/:id/tabs/:tabId/interrupt', (req, res) => {
     sessionController.handleInterrupt(req, res)
   })
