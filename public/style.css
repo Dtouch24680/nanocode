@@ -3320,6 +3320,97 @@ body.workspace-active .landing-overlay { display: none; }
   overflow-y: auto;
 }
 
+/* P1-1: Edit/Write/MultiEdit inline diff rendering */
+.cbr-diff-wrap {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.cbr-diff-filepath {
+  padding: 2px var(--s-3);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cbr-diff-filepath--new {
+  color: #4ade80;
+}
+
+.cbr-diff-body {
+  overflow-x: auto;
+}
+
+.cbr-diff-line {
+  display: flex;
+  align-items: flex-start;
+  min-height: 1.4em;
+  line-height: 1.4;
+}
+
+.cbr-diff-gutter {
+  flex-shrink: 0;
+  width: 1.6em;
+  text-align: center;
+  user-select: none;
+  padding: 0 2px;
+  font-weight: 700;
+}
+
+.cbr-diff-text {
+  flex: 1;
+  padding: 0 var(--s-2);
+  white-space: pre;
+  overflow: visible;
+  word-break: break-all;
+}
+
+.cbr-diff-added {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+}
+
+.cbr-diff-removed {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+.cbr-diff-equal {
+  color: var(--text-secondary);
+}
+
+.cbr-diff-truncated {
+  padding: 2px var(--s-3);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.cbr-multiedit-hunk {
+  margin-bottom: var(--s-2);
+}
+
+.cbr-multiedit-hunk:last-child { margin-bottom: 0; }
+
+.cbr-multiedit-hunk-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 2px var(--s-2);
+  background: var(--bg-tertiary);
+}
+
 /* Subagent activity block (nested events with parent_tool_use_id) */
 .cbr-block-subagent-activity {
   background: var(--bg-secondary);

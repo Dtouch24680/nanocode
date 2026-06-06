@@ -38,6 +38,121 @@ const PING_INTERVAL_MS = 5000
 const INITIAL_HISTORY_BLOCKS = 200
 const HISTORY_PAGE_SIZE = 50
 
+// ── P1-1: Simple line-level diff for Edit/Write tool rendering ────────────────
+//
+// Produces an array of {type:'equal'|'removed'|'added', line} objects.
+// Uses LCS-based diff (Myers-style via DP) for small files; falls back to
+// a simpler naive diff when files are very large to keep it fast.
+function computeLineDiff(oldText, newText) {
+  const oldLines = oldText.split('\n')
+  const newLines = newText.split('\n')
+
+  // For very large diffs (>500 lines each), use a simple "remove all + add all" fallback
+  if (oldLines.length > 500 || newLines.length > 500) {
+    return [
+      ...oldLines.map((line) => ({ type: 'removed', line })),
+      ...newLines.map((line) => ({ type: 'added', line })),
+    ]
+  }
+
+  // Patience / DP LCS diff
+  const m = oldLines.length
+  const n = newLines.length
+
+  // Build LCS table
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1))
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      if (oldLines[i] === newLines[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1])
+      }
+    }
+  }
+
+  // Trace back
+  const result = []
+  let i = 0, j = 0
+  while (i < m || j < n) {
+    if (i < m && j < n && oldLines[i] === newLines[j]) {
+      result.push({ type: 'equal', line: oldLines[i] })
+      i++; j++
+    } else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) {
+      result.push({ type: 'added', line: newLines[j] })
+      j++
+    } else {
+      result.push({ type: 'removed', line: oldLines[i] })
+      i++
+    }
+  }
+  return result
+}
+
+/**
+ * Render an Edit tool input as a two-column diff panel (red/green lines).
+ * Returns HTML string.
+ */
+function renderEditDiff(filePath, oldString, newString) {
+  const diff = computeLineDiff(oldString || '', newString || '')
+
+  // Cap at 300 lines to avoid massive DOM
+  const MAX_DIFF_LINES = 300
+  let lines = diff
+  let truncated = false
+  if (diff.length > MAX_DIFF_LINES) {
+    lines = diff.slice(0, MAX_DIFF_LINES)
+    truncated = true
+  }
+
+  let rows = ''
+  for (const { type, line } of lines) {
+    const prefix = type === 'added' ? '+' : type === 'removed' ? '−' : ' '
+    const cls = type === 'added' ? 'cbr-diff-added' : type === 'removed' ? 'cbr-diff-removed' : 'cbr-diff-equal'
+    rows += `<div class="cbr-diff-line ${cls}"><span class="cbr-diff-gutter">${prefix}</span><span class="cbr-diff-text">${escHtml(line)}</span></div>`
+  }
+
+  const header = filePath
+    ? `<div class="cbr-diff-filepath">${escHtml(filePath)}</div>`
+    : ''
+
+  return (
+    `<div class="cbr-diff-wrap">` +
+    header +
+    `<div class="cbr-diff-body">${rows}</div>` +
+    (truncated ? `<div class="cbr-diff-truncated">… diff truncated (showing first ${MAX_DIFF_LINES} of ${diff.length} lines)</div>` : '') +
+    `</div>`
+  )
+}
+
+/**
+ * Render a Write tool input as a green "new file" preview.
+ * Returns HTML string.
+ */
+function renderWritePreview(filePath, content) {
+  const lines = (content || '').split('\n')
+  const MAX_LINES = 200
+  const truncated = lines.length > MAX_LINES
+  const displayLines = truncated ? lines.slice(0, MAX_LINES) : lines
+
+  let rows = ''
+  for (const line of displayLines) {
+    rows += `<div class="cbr-diff-line cbr-diff-added"><span class="cbr-diff-gutter">+</span><span class="cbr-diff-text">${escHtml(line)}</span></div>`
+  }
+
+  const header = filePath
+    ? `<div class="cbr-diff-filepath cbr-diff-filepath--new">new file: ${escHtml(filePath)}</div>`
+    : ''
+
+  return (
+    `<div class="cbr-diff-wrap">` +
+    header +
+    `<div class="cbr-diff-body">${rows}</div>` +
+    (truncated ? `<div class="cbr-diff-truncated">… truncated (showing first ${MAX_LINES} of ${lines.length} lines)</div>` : '') +
+    `</div>`
+  )
+}
+
 // ── P2-1: Tool icon map (inline 16×16 SVG, no external deps) ─────────────────
 const TOOL_ICONS = {
   // Terminal / shell
@@ -1551,6 +1666,38 @@ export class ClaudeBlockRenderer {
           } catch {
             inputHtml = `<pre class="cbr-pre"><code>${escHtml(String(part.input))}</code></pre>`
           }
+        }
+      } else if (part.name === 'Edit') {
+        // P1-1: Edit tool — render old_string/new_string as red/green diff
+        const filePath = part.input.file_path || part.input.path || ''
+        const oldStr = part.input.old_string != null ? String(part.input.old_string) : ''
+        const newStr = part.input.new_string != null ? String(part.input.new_string) : ''
+        inputHtml = renderEditDiff(filePath, oldStr, newStr)
+      } else if (part.name === 'Write') {
+        // P1-1: Write tool — render file_path + content as green new-file preview
+        const filePath = part.input.file_path || part.input.path || ''
+        const content = part.input.content != null ? String(part.input.content) : ''
+        inputHtml = renderWritePreview(filePath, content)
+      } else if (part.name === 'MultiEdit') {
+        // P1-1: MultiEdit — each edit block rendered as a separate diff
+        const filePath = part.input.file_path || part.input.path || ''
+        const edits = Array.isArray(part.input.edits) ? part.input.edits : []
+        if (edits.length === 0) {
+          try {
+            inputHtml = renderCode(JSON.stringify(part.input, null, 2), 'json')
+          } catch {
+            inputHtml = `<pre class="cbr-pre"><code>${escHtml(String(part.input))}</code></pre>`
+          }
+        } else {
+          inputHtml = edits.map((edit, idx) => {
+            const oldStr = edit.old_string != null ? String(edit.old_string) : ''
+            const newStr = edit.new_string != null ? String(edit.new_string) : ''
+            const editPath = edit.file_path || filePath || ''
+            return `<div class="cbr-multiedit-hunk">` +
+              (edits.length > 1 ? `<div class="cbr-multiedit-hunk-label">Edit ${idx + 1} of ${edits.length}</div>` : '') +
+              renderEditDiff(editPath, oldStr, newStr) +
+              `</div>`
+          }).join('')
         }
       } else {
         try {
