@@ -4,6 +4,7 @@ import { existsSync, readdirSync, unlinkSync } from 'node:fs'
 import { platform } from 'node:os'
 import { join } from 'node:path'
 import * as sessions from './sessions.js'
+import { buildReplaySeed, buildUserReplayId } from './claude-history.js'
 
 export function createClaudeSessionController({ store, home, recentAgents }) {
   const IS_WIN = platform() === 'win32'
@@ -14,6 +15,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
   // Map: sessionKey -> { claudeSessionId, clients, history, busy }
   const claudeSessions = new Map()
+  const replaySeeds = new Map()
 
   const TAB_LAUNCHERS = {
     bash: () => 'exec bash -l',
@@ -69,6 +71,15 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     if (!cs) return
     cs.claudeSessionId = claudeSessionId
     if (resetTurnCount) cs.turnCount = 0
+    if (resetTurnCount) cs._replayUserTextCounts = new Map()
+  }
+
+  function primeReplayHistory(projectId, tabId, events) {
+    const sessionKey = sessionKeyFor(projectId, tabId)
+    const seed = buildReplaySeed(events)
+    const cs = claudeSessions.get(sessionKey)
+    if (cs) return
+    replaySeeds.set(sessionKey, seed)
   }
 
   /** Build SSH args for a remote project. */
@@ -325,7 +336,9 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         currentProc: null,
         tabLabel: tab?.label || '',
         queue: [],
+        _replayUserTextCounts: replaySeeds.get(sessionKey)?.userTextCounts || new Map(),
       }
+      replaySeeds.delete(sessionKey)
       claudeSessions.set(sessionKey, cs)
     }
 
@@ -379,6 +392,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         const userEvent = {
           type: 'user',
           uuid: randomUUID(),
+          replay_id: buildUserReplayId(msg.text, cs._replayUserTextCounts),
           message: { role: 'user', content: [{ type: 'text', text: msg.text }] },
           _nonce: msg._nonce || null,
         }
@@ -537,6 +551,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     handleInterrupt,
     handleReset,
     handleTerminalWs,
+    primeReplayHistory,
     setClaudeSessionId,
   }
 }

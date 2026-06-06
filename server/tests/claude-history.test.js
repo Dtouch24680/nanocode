@@ -71,4 +71,30 @@ describe('parseJsonlHistory', () => {
       ]
     )
   })
+
+  it('assigns stable replay ids to repeated user text rows', () => {
+    const tempDir = makeTempDir('nanocode-claude-history-')
+    const jsonlPath = path.join(tempDir, 'session-replay.jsonl')
+
+    writeFileSync(
+      jsonlPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          uuid: 'user-1',
+          message: { role: 'user', content: 'repeat me' },
+        }),
+        JSON.stringify({
+          type: 'user',
+          uuid: 'user-2',
+          message: { role: 'user', content: 'repeat me' },
+        }),
+      ].join('\n') + '\n'
+    )
+
+    const events = parseJsonlHistory(jsonlPath)
+
+    assert.match(events[0].replay_id, /^user:[0-9a-f]{16}:1$/)
+    assert.equal(events[1].replay_id, events[0].replay_id.replace(/:1$/, ':2'))
+  })
 })

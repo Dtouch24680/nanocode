@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -6,6 +6,45 @@ import { join } from 'node:path'
 export function cwdToClaudeProjectDir(home, cwd) {
   const encoded = cwd.replace(/\//g, '-')
   return join(home, '.claude', 'projects', encoded)
+}
+
+function hashReplayText(text) {
+  return createHash('sha1').update(text).digest('hex').slice(0, 16)
+}
+
+export function extractReplayUserText(message) {
+  const content = message?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((part) => part?.type === 'text')
+    .map((part) => part.text ?? '')
+    .join('')
+}
+
+export function buildUserReplayId(text, userTextCounts) {
+  if (!text) return null
+  const next = (userTextCounts.get(text) ?? 0) + 1
+  userTextCounts.set(text, next)
+  return `user:${hashReplayText(text)}:${next}`
+}
+
+function buildAssistantReplayId(row) {
+  if (row.uuid) return row.uuid
+  if (!row.requestId) return null
+  const firstType = row.message?.content?.[0]?.type || 'unknown'
+  return `assistant:${row.requestId}:${firstType}`
+}
+
+export function buildReplaySeed(events) {
+  const userTextCounts = new Map()
+  for (const event of events) {
+    if (event.type !== 'user') continue
+    const text = extractReplayUserText(event.message)
+    if (!text) continue
+    userTextCounts.set(text, (userTextCounts.get(text) ?? 0) + 1)
+  }
+  return { userTextCounts }
 }
 
 /**
@@ -28,6 +67,7 @@ export function parseJsonlHistory(jsonlPath) {
 
   const lines = content.split('\n').filter((l) => l.trim())
   const events = []
+  const replayState = { userTextCounts: new Map() }
 
   const rawRows = []
   for (const line of lines) {
@@ -86,6 +126,7 @@ export function parseJsonlHistory(jsonlPath) {
         type: 'user',
         message: msg,
         uuid: row.uuid || null,
+        replay_id: buildUserReplayId(extractReplayUserText(msg), replayState.userTextCounts),
         parent_tool_use_id: row.parent_tool_use_id || null,
       })
     } else if (row.type === 'assistant') {
@@ -103,6 +144,7 @@ export function parseJsonlHistory(jsonlPath) {
         type: 'assistant',
         message: msg,
         uuid: row.uuid || null,
+        replay_id: buildAssistantReplayId(row),
         parent_tool_use_id: row.parent_tool_use_id || null,
       })
     }
@@ -252,11 +294,13 @@ export function createClaudeHistoryService({ store, home, recentAgents, sessionC
     }
 
     if (!resolvedPath) {
+      sessionController.primeReplayHistory(req.params.id, req.params.tabId, [])
       recentAgents.primeRecentAgentsCache()
       return res.json({ events: [], sessionId: resolvedSessionId, fallback })
     }
 
     const events = parseJsonlHistory(resolvedPath)
+    sessionController.primeReplayHistory(req.params.id, req.params.tabId, events)
     recentAgents.primeRecentAgentsCache()
     console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
     res.json({ events, sessionId: resolvedSessionId, fallback })
