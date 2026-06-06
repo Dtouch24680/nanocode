@@ -326,17 +326,23 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         }
       }
 
+      const seed = replaySeeds.get(sessionKey)
+      // If history was loaded from jsonl (hasHistory=true), treat the first user
+      // turn as a resume rather than a new session start. This makes runClaudeTurn
+      // use `--resume <sessionId>` instead of `--session-id <sessionId>` so
+      // Claude continues the existing conversation context.
+      const initialTurnCount = seed?.hasHistory ? 1 : 0
       cs = {
         claudeSessionId,
         clients: new Set(),
         history: [],
         busy: false,
-        turnCount: 0,
+        turnCount: initialTurnCount,
         cwd: project.cwd,
         currentProc: null,
         tabLabel: tab?.label || '',
         queue: [],
-        _replayUserTextCounts: replaySeeds.get(sessionKey)?.userTextCounts || new Map(),
+        _replayUserTextCounts: seed?.userTextCounts || new Map(),
       }
       replaySeeds.delete(sessionKey)
       claudeSessions.set(sessionKey, cs)

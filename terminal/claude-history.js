@@ -44,7 +44,10 @@ export function buildReplaySeed(events) {
     if (!text) continue
     userTextCounts.set(text, (userTextCounts.get(text) ?? 0) + 1)
   }
-  return { userTextCounts }
+  // hasHistory=true signals to attachClaudeSession that this tab is restoring
+  // an existing conversation — the first user turn should use --resume (not --session-id).
+  const hasHistory = events.length > 0
+  return { userTextCounts, hasHistory }
 }
 
 /**

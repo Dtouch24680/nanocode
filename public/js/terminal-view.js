@@ -174,22 +174,29 @@ document.addEventListener('nanocode:resume-session', async (e) => {
         tabManager._pendingActiveId = match.id
       }
     } else {
-      // Create a new claude tab pre-loaded with this sessionId
+      // Create a new claude tab pre-loaded with this sessionId.
+      // Pass claudeSessionId in the POST body so the tab is created with the
+      // correct session ID immediately — before the WS broadcast causes the
+      // ClaudeBlockRenderer to connect and fetch history. This avoids the
+      // create+patch two-step race where CBR fetches history with the wrong
+      // (freshly-generated) UUID before the PATCH arrives.
       const newTab = await fetch(`/api/projects/${projectId}/tabs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'claude', label: `resume` }),
+        body: JSON.stringify({ type: 'claude', label: `resume`, claudeSessionId: sessionId }),
       }).then(r => r.json())
 
-      // Patch the tab's claudeSessionId to point at the target session
-      // so the history endpoint finds the right jsonl
       if (newTab?.id) {
-        await fetch(`/api/projects/${projectId}/tabs/${newTab.id}/session`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ claudeSessionId: sessionId }),
-        }).catch(() => {})
+        // Always set _pendingActiveId so setActive fires when the WS broadcast
+        // arrives (if it hasn't yet). Also call setActive immediately if the tab
+        // is already in the local list (WS beat the HTTP response). Both paths
+        // must be covered because HTTP response and WS message ordering is not
+        // guaranteed.
         tabManager._pendingActiveId = newTab.id
+        if (tabManager.projectId === projectId && tabManager.tabs.some(t => t.id === newTab.id)) {
+          tabManager._pendingActiveId = null
+          tabManager.setActive(newTab.id)
+        }
       }
     }
   } catch (err) {

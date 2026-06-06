@@ -177,7 +177,12 @@ export function createTerminalRoutes(store) {
       ? req.body.label.trim().slice(0, 40)
       : undefined
     const type = typeof req.body?.type === 'string' ? req.body.type : undefined
-    const tab = store.createTab(req.params.id, { label, type })
+    // Optional: pre-set claudeSessionId so history endpoint immediately finds the right jsonl.
+    // Used by the Recent Agents resume flow to avoid a create+patch two-step race.
+    const claudeSessionId = typeof req.body?.claudeSessionId === 'string' && req.body.claudeSessionId.trim()
+      ? req.body.claudeSessionId.trim()
+      : undefined
+    const tab = store.createTab(req.params.id, { label, type, claudeSessionId })
     broadcastTabs(req.params.id)
     res.status(201).json(tab)
   })
