@@ -587,10 +587,12 @@ export function createTerminalRoutes(store) {
     }
 
     if (!resolvedPath) {
+      primeRecentAgentsCache()
       return res.json({ events: [], sessionId: resolvedSessionId, fallback })
     }
 
     const events = parseJsonlHistory(resolvedPath)
+    primeRecentAgentsCache()
     console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
     res.json({ events, sessionId: resolvedSessionId, fallback })
   })
@@ -784,105 +786,70 @@ export function createTerminalRoutes(store) {
     return `${days}d ago`
   }
 
-  router.get('/api/recent-agents', (req, res) => {
-    const claudeProjectsRoot = join(home, '.claude', 'projects')
-    if (!existsSync(claudeProjectsRoot)) return res.json([])
+  function cwdFromJsonl(jsonlPath) {
+    try {
+      const MAX_BYTES = 8192
+      const fd = openSync(jsonlPath, 'r')
+      const buf = Buffer.allocUnsafe(MAX_BYTES)
+      let bytesRead = 0
+      try { bytesRead = readSync(fd, buf, 0, MAX_BYTES, 0) } finally { closeSync(fd) }
+      const chunk = buf.slice(0, bytesRead).toString('utf-8')
+      const lines = chunk.split('\n')
+      for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+        let row
+        try { row = JSON.parse(line) } catch { continue }
+        if (typeof row.cwd === 'string' && row.cwd) return row.cwd
+      }
+    } catch {}
+    return null
+  }
 
-    const now = Date.now()
-    const H24 = 24 * 60 * 60 * 1000
+  function cwdFromDirName(dirName) {
+    console.warn(`[recent-agents] no cwd in jsonl for dir=${dirName}, falling back to dir-name heuristic`)
+    return dirName.replace(/^-/, '/').replace(/-/g, '/')
+  }
 
-    // Return cached result if fresh
-    if (_recentAgentsCache && now - _recentAgentsCacheAt < RECENT_AGENTS_CACHE_MS) {
-      // Patch relTime fields with the current time before returning
-      const patched = _recentAgentsCache.map(e => ({
-        ...e,
-        relTime: _relTime(e._mtimeMs, now),
-        active: now - e._mtimeMs <= H24,
-      }))
-      return res.json(patched)
-    }
-
-    /**
-     * Read the real cwd from any jsonl row that carries a 'cwd' field.
-     * Perf: only reads the first 8 KB (cwd is always in an early row) instead
-     * of loading the entire file (which can be 22 MB for long sessions).
-     * Returns null if not found in the first 8 KB.
-     */
-    function cwdFromJsonl(jsonlPath) {
-      try {
-        const MAX_BYTES = 8192
-        const fd = openSync(jsonlPath, 'r')
-        const buf = Buffer.allocUnsafe(MAX_BYTES)
-        let bytesRead = 0
-        try { bytesRead = readSync(fd, buf, 0, MAX_BYTES, 0) } finally { closeSync(fd) }
-        const chunk = buf.slice(0, bytesRead).toString('utf-8')
-        // Parse complete lines only (last line may be truncated)
-        const lines = chunk.split('\n')
-        // Drop the last element — it may be a partial line
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim()
-          if (!line) continue
-          let row
-          try { row = JSON.parse(line) } catch { continue }
-          if (typeof row.cwd === 'string' && row.cwd) return row.cwd
-        }
-      } catch {}
-      return null
-    }
-
-    /**
-     * Fallback: decode project directory name heuristically.
-     * Only used when the jsonl has no 'cwd' field (e.g. very old sessions).
-     * Logs a warning so these can be audited.
-     */
-    function cwdFromDirName(dirName) {
-      console.warn(`[recent-agents] no cwd in jsonl for dir=${dirName}, falling back to dir-name heuristic`)
-      return dirName.replace(/^-/, '/').replace(/-/g, '/')
-    }
-
-    /**
-     * Extract the first user prompt text from a jsonl path (≤120 chars).
-     * Perf: only reads the first 16 KB — enough to find the first user row
-     * without loading entire multi-MB session files.
-     */
-    function extractSummary(jsonlPath) {
-      try {
-        const MAX_BYTES = 16384
-        const fd = openSync(jsonlPath, 'r')
-        const buf = Buffer.allocUnsafe(MAX_BYTES)
-        let bytesRead = 0
-        try { bytesRead = readSync(fd, buf, 0, MAX_BYTES, 0) } finally { closeSync(fd) }
-        const chunk = buf.slice(0, bytesRead).toString('utf-8')
-        const lines = chunk.split('\n')
-        // Drop last element — may be a partial line
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim()
-          if (!line) continue
-          let row
-          try { row = JSON.parse(line) } catch { continue }
-          if (row.type === 'user' && row.message?.content) {
-            const parts = row.message.content
-            if (Array.isArray(parts)) {
-              for (const p of parts) {
-                if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
-                  return p.text.trim().slice(0, 120)
-                }
+  function extractSummary(jsonlPath) {
+    try {
+      const MAX_BYTES = 16384
+      const fd = openSync(jsonlPath, 'r')
+      const buf = Buffer.allocUnsafe(MAX_BYTES)
+      let bytesRead = 0
+      try { bytesRead = readSync(fd, buf, 0, MAX_BYTES, 0) } finally { closeSync(fd) }
+      const chunk = buf.slice(0, bytesRead).toString('utf-8')
+      const lines = chunk.split('\n')
+      for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+        let row
+        try { row = JSON.parse(line) } catch { continue }
+        if (row.type === 'user' && row.message?.content) {
+          const parts = row.message.content
+          if (Array.isArray(parts)) {
+            for (const p of parts) {
+              if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
+                return p.text.trim().slice(0, 120)
               }
-            } else if (typeof parts === 'string' && parts.trim()) {
-              return parts.trim().slice(0, 120)
             }
+          } else if (typeof parts === 'string' && parts.trim()) {
+            return parts.trim().slice(0, 120)
           }
         }
-      } catch {}
-      return '(无摘要)'
-    }
+      }
+    } catch {}
+    return '(无摘要)'
+  }
 
-    // (relTime computed via module-level _relTime helper defined above the handler)
+  function scanRecentAgents(now = Date.now()) {
+    const claudeProjectsRoot = join(home, '.claude', 'projects')
+    if (!existsSync(claudeProjectsRoot)) return []
 
-    // Collect all jsonl entries across all project dirs
+    const H24 = 24 * 60 * 60 * 1000
     const allEntries = []
     let dirs
-    try { dirs = readdirSync(claudeProjectsRoot, { withFileTypes: true }) } catch { return res.json([]) }
+    try { dirs = readdirSync(claudeProjectsRoot, { withFileTypes: true }) } catch { return [] }
 
     for (const d of dirs) {
       if (!d.isDirectory()) continue
@@ -904,17 +871,13 @@ export function createTerminalRoutes(store) {
       }
     }
 
-    // Sort by mtime desc
     allEntries.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
-    // Apply the 24h-or-min-5 rule
     let cutoff = allEntries.filter((e) => now - e.mtimeMs <= H24)
     if (cutoff.length < 5) cutoff = allEntries.slice(0, 5)
-    // Hard cap at 50 to avoid runaway payloads
     cutoff = cutoff.slice(0, 50)
 
-    const result = cutoff.map((e) => {
-      // Read the real cwd from the jsonl file; fall back to dir-name heuristic only if absent
+    return cutoff.map((e) => {
       const cwd = cwdFromJsonl(e.fullPath) || cwdFromDirName(e.dirName)
       const cwdParts = cwd.split('/').filter(Boolean)
       const projectName = cwdParts[cwdParts.length - 1] || e.dirName
