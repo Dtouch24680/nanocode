@@ -1456,6 +1456,31 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   color: var(--text-muted);
   font-family: var(--font-sans);
 }
+/* Group header for plugin namespaces */
+.claude-slash-group-header {
+  padding: 4px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  cursor: default;
+  user-select: none;
+}
+.claude-slash-group-header:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+/* Fuzzy match highlight within slash command names */
+.claude-slash-cmd mark.slash-match {
+  background: rgba(45, 191, 211, 0.28);
+  color: var(--text);
+  padding: 0 1px;
+  border-radius: 2px;
+  font-weight: 700;
+}
 
 /* -- Suggestions dropdown -------------------------------------- */
 
@@ -2139,6 +2164,40 @@ body.workspace-active .landing-overlay { display: none; }
   margin-bottom: 10px;
   border-bottom: 1px solid rgba(140,198,63,0.15);
   padding-bottom: 4px;
+}
+
+/* Collapsible section toggle */
+.settings-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+}
+.settings-section-toggle:hover {
+  color: var(--primary, #8cc63f);
+  opacity: 0.85;
+}
+.settings-section-label {
+  flex: 1;
+}
+.settings-section-chevron {
+  font-size: 9px;
+  color: var(--fg-3, rgba(255,255,255,0.38));
+  transition: transform 0.2s ease;
+  margin-left: 6px;
+}
+.settings-section[data-collapsed="true"] .settings-section-chevron {
+  transform: rotate(-90deg);
+}
+.settings-section-body {
+  margin-top: 8px;
+  overflow: hidden;
+  transition: none;
+}
+.settings-section[data-collapsed="true"] .settings-section-body {
+  display: none;
 }
 
 /* Subsection within a group: compact card */
@@ -2947,6 +3006,35 @@ body.workspace-active .landing-overlay { display: none; }
 .cbr-block-interrupted {
   border-left: 3px solid var(--text-tertiary);
   opacity: 0.85;
+}
+
+/* ── SDK error fallback banner ─────────────────────────────────────── */
+
+.cbr-block-sdk-fallback {
+  padding: 0;
+}
+
+.cbr-sdk-fallback-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 190, 0, 0.12);
+  border-left: 3px solid #f0b800;
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+  color: #f0cc4a;
+  line-height: 1.5;
+}
+
+.cbr-sdk-fallback-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.cbr-sdk-fallback-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cbr-interrupted {

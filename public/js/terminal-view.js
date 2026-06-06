@@ -590,35 +590,152 @@ function setupChatInput() {
   // (All three handlers are in the same setupChatInput() closure scope.)
 
   // ── Slash-command dropdown for Claude tabs ────────────────────────────────
+
+  /**
+   * Fuzzy match score: returns a number (lower = better) or -1 for no match.
+   * Uses a contiguous-subsequence matching strategy similar to VS Code Cmd+P:
+   * all query chars must appear in order in the target, but don't need to be adjacent.
+   * Bonus for: consecutive matches, prefix match, word-boundary match.
+   */
+  function _slashFuzzyScore(target, query) {
+    if (!query) return 0  // empty query matches everything, score 0
+    const t = target.toLowerCase()
+    const q = query.toLowerCase()
+
+    // Fast path: prefix match scores best
+    if (t.startsWith(q)) return 0 - q.length
+
+    let ti = 0, qi = 0
+    let score = 0
+    let consecutive = 0
+    while (ti < t.length && qi < q.length) {
+      if (t[ti] === q[qi]) {
+        score += consecutive > 0 ? -2 : 1   // bonus for consecutive
+        consecutive++
+        qi++
+      } else {
+        consecutive = 0
+        score += 2  // penalty for gap
+      }
+      ti++
+    }
+    if (qi < q.length) return -1  // not all chars matched
+    return score
+  }
+
+  /**
+   * Build grouped slash command list: { builtin: [...], plugins: { name: [...] } }
+   * Plugin commands have format "plugin:command", builtins have no colon.
+   */
+  function _groupSlashCommands(cmds) {
+    const builtin = []
+    const plugins = {}
+    for (const cmd of cmds) {
+      const name = cmd.cmd.slice(1)  // strip leading /
+      const colonIdx = name.indexOf(':')
+      if (colonIdx < 0) {
+        builtin.push(cmd)
+      } else {
+        const pluginName = name.slice(0, colonIdx)
+        if (!plugins[pluginName]) plugins[pluginName] = []
+        plugins[pluginName].push(cmd)
+      }
+    }
+    return { builtin, plugins }
+  }
+
   function showSlashCommands(query) {
     if (!isClaudeTab) return
     // query is the text after '/', e.g. '' or 'cl' or 'help'
     const q = query.toLowerCase()
-    const matches = q
-      ? CLAUDE_SLASH_COMMANDS.filter((c) => c.cmd.slice(1).startsWith(q))
-      : CLAUDE_SLASH_COMMANDS
 
-    if (!matches.length) {
-      hideSlashCommands()
-      return
+    let matches
+    if (!q) {
+      // No query: show all commands, grouped
+      matches = CLAUDE_SLASH_COMMANDS.map((c) => ({ cmd: c, score: 0, matchRanges: [] }))
+    } else {
+      // Fuzzy filter: match against command name (without leading /)
+      const scored = []
+      for (const cmd of CLAUDE_SLASH_COMMANDS) {
+        const target = cmd.cmd.slice(1)  // command name without /
+        const score = _slashFuzzyScore(target, q)
+        if (score >= 0) scored.push({ cmd, score })
+      }
+      if (!scored.length) {
+        hideSlashCommands()
+        return
+      }
+      // Sort: lower score = better match
+      scored.sort((a, b) => a.score - b.score)
+      matches = scored.map(({ cmd, score }) => ({ cmd, score, matchRanges: [] }))
     }
+
     claudeSlashOpen = true
     suggestionsDropdown.innerHTML = ''
-    for (const opt of matches) {
+
+    // Determine highlight ranges for query in cmd text
+    function highlightCmd(cmdText, q) {
+      if (!q) return escapeHtml(cmdText)
+      // Find character positions matching query (greedy left-to-right)
+      const t = cmdText.toLowerCase()
+      const ql = q.toLowerCase()
+      const positions = new Set()
+      let qi = 0
+      for (let ti = 0; ti < t.length && qi < ql.length; ti++) {
+        if (t[ti] === ql[qi]) { positions.add(ti); qi++ }
+      }
+      let html = ''
+      for (let i = 0; i < cmdText.length; i++) {
+        const ch = escapeHtml(cmdText[i])
+        html += positions.has(i) ? `<mark class="slash-match">${ch}</mark>` : ch
+      }
+      return html
+    }
+
+    function appendItem(opt) {
       const item = document.createElement('div')
       item.className = 'suggestion-item claude-slash-item'
+      const cmdDisplay = opt.cmd.cmd
+      const hintDisplay = opt.cmd.hint || ''
+      const cmdHtml = q ? highlightCmd(cmdDisplay, q) : escapeHtml(cmdDisplay)
       item.innerHTML =
-        `<span class="claude-slash-cmd">${opt.cmd}</span>` +
-        `<span class="claude-slash-hint">${opt.hint}</span>`
+        `<span class="claude-slash-cmd">${cmdHtml}</span>` +
+        (hintDisplay ? `<span class="claude-slash-hint">${escapeHtml(hintDisplay)}</span>` : '')
       item.addEventListener('mousedown', (e) => {
         e.preventDefault()
-        chatInput.value = opt.cmd + ' '
+        chatInput.value = cmdDisplay + ' '
         autoResize()
         hideSlashCommands()
         chatInput.focus()
       })
       suggestionsDropdown.appendChild(item)
     }
+
+    function appendGroupHeader(label) {
+      const header = document.createElement('div')
+      header.className = 'claude-slash-group-header'
+      header.textContent = label
+      suggestionsDropdown.appendChild(header)
+    }
+
+    if (q) {
+      // Filtered mode: flat sorted list (no group headers — query breaks grouping intent)
+      for (const m of matches) appendItem(m)
+    } else {
+      // Unfiltered mode: show grouped
+      const { builtin, plugins } = _groupSlashCommands(CLAUDE_SLASH_COMMANDS)
+
+      if (builtin.length) {
+        appendGroupHeader('Built-in')
+        for (const cmd of builtin) appendItem({ cmd, score: 0 })
+      }
+
+      for (const [pluginName, cmds] of Object.entries(plugins).sort(([a], [b]) => a.localeCompare(b))) {
+        appendGroupHeader(pluginName + ':')
+        for (const cmd of cmds) appendItem({ cmd, score: 0 })
+      }
+    }
+
     suggestionsDropdown.hidden = false
   }
 
