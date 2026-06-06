@@ -211,8 +211,8 @@ function getToolIcon(toolName) {
 const TOOL_FOLD_KEY = 'cbr_tool_fold'
 const TOOL_FOLD_LEVELS = ['full', 'header', 'line']
 
-// 3-state cycle map: full → header → line → full
-const TOOL_FOLD_CYCLE = { full: 'header', header: 'line', line: 'full' }
+// 2-state click cycle: full ↔ line (header accessible via settings panel only)
+const TOOL_FOLD_CYCLE = { full: 'line', header: 'full', line: 'full' }
 
 function getToolFoldLevel() {
   const v = localStorage.getItem(TOOL_FOLD_KEY)
@@ -221,8 +221,9 @@ function getToolFoldLevel() {
 }
 
 /**
- * Cycle a tool block's data-fold attribute through the 3 states.
- * full → header → line → full → …  (Q2 answer A)
+ * Cycle a tool block's data-fold attribute through 2 states on click.
+ * full → line → full → …
+ * Header state is still reachable via settings panel only.
  * Works for both .cbr-block-tool and .cbr-block-tool-result articles.
  */
 function cycleToolFold(article) {
@@ -246,11 +247,9 @@ function getSubagentPromptVisible() {
 function setSubagentPromptVisible(val) {
   localStorage.setItem(SUBAGENT_PROMPT_KEY, val ? 'true' : 'false')
   // Apply immediately to all existing subagent-prompt blocks.
-  // When making a block visible, also ensure data-fold='full' so the body
-  // content is shown (not folded away by the global tool-fold setting).
+  // Visibility only — fold state follows the global tool-fold setting.
   document.querySelectorAll('.cbr-block-subagent-prompt').forEach((el) => {
     el.style.display = val ? '' : 'none'
-    if (val) el.setAttribute('data-fold', 'full')
   })
   document.dispatchEvent(new CustomEvent('cbr:subagent-prompt-changed', { detail: { visible: val } }))
 }

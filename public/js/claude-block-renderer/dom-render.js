@@ -282,11 +282,8 @@ export function createToolUseBlock({
 
   bindToolFoldCycle(article, { cycleToolFold, getToolFoldLevel })
 
-  if (isSubagentPrompt) {
-    article.setAttribute('data-fold', 'full')
-  } else {
-    applyToolFold(article)
-  }
+  // All tool blocks (including subagent-prompt) follow the global fold setting.
+  applyToolFold(article)
   attachCopyHandlers(article)
   return article
 }
