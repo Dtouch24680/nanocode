@@ -1,6 +1,7 @@
 # nanocode → Claude Agent SDK 迁移方案
 
-> 版本: v1.0 | 日期: 2026-06-06 | 作者: Sonnet 调研
+> 版本: v2.0 | 日期: 2026-06-06 | 作者: Sonnet 调研 → Codex 对抗审核 → v2 整合
+> 变更摘要见同目录 CHANGELOG.md
 
 ---
 
@@ -34,13 +35,11 @@ Browser → WebSocket/HTTP → Node.js Express Server
 | `terminal/sessions.js` | 398 | session 持久化 / GC / 在 FS 上索引 jsonl |
 | **合计（核心胶水）** | **~1777 行** | |
 
-另外 `server/index.js`（481行）和 `server/router-mode.js`（261行）有少量 auth 状态检查也依赖 CLI。
-
 ### 已知架构债
 
-1. **`/resume` 拦截**：CLI 非交互模式不支持 /resume，要在 session-controller 里拦截并重写成 `--resume` 参数
+1. **/resume 拦截**：CLI 非交互模式不支持 /resume，在 session-controller 里拦截并重写成 `--resume` 参数（保留到 parity 存在后才能删）
 2. **stream-json dedup**：CLI 在 reconnect/replay 时会重放历史 event，自己维护 `replay_id` Map 去重
-3. **session lock/queue**：CLI spawn 是串行的，自己写 `busy` / `queue` / GC stale lock 逻辑
+3. **session lock/queue**：CLI spawn 是串行的，queue 提供即时反馈 + 批量合并 + interrupt 清队列（是 design，不是 dead code）
 4. **jsonl parse**：自己读 `~/.claude/projects/.../...jsonl` 还原历史（317行）
 5. **interrupt**：向 spawn 进程发 SIGINT，然后手动 drain，容易有 race condition
 6. **auth status**：`execFile('claude', ['auth', 'status', '--json'])` 轮询
@@ -56,9 +55,9 @@ npm install @anthropic-ai/claude-agent-sdk
 ```
 
 - **npm package**: `@anthropic-ai/claude-agent-sdk`（前身 `@anthropic-ai/claude-code`）
-- **当前版本**: 0.3.x（2026-06）
+- **当前版本**: 0.3.165（2026-06）
 - **Node.js 要求**: 18+
-- SDK **自带捆绑的 claude 二进制**，不需要单独装 Claude Code CLI
+- SDK **自带捆绑的 claude 二进制**（不是系统路径的 claude，SDK 内部 findCodexPath() 优先 bundled binary）
 
 ### 认证方式
 
@@ -68,12 +67,25 @@ SDK 继承 Claude Code CLI 的认证栈，优先级从高到低：
 |---|---|---|
 | 1 | `ANTHROPIC_API_KEY` env | API key 计费（Console 账号） |
 | 2 | `CLAUDE_CODE_OAUTH_TOKEN` env | CI/脚本，`claude setup-token` 生成一年有效 OAuth token |
-| 3 | OAuth `/login` 会话凭证 | 交互登录（Pro/Max/Team/Enterprise 订阅） |
+| 3 | OAuth `/login` 会话凭证 | 交互登录（Team/Enterprise 订阅） |
 | 4 | Cloud provider（Bedrock/Vertex/Azure） | 企业部署 |
 
-**关键结论**：SDK **支持 OAuth 订阅凭证**（Pro/Max/Team/Enterprise）。主人的账号用 OAuth 登录 Claude Code，SDK 会复用 `~/.claude/.credentials.json`，无需单独 API key。
+**已验证（B1 smoke）**：SDK 在无 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` 的条件下，成功读取 `~/.claude/.credentials.json`，`accountInfo()` 返回 `subscriptionType: "Claude Team", apiProvider: "firstParty"`。
 
-**June 15, 2026 新计费**：Agent SDK 用量从订阅的互动额度里独立出来，Pro=$20/月信用额，Max 5x=$100/月，Max 20x=$200/月。
+**限制（codex review 必修#6）**：OAuth 凭证复用仅适用于本地/内部使用的 nanocode wrapper。官方文档明确指出第三方开发者不应在未经授权的产品中使用 `claude.ai` 登录路径。如未来有外部分发需求，需切换为 API key 计费。
+
+### 计费（Team 订阅，codex review 必修#2）
+
+主人账号为 **Claude Team**（`claude auth status --json` 已确认）。从 2026-06-15 起，Agent SDK 和 `claude -p` 用量从互动额度独立出来：
+
+| 订阅层级 | SDK Credit | 说明 |
+|---|---|---|
+| Team Standard | $20/seat/月 | 每用户独立，不 pooled |
+| Team Premium | $100/seat/月 | 每用户独立，不 pooled |
+
+- Credit 用完后：若未启用 usage credits，**请求停止**（不降级）；若启用，转向 usage credits 计费
+- Credit 是 **per-user、non-pooled**，多用户环境每人各自消耗
+- 上线前需确认本 seat 是 Team Standard 还是 Team Premium，并确认 usage credits 是否开启
 
 ### 核心 API
 
@@ -96,16 +108,6 @@ for await (const message of query({
 }
 ```
 
-**关键 Options**：
-- `resume: sessionId` — 恢复历史 session（原生支持，SDK 自己读 jsonl）
-- `continue: true` — 继续最近一次会话
-- `interrupt()` — Query 对象方法，原生 interrupt
-- `permissionMode` — `default` / `acceptEdits` / `plan` / `bypassPermissions`（三态或更多）
-- `model` / `effort` — 原生参数
-- `thinking` — ThinkingConfig，原生支持 thinking blocks
-- `mcpServers` — MCP 配置，原生支持
-- `canUseTool` — 自定义权限回调
-
 ---
 
 ## 三、现有 Feature 迁移对照表
@@ -115,29 +117,26 @@ for await (const message of query({
 | **spawn Claude 进程** | `spawn('claude', ['--print', '--output-format=stream-json'])` | `query({prompt, options})` | 低 | XS |
 | **stream-json 接收** | 手工 readline + JSON.parse | async generator（原生） | 低 | XS |
 | **stream dedup** | 自维护 `replay_id` Map | SDK 内置，无需 dedup | 低，可删 317 行 | XS（删代码） |
-| **session 历史加载** | 手工 parse `~/.claude/*.jsonl` | `listSessions()` / `getSessionMessages()` / `resume: sessionId` | 低，现有 jsonl 格式兼容 | S |
-| **session resume** | `--resume=<id>` CLI arg | `options.resume = sessionId` | 低 | XS |
-| **/resume 拦截** | 检测用户输入 `/resume` 并重写 | 原生支持，可删拦截逻辑 | 低，可删 | S（删代码） |
-| **/continue 拦截** | 类似 /resume | `options.continue = true` | 低 | XS |
-| **busy/queue** | 自维护 `busy` flag + `queue` 数组 | SDK turn 管理（一次 query 一个 turn） | 中，需要重设计并发模型 | M |
-| **interrupt** | SIGINT 到子进程 | `query.interrupt()` 原生方法 | 低 | S |
+| **session 历史加载** | 手工 parse `~/.claude/*.jsonl` | `listSessions()` / `getSessionMessages()` / `resume: sessionId` | **中：output shape 不同，需适配层**（B1 smoke 已证 `getSessionMessages` 返回 normalized user/assistant，与 replay-event history 格式不一致） | M（Phase D 独立） |
+| **session resume** | `--resume=<id>` CLI arg | `options.resume = sessionId` | 低，已验证同 cwd 可用 | XS |
+| **cross-dir resume** | `--resume=<id>` CLI arg | `options.resume = sessionId` | **高：B1 smoke 全失败**，需保留 cwd-aware session 映射 | M |
+| **/resume 拦截** | 检测用户输入 `/resume` 并重写 | 原生支持 session id，但 nanocode 拦截逻辑含 recent-session 选择 / project scope | **中：保留到 parity 存在**（recent-session 选择语义不等同于 `options.resume`） | Phase D |
+| **/continue 拦截** | 类似 /resume | `options.continue = true`（cwd-scoped 取最近 session） | 低，行为已验证 | XS |
+| **busy/queue** | 自维护 `busy` flag + `queue` 数组 | **保留**：queue 提供即时反馈、批量合并 turn、interrupt 后清队列，是 design work 不是 dead code | **中，需 redesign 不是 deletion**（参见 codex review 必修#3） | M（Phase C） |
+| **interrupt** | SIGINT 到子进程 | `query.interrupt()` 调用存在，但 smoke 证实返回 `error_during_execution` 而非 `interrupted` subtype，需 adapter 归一化 | **高（codex review 必修#1）：不是 drop-in，移到 Phase C 专项** | M（Phase C） |
 | **session lock GC** | 轮询 PID 是否存活 | SDK 无需此机制 | 低，可删 | XS（删代码） |
-| **permission_mode 三态** | 前端下拉 → CLI arg | `options.permissionMode` / `query.setPermissionMode()` | 低 | S |
-| **model 下拉** | CLI arg `--model` | `options.model` / `query.setModel()` | 低 | XS |
+| **active-session-guard** | 服务器端 busy flag + active-session 碰撞检查 | **保留**：多客户端共享 session、late joiner replay、active session 碰撞 guard 都仍需 server 层协调（codex review 必修#3） | 中，重设计 | M（Phase C） |
+| **permission_mode** | 前端下拉 → CLI arg | `options.permissionMode` | 低 | S |
+| **model 下拉** | CLI arg `--model` | `options.model` | 低 | XS |
 | **effort 下拉** | CLI arg `--effort` | `options.effort` | 低 | XS |
-| **thinking blocks** | event schema `thinking` type 渲染 | SDK emit 同样 event，schema 不变 | 低 | XS |
-| **tool_use 渲染（Edit/Write/Read）** | 解析 `tool_use` event 的 input | SDK emit 相同 `SDKAssistantMessage.message.content[]` | 低，event schema 兼容 | S（验证 schema） |
+| **thinking blocks** | event schema `thinking` type 渲染 | **中（B1 smoke 发现 thinking 漂移）**：SDK 在 thinking prompt 下未输出 thinking block，并给出错误答案，需专门的 B2.5 验证门禁 | **高（Phase B2.5 独立验证）** | M |
+| **tool_use 渲染** | 解析 `tool_use` event | SDK emit 相同 content block（B1 tool parity 已验证） | 低，schema 兼容 | S（验证 schema） |
 | **auth status 检查** | `execFile('claude', ['auth', 'status'])` | `query.accountInfo()` | 低 | XS |
-| **slash commands 列表** | 目前硬编码或 CLI 无法查询 | `query.supportedCommands()` | 低，有改善 | S |
-| **model 列表** | 前端硬编码 | `query.supportedModels()` | 低，有改善 | S |
-| **MCP 服务** | CLI `--mcp-config` arg | `options.mcpServers` 原生配置 | 低 | S |
-| **session 持久化** | 依赖 CLI 自动写 `~/.claude/*.jsonl` | SDK 默认 `persistSession: true`，自动写 | 低，行为一致 | XS |
-| **custom session store** | 不支持 | `options.sessionStore` | 低，可选扩展 | M（可选） |
-| **active-session-guard** | 服务器端 busy flag | SDK 每次 query 自己管，不需要跨连接锁 | 中，需重新思考多客户端连接共享 session 的语义 | M |
-| **WebSocket broadcast** | 一个 session 多 client 共享 | SDK query 是单消费者，广播需要 server 层包装 | 中 | M |
-| **agent 命名（nanocode）** | 从 jsonl 提取 session_id | SDK `listSessions()` 返回 `SDKSessionInfo[]` 含 title/tag | 低 | S |
-| **fast mode** | 目前没有直接对应 | SDK `effort: 'low'` | 低 | XS |
-| **skill 支持** | CLAUDE.md + `.claude/skills/` | SDK 读 `settingSources` 默认加载 `.claude/` | 低，行为不变 | XS |
+| **slash commands 列表** | 硬编码 | `query.supportedCommands()` | 低，有改善 | S（Phase E） |
+| **model 列表** | 前端硬编码 | `query.supportedModels()` | 低，有改善 | S（Phase E） |
+| **MCP 服务** | CLI `--mcp-config` arg | `options.mcpServers` | 低 | S |
+| **session 持久化** | CLI 自动写 `~/.claude/*.jsonl` | SDK 默认 `persistSession: true` | 低 | XS |
+| **WebSocket broadcast** | 一个 session 多 client 共享 | SDK query 是单消费者，广播需 server 层包装（session pump） | 中 | M（Phase B2） |
 
 **图例**: XS <1天 / S 1-2天 / M 3-5天 / L >1周
 
@@ -145,107 +144,129 @@ for await (const message of query({
 
 ## 四、风险点
 
-### 风险 1：OAuth 凭证（中风险，已确认可解决）
+### 风险 1：interrupt 行为不是 drop-in（高风险，codex review 必修#1）
 
-**问题**: SDK 文档提到默认 step 2 是 `ANTHROPIC_API_KEY`。
+**问题**: `query.interrupt()` 方法存在，但 smoke 观测结果是 `result.subtype = "error_during_execution"` 加上抛出的异常，而非 `interrupted` subtype。
 
-**结论**: SDK **支持 OAuth 订阅凭证**。主人已通过 `claude login` 登录，凭证在 `~/.claude/.credentials.json`，SDK 会复用（优先级 6）。如果环境里没有 `ANTHROPIC_API_KEY`，SDK 自动用 OAuth。可用 `claude setup-token` 生成 `CLAUDE_CODE_OAUTH_TOKEN` 做 CI 固化。
+**结论**: interrupt 需要在 server adapter 层显式做异常捕获 + 状态归一化，映射到 `NanocodeAgentEvent: phase='turn_failed'`。当前 nanocode 的 interrupt 路径（清队列 + info event）需要 Phase C 专项对齐。移出 Phase B POC 范围。
 
-### 风险 2：1M context（低风险）
+### 风险 2：queue/active-guard 是 design，不是 dead code（codex review 必修#3）
 
-SDK `model` 参数支持完整 model ID，包括 `claude-opus-4-7`（如需 1M context 版本则用对应 ID）。SDK 不限制模型选择。
+**问题**: v1 plan 将 busy/queue 标为"低风险简化可删"。
 
-### 风险 3：多客户端共享 session（中风险）
+**结论**: queue 承担三个职责：
+- 对用户即时反馈（`session-controller.js:153-162`）
+- 将队列中的消息合并成一个 turn（`:285-289`）
+- interrupt 后丢弃队列（`:277-284`）
 
-当前架构：一个 sessionKey 对应一个 spawn 进程，多个 WebSocket 客户端可以 attach 到同一 session 实时看到 broadcast。
+active-guard 承担 session 碰撞检查（`claude-history.js:234-296`）。两者都需要在 SDK 路径下重新设计，不是简单删除。
 
-SDK 的 `query()` 是单消费者 async generator。多客户端共享需要在 Server 层做一个 "session pump"：消费 SDK generator，广播到所有订阅的 WS 客户端。这不是无法解决的，但需要重新设计 WS 层。
+### 风险 3：/resume 拦截不能在 day-one 删除（codex review 必修#4）
 
-### 风险 4：busy/queue 语义（低风险，架构简化）
+**结论**: SDK 的 `options.resume` 只解决"已知 session_id 的精确 resume"。当前 /resume 还做 recent-session 选择、project 过滤、active-session 跳过。保留到等价实现就绪。
 
-当前 busy/queue 是为了让 CLI 同一 session 串行执行。SDK 的 `query()` 每次调用是一个 turn，天然串行（上一个 query 完成才发下一条）。queue 逻辑可以用 Promise chain 实现，比现在更简洁。
+### 风险 4：history 迁移需要适配层（codex review 必修#5）
 
-### 风险 5：SDK credit 计费（2026-06-15 起）
+**B1 smoke 证实**: `getSessionMessages()` 返回 normalized `user/assistant` 消息 + timestamp，与现有 replay-event history 的 block-level dedup 格式**不同**。直接替换会破坏 replay seeds 和 renderer 期待的事件结构。History 迁移独立放 Phase D。
 
-从 2026-06-15 起，Agent SDK 用量走独立的月度 credit（Pro $20/月）。主人需要确认 nanocode 迁 SDK 后是否在 credit 范围内。超额后行为待确认（是限速还是 fallback 到 API key 计费）。
+### 风险 5：cross-dir resume 全失败（B1 smoke 实证）
 
-### 风险 6：SDK 版本稳定性
+**B1 smoke 证实**: 跨 cwd 的 `resume` SDK 和 CLI 都报 "No conversation found"。Phase B2 必须保留 cwd-aware session 映射，确保 resume 使用正确的 project transcript root。
 
-SDK 处于快速迭代期（当前 0.3.x），v0.1.0 有过一次 breaking change（ClaudeCodeOptions rename）。建议锁定版本（`@anthropic-ai/claude-agent-sdk@0.3.165`）。
+### 风险 6：thinking 行为漂移（B1 smoke 实证）
 
----
+**B1 smoke 证实**: SDK thinking prompt 下未输出任何 thinking block（CLI 有），且给出了错误计算答案。两端 claude_code_version 不同（SDK=2.1.165，CLI=2.1.162）。Thinking 相关渲染和语义需要 Phase B2.5 专门验证门禁，不在 B2 承诺范围内。
 
-## 五、Phase B POC 范围（建议）
+### 风险 7：SDK credit 计费（Team 订阅，codex review 必修#2）
 
-最小化跑通，**不做 full feature**：
+从 2026-06-15 起，Agent SDK 用量走独立的月度 credit（per-user，non-pooled）。超额后行为取决于 usage credits 是否开启。上线前需确认 seat 层级和超额策略。
 
-1. 安装 SDK：`npm install @anthropic-ai/claude-agent-sdk`
-2. 新建 `terminal/claude-sdk-driver.js`，替换 `claude-session-controller.js` 中的 spawn 部分
-3. 用 SDK `query()` 发一条消息，stream events 直接 forward 到现有 WS broadcast
-4. 验证以下 message types 能走到前端 block renderer 并正确渲染：
-   - `assistant` message（含 text / tool_use / thinking content blocks）
-   - `result` message（`SDKResultMessage.subtype: 'success'`）
-   - `status` message（tool_use_started / tool_use_finished）
-5. 验证 `resume: sessionId` 能恢复历史会话
-6. 验证 `query.interrupt()` 能中断当前 turn
+### 风险 8：OAuth 仅内部适用（codex review 必修#6）
 
-**不做**（后续 phase）：
-- 多客户端 broadcast pump
-- queue/busy 重构
-- auth status 迁移
-- slash commands / model 列表 API
+当前 OAuth 凭证复用适用于本机 nanocode wrapper，不适用于外部分发产品。
 
 ---
 
-## 六、Phase C+ 路线图（建议）
+## 五、Phase 路线图（已按 codex review 重排序）
 
-按依赖顺序：
+### Phase B1: smoke + stream parity（已完成）
 
-| Phase | 内容 | 依赖 |
-|---|---|---|
-| B | POC：spawn→stream→render 最小跑通 | A（本 commit） |
-| C | session pump：单 generator → WS broadcast | B |
-| D | interrupt / queue 重构（SDK 原生） | C |
-| E | history 迁移：删除 claude-history.js 的 jsonl parse，改用 `listSessions()` | C |
-| F | auth status / model list / commands API | E |
-| G | permission_mode / model / effort 动态切换（`query.setModel()` 等） | F |
-| H | /resume + /continue 拦截删除（SDK 原生支持） | G |
-| I | MCP 配置迁移 | H |
-| J | 清理旧 CLI wrap 代码，feature parity 验证 | I |
-| K | 切 `main` 分支上线 | J |
+**状态**: 完成，产物在 `~/codex_work/sdk_b1_smoke/`
+
+**结论**:
+- SDK install、OAuth reuse、`query()` async generator、same-cwd resume、tool-use stream parity 已验证
+- 两个危险点：cross-dir resume 全失败、thinking 行为漂移
+- 可推进 Phase B2
+
+### Phase B2: server-side adapter only（1-2 天）
+
+**目标**: nanocode server 能用 SDK 驱动 claude session（并行于现有 CLI path）
+
+1. 新建 `terminal/claude-sdk-adapter.js`
+2. 消费 SDK raw events，forward 到现有 WS renderer contract（统一 envelope 见 UNIFIED_ADAPTER.md）
+3. `rate_limit_event` 做 position-independent 处理
+4. 保留 cwd-aware session 映射（cross-dir resume 需正确 project root）
+5. tool turns 用 `maxTurns > 1`
+
+**不做**: 删 queue/active-guard、删 /resume 拦截、interrupt UI、thinking parity、frontend 改动
+
+**退出条件**: text + tool block 能到前端 block renderer 并正确渲染，result message 到达，无 frontend work
+
+### Phase C: interrupt + queue parity（1-2 天）
+
+**目标**: interrupt 行为和 queue 语义在 SDK 路径下达到 CLI 路径等价
+
+1. server adapter 显式捕获 `query.interrupt()` 的异常，归一化为 `phase='turn_failed'`
+2. 重新设计 queue：立即反馈 + 合并 turn + interrupt 清队列
+3. 重新设计 active-guard：cwd-aware session 碰撞检查
+4. Smoke 验证：`interrupt → queue drained → info event` 路径
+
+### Phase D: history API swap（1-2 天）
+
+**目标**: 用 `listSessions()` / `getSessionMessages()` 替换 `claude-history.js` 的 jsonl parse
+
+- 注意：output shape 不同，需要 adapter 层从 normalized messages 重建 renderer 期待的 block event 结构
+- /resume 拦截删除条件：recent-session 选择 parity 就绪后
+
+### Phase E: auth / model / slash cleanup（1-2 天）
+
+1. `auth status` 改用 `query.accountInfo()`
+2. `model list` 改用 `query.supportedModels()`
+3. `slash commands` 改用 `query.supportedCommands()`
+4. permission_mode / model / effort 动态切换
 
 ---
 
-## 七、回退策略
+## 六、回退策略
 
 - `zhining/nanocode-selfresume-bugs` 保持当前 CLI wrap 架构，继续服役
 - POC 在 `zhining/sdk-rewrite` 独立验证，不影响生产
 - SDK path 达到 **全 feature parity** 前不删除 CLI wrap 代码
-- 如 SDK credit 超额或有重大 breaking change，可随时回退到 `zhining/nanocode-selfresume-bugs`
+- 如 SDK credit 超额或有重大 breaking change，可随时回退到 CLI wrap
 
 ---
 
-## 八、估算
+## 七、估算
 
 | Phase | 工作量估算 | 说明 |
 |---|---|---|
-| B（POC） | 3-5 天 | spawn→stream→render 最小 POC |
-| C（session pump） | 3-5 天 | 多客户端 WS 广播重构 |
-| D（interrupt/queue） | 2-3 天 | 简化，代码量减少 |
-| E（history） | 2-3 天 | 删 317 行 jsonl parse |
-| F-H（API/slash/resume） | 3-5 天 | |
-| I-J（MCP/清理/验证） | 5-7 天 | |
-| **总计** | **~18-28 天（半天工作量）** | 分阶段，每阶段可独立 QA |
+| B1（smoke） | 完成 | 产物在 `~/codex_work/sdk_b1_smoke/` |
+| B2（server adapter） | 1-2 天 | server-side only，forward SDK events |
+| C（interrupt/queue） | 1-2 天 | redesign，不是 deletion |
+| D（history） | 1-2 天 | 需 shape adapter 层 |
+| E（auth/model/slash） | 1-2 天 | API cleanup |
+| **总计（B2 起）** | **~5-8 天** | 分阶段，每阶段可独立 QA |
 
-预计可删除代码：**~1200-1500 行**（主要在 claude-history.js、claude-session-controller.js 的 spawn/dedup/queue/lock/resume 拦截部分）
+预计可删除代码：**~1200-1500 行**（Phase D 完成后，含 claude-history.js、session-controller 的 spawn/dedup/lock 部分）
 
 ---
 
-## 九、参考文档
+## 八、参考文档
 
 - [Agent SDK Overview](https://code.claude.com/docs/en/agent-sdk/overview)
 - [TypeScript SDK Reference](https://code.claude.com/docs/en/agent-sdk/typescript)
-- [Migration Guide (from claude-code SDK)](https://code.claude.com/docs/en/agent-sdk/migration-guide)
 - [Authentication](https://code.claude.com/docs/en/authentication)
 - [Agent SDK with Subscription Plans](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
-- [npm: @anthropic-ai/claude-agent-sdk](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
+- B1 Smoke Report: `~/codex_work/sdk_b1_smoke/REPORT.md`
+- Codex Adversarial Review: `~/codex_work/SDK_PLAN_CODEX_REVIEW.md`
+- Unified Adapter Design: `research/sdk-migration/UNIFIED_ADAPTER.md`
