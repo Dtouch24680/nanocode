@@ -70,7 +70,7 @@ export function createClaudeSdkDriver({
         prompt: userText,
         options: {
           cwd,
-          maxTurns: 1,
+          // maxTurns: not set — let SDK use its default (≈25), same as claude --print CLI
           includePartialMessages: true,
           forwardSubagentText: true,
           model: claudeModel || undefined,
