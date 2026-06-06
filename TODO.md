@@ -1,3 +1,14 @@
+[QA] 打断交互收口——CLI风格强提示block + 悬空引用清除
+根因：terminal-view.js:377 _interruptingAt = null 悬空 ReferenceError（变量已删）；Esc/Stop打断无任何对话流提示；sendRaw('\x03') 仍用旧文案"[interrupting…]"
+修法：
+  1. 删 terminal-view.js:377 悬空引用
+  2. claude-block-renderer.js 新增 showInterruptBlock()，文案 "[Request interrupted by user]"（Claude CLI binary 原文）
+  3. sendRaw('\x03') 改调 showInterruptBlock()，终结旧文案
+  4. doInterrupt() (Esc/Stop btn) 调 activePane.showInterruptBlock()
+  5. style.css 加 .cbr-block-interrupted 左侧色条样式
+  6. 新增 server/tests/interrupt.test.js 8条测试（DOM stub + grep双验证）
+run.log: npm test 24/24 pass, fail 0 ✓ 热更新: PORT=3001 health 200 ✓ commit: effc79f
+
 [QA] 暂时禁用 --continue 自续接（避免抢占用户本机Claude会话）
 terminal/routes.js:717 强制 return plain claude，dead code 保留注释，恢复只需删3行
 run.log: 16/16 pass, fail 0 ✓ 热更新: health 200 ✓ doInterrupt ✓ --continue=0 ✓

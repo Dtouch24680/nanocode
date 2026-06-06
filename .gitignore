@@ -5,3 +5,17 @@ data/
 # Compiled setuid helper (built at install time)
 helper/nanocode-spawn
 .gstack/
+
+# dev artifacts
+.pm2/
+.codex/
+debug-3001-bugs/
+demo-toolblocks/
+research/arch-refactor/screenshots/
+*.log
+*.png
+run.log
+nanocode-*.log
+server-*.log
+run-*.log
+round*.png

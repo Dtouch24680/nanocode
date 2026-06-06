@@ -367,11 +367,12 @@ export class TabManager {
 
     // Claude tabs use a DOM block renderer by default (rich text, mobile-friendly).
     // If the global renderMode setting is 'terminal', use raw PTY instead.
-    // Codex tabs use CodexBlockRenderer — a PTY-aware block renderer that detects
-    // bash blocks, exit codes, and status banners from raw Codex CLI output.
+    // Codex tabs: separate codexRenderMode setting, defaults to 'terminal' (xterm raw).
+    // Set codexRenderMode to 'block' in Settings to opt into CodexBlockRenderer (experimental).
     const renderMode = (() => { try { return window.__nanocodeState?.renderMode || 'block' } catch { return 'block' } })()
+    const codexRenderMode = (() => { try { return window.__nanocodeState?.codexRenderMode || 'terminal' } catch { return 'terminal' } })()
     const useClaudeRenderer = type === 'claude' && renderMode !== 'terminal'
-    const useCodexRenderer = type === 'codex' && renderMode !== 'terminal'
+    const useCodexRenderer = type === 'codex' && codexRenderMode === 'block'
     let pane
     if (useClaudeRenderer) {
       pane = new ClaudeBlockRenderer(paneEl, paneOpts)

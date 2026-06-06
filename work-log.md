@@ -1,5 +1,17 @@
 # Work Log
 
+## 2026-06-04 [打断交互收口 — CLI风格强提示block + 悬空引用清除]
+- 操作1：删除 terminal-view.js:377 悬空 `_interruptingAt = null`（变量已在上一个commit删除，ReferenceError隐患）
+- 操作2：claude-block-renderer.js 新增公共方法 `showInterruptBlock()`，文案 "[Request interrupted by user]"（从Claude CLI binary strings命令提取的原文）
+- 操作3：`sendRaw('\x03')` 路径改用 `showInterruptBlock()`（废弃旧文案"[interrupting…]"）
+- 操作4：`doInterrupt()` (Esc键/Stop按钮) 调用 `activePane.showInterruptBlock()`，打断后立即在对话流插入强提示
+- 操作5：style.css 新增 `.cbr-block-interrupted` 左侧色条样式（reuses cbr-block-system）
+- 操作6：新增 server/tests/interrupt.test.js，8条测试覆盖：showInterruptBlock()插入块、CLI文案正确、sendRaw('\x03')文案对齐、grep验证无悬空引用
+- 测试：npm test 24/24 pass, # fail 0；grep FAIL/Error/NOT FOUND → 仅 "# fail 0"
+- 重启3001：kill 52877 → PORT=3001 nohup node server/index.js（PID 113275）→ health 200 ✓
+- curl验证：/js/claude-block-renderer.js grep "Request interrupted by user" ✓；terminal-view.js grep _interruptingAt → 无 ✓
+- 产出：commit effc79f
+
 ## 2026-06-04 [暂时禁用 --continue 自续接 — 避免 3001 测试实例抢占用户本机Claude会话]
 - 操作：修改 terminal/routes.js 第 717 行，claude launcher 强制 return plain `claude --dangerously-skip-permissions; exec bash -l`
 - 原 autoResume 判断 + shell loop + `claude --continue` 代码保留为 dead code，加注释说明恢复方法

@@ -1,3 +1,29 @@
+# Evidence — 打断交互收口 (2026-06-04)
+
+## 任务
+收口"打断交互对齐CLI"：CLI风格强提示block + 悬空_interruptingAt引用清除
+
+## 改动文件
+- public/js/terminal-view.js: 删 line:377 `_interruptingAt = null`（ReferenceError）；doInterrupt() 调 showInterruptBlock()
+- public/js/claude-block-renderer.js: 新增 showInterruptBlock()（文案"[Request interrupted by user]"，CLI原文）；sendRaw('\x03') 改调 showInterruptBlock()
+- public/style.css: 新增 .cbr-block-interrupted 左侧色条样式
+- server/tests/interrupt.test.js: 新增 8条测试（DOM stub + grep双验证）
+
+## CLI文案出处
+`strings ~/.local/share/claude/versions/2.1.162` → `[Request interrupted by user]`（Claude CLI binary内嵌字符串）
+
+## commit
+effc79f fix: 打断交互对齐CLI——插入[Request interrupted by user]强提示block、清除悬空_interruptingAt引用
+
+## 测试结果
+npm test 24/24 pass, # fail 0（新增8条，原16条全过）
+
+## 热更新验证
+curl http://localhost:3001/api/health → {"status":"ok"}
+curl .../js/claude-block-renderer.js | grep "Request interrupted by user" → 2匹配
+curl .../js/terminal-view.js | grep "_interruptingAt" → 0匹配
+
+---
 # Evidence — 打断/按键bug修复 P0-1~P0-4
 
 ## 任务
