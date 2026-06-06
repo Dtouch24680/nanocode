@@ -1375,30 +1375,6 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 .claude-stop-btn:active { transform: translateY(1px); }
 .claude-stop-btn[hidden] { display: none; }
 
-/* -- N13 Session reset button (escape hatch for stuck sessions) ------------ */
-.claude-reset-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 10px;
-  height: 38px;
-  border: 1px solid rgba(234, 179, 8, 0.5);
-  background: rgba(234, 179, 8, 0.1);
-  color: rgb(234, 179, 8);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 500;
-  transition: background var(--duration-fast), border-color var(--duration-fast);
-}
-.claude-reset-btn:hover {
-  background: rgba(234, 179, 8, 0.2);
-  border-color: rgba(234, 179, 8, 0.8);
-}
-.claude-reset-btn:active { transform: translateY(1px); }
-.claude-reset-btn[hidden] { display: none; }
-.claude-reset-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* -- Claude thinking: input bar fade pulsing animation --------- */
 
