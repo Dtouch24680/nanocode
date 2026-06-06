@@ -3178,6 +3178,55 @@ body.workspace-active .landing-overlay { display: none; }
   opacity: 1;
 }
 
+/* ── Tool subhint: always-visible one-line command/path summary ──────────── */
+/* Two variants:
+   --inner: inside .cbr-tool-card → visible in full/header, hidden in line (card is display:none)
+   --line:  outside .cbr-tool-card → visible in line mode only (absolute on strip), hidden otherwise */
+.cbr-tool-subhint {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  pointer-events: none;
+  user-select: none;
+}
+/* inner: sits right below .cbr-tool-header inside the card */
+.cbr-tool-subhint--inner {
+  padding: 2px var(--s-3, 10px) 3px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-tertiary) 90%, var(--primary) 10%);
+}
+/* inner is visible in full/header mode (the card itself is visible) */
+.cbr-block-tool[data-fold="full"] .cbr-tool-subhint--inner,
+.cbr-block-tool[data-fold="header"] .cbr-tool-subhint--inner,
+.cbr-block-tool:not([data-fold]) .cbr-tool-subhint--inner {
+  display: block;
+}
+/* line: floats absolute on the 4px strip — shown ONLY in line mode */
+.cbr-tool-subhint--line {
+  display: none; /* hidden unless line mode */
+}
+.cbr-block-tool[data-fold="line"] .cbr-tool-subhint--line {
+  display: block;
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 4px;
+  padding: 0;
+  font-size: 0.70em;
+  color: var(--primary, #6b9fff);
+  opacity: 0.8;
+  z-index: 2; /* above the ::after click-area overlay */
+}
+/* Brighten subhint on hover in line mode */
+.cbr-block-tool[data-fold="line"]:hover .cbr-tool-subhint--line {
+  opacity: 1;
+}
+
 /* Tool result (compact) */
 .cbr-block-tool-result {
   background: var(--bg-secondary);

@@ -4,6 +4,90 @@ function makeBlock(extraClasses = '') {
   return article
 }
 
+/**
+ * Build a one-line command/path subhint string for a tool_use block.
+ * Returns an escaped HTML string, or '' if nothing useful to show.
+ * Each tool type extracts the most informative field.
+ */
+function buildToolSubhint(part, escHtml) {
+  if (!part || !part.name) return ''
+  const inp = part.input || {}
+  const name = part.name
+
+  let raw = ''
+
+  if (name === 'Bash') {
+    raw = (typeof inp.command === 'string') ? inp.command.slice(0, 120) : ''
+  } else if (name === 'Edit' || name === 'Write' || name === 'MultiEdit') {
+    const fp = inp.file_path || inp.path || ''
+    if (fp) {
+      // Show relative-like path: strip /storage/home/<user>/ prefix for brevity
+      raw = fp.replace(/^\/storage\/home\/[^/]+\//, '~/')
+                .replace(/^\/home\/[^/]+\//, '~/')
+    }
+  } else if (name === 'Read') {
+    const fp = inp.file_path || inp.path || ''
+    if (fp) {
+      let r = fp.replace(/^\/storage\/home\/[^/]+\//, '~/')
+                 .replace(/^\/home\/[^/]+\//, '~/')
+      if (inp.offset != null || inp.limit != null) {
+        const parts = []
+        if (inp.offset != null) parts.push(`L${inp.offset}`)
+        if (inp.limit != null) parts.push(`+${inp.limit}`)
+        r += `:${parts.join('-')}`
+      }
+      raw = r
+    }
+  } else if (name === 'Glob') {
+    raw = inp.pattern || ''
+    if (inp.path) raw += ` in ${inp.path}`
+    raw = raw.slice(0, 100)
+  } else if (name === 'Grep') {
+    raw = inp.pattern || ''
+    if (inp.path) raw += ` in ${inp.path}`
+    raw = raw.slice(0, 100)
+  } else if (name === 'WebFetch') {
+    raw = (inp.url || '').slice(0, 100)
+  } else if (name === 'WebSearch') {
+    raw = (inp.query || '').slice(0, 100)
+  } else if (name === 'Task' || name === 'Agent') {
+    raw = (inp.description || inp.prompt || '').slice(0, 100)
+  } else if (name === 'TodoWrite') {
+    const todos = Array.isArray(inp.todos) ? inp.todos : []
+    const count = todos.length
+    const first = todos[0]
+    const subject = first ? (first.content || first.title || first.subject || '') : ''
+    if (count > 0) {
+      raw = `${count} task${count !== 1 ? 's' : ''}${subject ? ': ' + subject.slice(0, 60) : ''}`
+    }
+  } else if (name === 'Skill') {
+    const skillName = inp.skill || inp.name || ''
+    const args = inp.args || ''
+    raw = skillName + (args ? ` ${args}` : '')
+    raw = raw.slice(0, 100)
+  } else if (name === 'Monitor') {
+    raw = (inp.description || '').slice(0, 100)
+  } else if (name === 'TaskCreate' || name === 'TaskUpdate') {
+    raw = (inp.subject || inp.title || inp.description || '').slice(0, 80)
+  } else {
+    // Generic fallback: description field or first string param
+    if (typeof inp.description === 'string') {
+      raw = inp.description.slice(0, 100)
+    } else {
+      // First string value in the input object
+      for (const v of Object.values(inp)) {
+        if (typeof v === 'string' && v.trim()) {
+          raw = v.slice(0, 100)
+          break
+        }
+      }
+    }
+  }
+
+  if (!raw.trim()) return ''
+  return escHtml(raw)
+}
+
 function bindToolFoldCycle(article, { cycleToolFold, getToolFoldLevel }) {
   article.style.cursor = 'pointer'
 
@@ -158,6 +242,20 @@ export function createToolUseBlock({
   const loadingClass = isLoading ? ' cbr-tool-loading-state' : ''
   const article = makeBlock('cbr-block-tool' + extraClass + activityClass + loadingClass)
 
+  // Build subhint: always-visible one-line command/path summary.
+  // Two copies:
+  //   1. Inside .cbr-tool-card (for full/header mode — below header row)
+  //   2. Outside .cbr-tool-card (for line mode — floats on 4px strip, hidden in full/header)
+  const subhintText = buildToolSubhint(part, escHtml)
+  // inner: shown in full/header mode (inside card, so display:none in line mode is fine)
+  const subhintInner = subhintText
+    ? `<div class="cbr-tool-subhint cbr-tool-subhint--inner" aria-hidden="true">${subhintText}</div>`
+    : ''
+  // outer: shown in line mode only (absolute-positioned on strip)
+  const subhintOuter = subhintText
+    ? `<div class="cbr-tool-subhint cbr-tool-subhint--line" aria-hidden="true">${subhintText}</div>`
+    : ''
+
   article.innerHTML =
     `<div class="cbr-tool-card">` +
     `<div class="cbr-tool-header">` +
@@ -169,9 +267,11 @@ export function createToolUseBlock({
     `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
     `</button>` +
     `</div>` +
+    subhintInner +
     `<div class="cbr-tool-body">${inputHtml}</div>` +
     `<div class="cbr-tool-output"></div>` +
-    `</div>`
+    `</div>` +
+    subhintOuter
 
   if (isSubagentPrompt && !getSubagentPromptVisible()) {
     article.style.display = 'none'
