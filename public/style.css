@@ -3107,6 +3107,21 @@ body.workspace-active .landing-overlay { display: none; }
   transition: transform var(--duration-fast);
 }
 
+/* hotfix: full/header 模式 article 在 flex column 里塌陷为 2px
+   .cbr-scroll 是 flex column 容器，子元素若无 min-height 则 overflow:hidden 会塌陷。
+   line 模式有 min-height:44px 所以正常，full/header 需要补 min-content。 */
+.cbr-block-tool[data-fold="full"],
+.cbr-block-tool-result[data-fold="full"],
+.cbr-block-tool[data-fold="header"],
+.cbr-block-tool-result[data-fold="header"] {
+  min-height: min-content;
+}
+
+/* thinking block 同样问题：flex column 里 overflow:hidden 无 min-height 塌陷 */
+.cbr-block-thinking {
+  min-height: min-content;
+}
+
 /* line — R17: compact single-line strip showing tool name + status icon.
    Default state (Q4 answer C). Mobile tap target ≥ 44px.
    Tap anywhere on the strip to cycle to full.
