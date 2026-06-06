@@ -3082,7 +3082,7 @@ body.workspace-active .landing-overlay { display: none; }
 .cbr-block-tool {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--primary);
+  border-left: 8px solid var(--primary);
   border-radius: var(--radius-md);
   overflow: hidden;
 }
@@ -3216,10 +3216,10 @@ body.workspace-active .landing-overlay { display: none; }
    Cycle: line → full → header → line (click anywhere on strip or article body). */
 .cbr-block-tool[data-fold="line"],
 .cbr-block-tool-result[data-fold="line"] {
-  height: 4px !important;
-  min-height: 4px !important;
-  max-height: 4px !important;
-  overflow: visible; /* allow ::after to extend beyond 4px for larger hit area */
+  height: 8px !important;
+  min-height: 8px !important;
+  max-height: 8px !important;
+  overflow: visible; /* allow ::after to extend beyond 8px for larger hit area */
   display: flex;
   align-items: center;
   padding: 0;
@@ -3230,7 +3230,7 @@ body.workspace-active .landing-overlay { display: none; }
   background: color-mix(in srgb, var(--bg-secondary) 80%, var(--primary) 20%);
   position: relative;
 }
-/* Expand invisible click area: 8px above + 8px below the 4px strip = 20px tap zone */
+/* Expand invisible click area: 8px above + 8px below the 8px strip = 24px tap zone */
 .cbr-block-tool[data-fold="line"]::after,
 .cbr-block-tool-result[data-fold="line"]::after {
   content: '';
