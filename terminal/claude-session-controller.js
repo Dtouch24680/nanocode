@@ -379,13 +379,26 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     if (!cs) {
       const tab = store.getTab ? store.getTab(projectId, tabId) : null
-      let claudeSessionId = tab?.claudeSessionId || randomUUID()
+      // Track whether the sessionId came from store metadata (user-chosen, explicit)
+      // vs was generated fresh because the tab had no stored session (implicit/new tab).
+      const storedSessionId = tab?.claudeSessionId || null
+      const explicitSessionId = storedSessionId !== null
+      let claudeSessionId = storedSessionId || randomUUID()
 
       const mainSessionId = process.env.CLAUDE_CODE_SESSION_ID
       let _activeSessionOverride = false
-      if (mainSessionId && claudeSessionId === mainSessionId) {
+      if (mainSessionId && claudeSessionId === mainSessionId && !explicitSessionId) {
+        // Only apply the active-session guard when the sessionId was NOT explicitly
+        // chosen by the user (i.e., it came from a newest-jsonl fallback on an
+        // implicit/new tab). Without this guard, an implicit tab would silently
+        // --resume the running main nanocode session, causing lock conflicts.
+        //
+        // When the sessionId IS explicit (user picked it via Recent Agents or it
+        // was persisted in store metadata), we trust the user's intent and let
+        // them resume — even if it's the currently active session. The history
+        // endpoint already skips the guard for explicit sessionIds (commit 0117376).
         console.warn(
-          `[claude:session] Tab ${tabId} stored claudeSessionId collides with the running ` +
+          `[claude:session] Tab ${tabId} implicit sessionId collides with the running ` +
           `main session (${mainSessionId}). Generating a fresh UUID to avoid conflict.`
         )
         claudeSessionId = randomUUID()
@@ -406,9 +419,12 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       // Claude continues the existing conversation context.
       //
       // Exception: if the active-session guard just assigned a fresh UUID (the tab
-      // was pointing at the currently running nanocode session), do NOT inherit
-      // hasHistory=true — the fresh UUID has no prior history so --resume would fail.
-      // Start fresh with turnCount=0 (new --session-id on first user message).
+      // was pointing at the currently running nanocode session via an implicit
+      // fallback), do NOT inherit hasHistory=true — the fresh UUID has no prior
+      // history so --resume would fail. Start fresh with turnCount=0.
+      //
+      // Explicit sessionId path: skip _activeSessionOverride entirely (it won't
+      // be set for explicit sessions), so hasHistory wins and turnCount starts at 1.
       const initialTurnCount = (!_activeSessionOverride && seed?.hasHistory) ? 1 : 0
       cs = {
         claudeSessionId,
