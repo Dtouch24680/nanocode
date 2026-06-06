@@ -35,16 +35,12 @@ function bindToolFoldCycle(article, { cycleToolFold, getToolFoldLevel }) {
   article.addEventListener('touchmove', () => { touchHandled = true }, { passive: true })
   article.addEventListener('touchend', (e) => {
     if (touchHandled) return
-    const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-    if (cur !== 'line') return
     touchHandled = true
     onCycle(e)
     e.preventDefault()
   }, { passive: false })
   article.addEventListener('click', (e) => {
     if (touchHandled) { touchHandled = false; return }
-    const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-    if (cur !== 'line') return
     onCycle(e)
   })
 }

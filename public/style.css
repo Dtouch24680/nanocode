@@ -3122,49 +3122,56 @@ body.workspace-active .landing-overlay { display: none; }
   min-height: min-content;
 }
 
-/* line — R17: compact single-line strip showing tool name + status icon.
-   Default state (Q4 answer C). Mobile tap target ≥ 44px.
-   Tap anywhere on the strip to cycle to full.
-   Strip uses left accent border + faint background for quick visual scanning. */
+/* line — R17: ultra-thin 4px strip (visual goal: a hairline that lets you scan quickly).
+   Click target is expanded to ~16px via padding so it stays tappable.
+   Strip uses left accent border + faint background for quick visual scanning.
+   Cycle: line → full → header → line (click anywhere on strip or article body). */
 .cbr-block-tool[data-fold="line"],
 .cbr-block-tool-result[data-fold="line"] {
-  min-height: 44px !important; /* mobile tap target */
-  overflow: hidden;
+  height: 4px !important;
+  min-height: 4px !important;
+  max-height: 4px !important;
+  overflow: visible; /* allow ::after to extend beyond 4px for larger hit area */
   display: flex;
   align-items: center;
-  padding: 0 var(--s-2) 0 0;
+  padding: 0;
   cursor: pointer;
   touch-action: manipulation; /* no 300ms delay on iOS */
   -webkit-tap-highlight-color: transparent;
   border-left: 3px solid var(--primary);
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 80%, var(--primary) 20%);
+  position: relative;
 }
-/* In line mode, hide the full card contents */
+/* Expand invisible click area: 8px above + 8px below the 4px strip = 20px tap zone */
+.cbr-block-tool[data-fold="line"]::after,
+.cbr-block-tool-result[data-fold="line"]::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+/* In line mode, hide all inner contents */
 .cbr-block-tool[data-fold="line"] .cbr-tool-card,
 .cbr-block-tool-result[data-fold="line"] .cbr-tool-result {
   display: none;
 }
-/* Show the tool name inline (extracted from .cbr-tool-header via ::before pseudo trick).
-   We use ::before on the article itself to show a compact indicator. */
+/* ::before shows a tiny marker — font-size 0 so it doesn't push height,
+   just keeps the flex container from collapsing to 0 */
 .cbr-block-tool[data-fold="line"]::before,
 .cbr-block-tool-result[data-fold="line"]::before {
-  content: '▶';
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  min-width: 28px;
-  height: 100%;
-  min-height: 44px;
-  color: var(--primary);
-  font-size: 9px;
-  opacity: 0.7;
-  flex-shrink: 0;
+  content: '';
+  display: block;
+  width: 0;
+  height: 0;
 }
 /* Hover: brighten the strip so the user sees it's tappable */
 .cbr-block-tool[data-fold="line"]:hover,
 .cbr-block-tool-result[data-fold="line"]:hover {
-  background: var(--bg-hover, color-mix(in srgb, var(--bg-secondary) 85%, var(--primary) 15%));
+  background: color-mix(in srgb, var(--bg-secondary) 60%, var(--primary) 40%);
 }
 .cbr-block-tool[data-fold="line"]:hover::before,
 .cbr-block-tool-result[data-fold="line"]:hover::before {
