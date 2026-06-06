@@ -381,15 +381,21 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       let claudeSessionId = tab?.claudeSessionId || randomUUID()
 
       const mainSessionId = process.env.CLAUDE_CODE_SESSION_ID
+      let _activeSessionOverride = false
       if (mainSessionId && claudeSessionId === mainSessionId) {
         console.warn(
           `[claude:session] Tab ${tabId} stored claudeSessionId collides with the running ` +
           `main session (${mainSessionId}). Generating a fresh UUID to avoid conflict.`
         )
         claudeSessionId = randomUUID()
-        if (store.updateTabMetadata) {
-          store.updateTabMetadata(projectId, tabId, { claudeSessionId })
-        }
+        _activeSessionOverride = true
+        // NOTE: do NOT call store.updateTabMetadata here. Persisting the fresh UUID
+        // would break subsequent history fetches: the history endpoint reads the stored
+        // claudeSessionId to find the jsonl, so if we overwrite it with the fresh UUID
+        // (which has no jsonl) the tab loses its history display after the next reconnect.
+        // The fresh UUID only needs to live in-memory (cs.claudeSessionId) for routing
+        // new turns. The stored sessionId stays as the original (e.g. 987c2f1c) so the
+        // history endpoint can always find the correct jsonl file.
       }
 
       const seed = replaySeeds.get(sessionKey)
@@ -397,7 +403,12 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       // turn as a resume rather than a new session start. This makes runClaudeTurn
       // use `--resume <sessionId>` instead of `--session-id <sessionId>` so
       // Claude continues the existing conversation context.
-      const initialTurnCount = seed?.hasHistory ? 1 : 0
+      //
+      // Exception: if the active-session guard just assigned a fresh UUID (the tab
+      // was pointing at the currently running nanocode session), do NOT inherit
+      // hasHistory=true — the fresh UUID has no prior history so --resume would fail.
+      // Start fresh with turnCount=0 (new --session-id on first user message).
+      const initialTurnCount = (!_activeSessionOverride && seed?.hasHistory) ? 1 : 0
       cs = {
         claudeSessionId,
         clients: new Set(),

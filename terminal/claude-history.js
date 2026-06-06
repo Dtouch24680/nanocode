@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 export function cwdToClaudeProjectDir(home, cwd) {
@@ -157,6 +157,107 @@ export function parseJsonlHistory(jsonlPath) {
 }
 
 /**
+ * Parse the TAIL of a large jsonl file — reads only the last TAIL_BYTES bytes
+ * so we don't load the entire file into memory for sessions with 10K+ events.
+ * We still need to decode enough events for INITIAL_HISTORY_BLOCKS (200) in
+ * the front-end plus some margin for dedup.  With typical event sizes of a
+ * few KB each, 4 MB of tail covers 500–2000 events — enough for any scroll depth.
+ *
+ * Returns the same format as parseJsonlHistory but only includes events from the
+ * tail window.  For files smaller than TAIL_BYTES it falls back to the full read.
+ */
+const TAIL_BYTES = 4 * 1024 * 1024  // 4 MB
+
+export function parseJsonlHistoryTail(jsonlPath) {
+  let fileSize = 0
+  try { fileSize = statSync(jsonlPath).size } catch { return [] }
+
+  // Small file: use the full parser (no point seeking)
+  if (fileSize <= TAIL_BYTES) return parseJsonlHistory(jsonlPath)
+
+  // Large file: read the last TAIL_BYTES bytes
+  let chunk
+  try {
+    const fd = openSync(jsonlPath, 'r')
+    const buf = Buffer.allocUnsafe(TAIL_BYTES)
+    let bytesRead = 0
+    try {
+      bytesRead = readSync(fd, buf, 0, TAIL_BYTES, fileSize - TAIL_BYTES)
+    } finally {
+      closeSync(fd)
+    }
+    chunk = buf.slice(0, bytesRead).toString('utf-8')
+  } catch {
+    return []
+  }
+
+  // The first line in the chunk is likely a partial (we jumped mid-line).
+  // Drop everything before the first newline to ensure we only parse complete JSON lines.
+  const firstNewline = chunk.indexOf('\n')
+  const safeChunk = firstNewline >= 0 ? chunk.slice(firstNewline + 1) : chunk
+
+  // Delegate to the same per-line parser logic (inline to avoid full-file read)
+  const lines = safeChunk.split('\n').filter((l) => l.trim())
+  const replayState = { userTextCounts: new Map() }
+  const events = []
+
+  const rawRows = []
+  for (const line of lines) {
+    let row
+    try { row = JSON.parse(line) } catch { continue }
+    rawRows.push(row)
+  }
+
+  // Same dedup logic as parseJsonlHistory
+  const assistantByKey = new Map()
+  for (const row of rawRows) {
+    if (row.type !== 'assistant') continue
+    const rid = row.requestId
+    if (!rid) continue
+    const msg = row.message
+    if (!msg || !Array.isArray(msg.content) || msg.content.length === 0) continue
+    const firstType = msg.content[0]?.type || 'unknown'
+    const key = `${rid}:${firstType}`
+    assistantByKey.set(key, row)
+  }
+
+  const emittedKeys = new Set()
+  for (const row of rawRows) {
+    if (row.type === 'user') {
+      const msg = row.message
+      if (!msg || !msg.content) continue
+      events.push({
+        type: 'user',
+        message: msg,
+        uuid: row.uuid || null,
+        replay_id: buildUserReplayId(extractReplayUserText(msg), replayState.userTextCounts),
+        parent_tool_use_id: row.parent_tool_use_id || null,
+      })
+    } else if (row.type === 'assistant') {
+      const msg = row.message
+      if (!msg || !Array.isArray(msg.content)) continue
+      const rid = row.requestId
+      if (rid) {
+        const firstType = msg.content[0]?.type || 'unknown'
+        const key = `${rid}:${firstType}`
+        if (assistantByKey.get(key) !== row) continue
+        if (emittedKeys.has(key)) continue
+        emittedKeys.add(key)
+      }
+      events.push({
+        type: 'assistant',
+        message: msg,
+        uuid: row.uuid || null,
+        replay_id: buildAssistantReplayId(row),
+        parent_tool_use_id: row.parent_tool_use_id || null,
+      })
+    }
+  }
+
+  return events
+}
+
+/**
  * Find the most-recently-modified .jsonl in a project directory.
  * Returns { path, sessionId } or null.
  */
@@ -231,22 +332,24 @@ export function createClaudeHistoryService({ store, home, recentAgents, sessionC
     let resolvedSessionId = sessionId
     let fallback = false
 
-    // Guard: if the tab's stored claudeSessionId is the active main Claude Code session,
-    // do NOT use it — this would try to --resume a live locked session and fail.
-    // Nullify the resolved path so the fallback branch runs and assigns a fresh UUID.
-    const _mainSessionId = process.env.CLAUDE_CODE_SESSION_ID
-    let _activeSessionBlocked = false
-    if (_mainSessionId && sessionId === _mainSessionId) {
-      console.log(
-        `[history:active-guard] tab=${req.params.tabId} stored session ${sessionId} ` +
-        `matches main Claude Code session - skipping to avoid lock conflict`
-      )
-      _activeSessionBlocked = true
-    }
-
-    if (!_activeSessionBlocked && jsonlPath && existsSync(jsonlPath)) {
+    // CASE A: Tab has an explicit claudeSessionId and the jsonl file exists.
+    // Always read it for display — reading a file never causes lock conflicts.
+    // The guard preventing --resume on the active session lives in attachClaudeSession
+    // (claude-session-controller.js), not here.
+    //
+    // Historical note: commit 989f0ba added an active-session-guard here that
+    // blocked reading when sessionId === CLAUDE_CODE_SESSION_ID.  This was too
+    // aggressive: users clicking "Recent Agents" to view their active session
+    // saw "[Restored 1 event(s)]" instead of the full history because the guard
+    // fired and the fallback assigned a fresh UUID instead of reading the jsonl.
+    if (jsonlPath && existsSync(jsonlPath)) {
       resolvedPath = jsonlPath
     } else {
+      // CASE B: No explicit sessionId or jsonl file missing — fall back to
+      // newest jsonl in the project dir (auto-resume behaviour).
+      // The active-session guard applies HERE to the fallback path only, because
+      // this path would otherwise silently --resume the main session on the first
+      // user turn, causing a lock conflict.
       const autoResumeSetting = store.getSetting('claude_autoresume')
       const autoResumeEnabled = autoResumeSetting !== '0'
       if (autoResumeEnabled) {
@@ -302,7 +405,10 @@ export function createClaudeHistoryService({ store, home, recentAgents, sessionC
       return res.json({ events: [], sessionId: resolvedSessionId, fallback })
     }
 
-    const events = parseJsonlHistory(resolvedPath)
+    // Use tail-reader for large files to avoid loading the entire jsonl into memory.
+    // parseJsonlHistoryTail reads only the last 4 MB (≈500-2000 events) which is
+    // more than enough for the front-end's INITIAL_HISTORY_BLOCKS (200) + lazy pages.
+    const events = parseJsonlHistoryTail(resolvedPath)
     sessionController.primeReplayHistory(req.params.id, req.params.tabId, events)
     recentAgents.primeRecentAgentsCache()
     console.log(`[history] tab=${req.params.tabId} sessionId=${resolvedSessionId} events=${events.length} fallback=${fallback}`)
