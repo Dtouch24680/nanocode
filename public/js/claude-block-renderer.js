@@ -706,8 +706,8 @@ export class ClaudeBlockRenderer {
   sendRaw(data) {
     // Ctrl+C: POST interrupt API (real interrupt, not a no-op).
     // This is called by the touch toolbar ctrl-c button and legacy callers.
+    // Do NOT call showInterruptBlock() — CLI emits result/error_during_execution via stdout.
     if (data === '\x03') {
-      this.showInterruptBlock()
       if (this.projectId && this.tabId) {
         fetch(`/api/projects/${this.projectId}/tabs/${this.tabId}/interrupt`, { method: 'POST' })
           .catch(() => {})
@@ -1351,6 +1351,14 @@ export class ClaudeBlockRenderer {
       content = [{ type: 'text', text: content }]
     }
     if (!Array.isArray(content)) return
+
+    // Filter CLI internal interrupt marker — CLI emits this to record context in the
+    // conversation log, but it should NOT be rendered as a user message bubble.
+    // The interrupt outcome is surfaced via result/error_during_execution instead.
+    if (content.length === 1 && content[0]?.type === 'text' &&
+        content[0]?.text === '[Request interrupted by user]') {
+      return
+    }
 
     // Subagent activity: events with parent_tool_use_id are messages TO a subagent
     // or results FROM a subagent. Visibility controlled by the subagent-activity toggle.

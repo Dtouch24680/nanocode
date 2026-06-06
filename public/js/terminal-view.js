@@ -603,10 +603,8 @@ function setupChatInput() {
       await fetch(`/api/projects/${projectId}/tabs/${tabId}/interrupt`, { method: 'POST' })
     } catch {}
 
-    // Insert CLI-style block in the conversation flow (matches CLI text).
-    if (activePane && typeof activePane.showInterruptBlock === 'function') {
-      activePane.showInterruptBlock()
-    }
+    // Do NOT call showInterruptBlock() here — CLI will emit result/error_during_execution
+    // via stdout which nanocode transparently forwards. Let the WS event drive UI state.
 
     // Visual: keep stopBtn visible until the real WS result event triggers
     // updateThinkingState(false). Do NOT hide stopBtn or show sendBtn yet —

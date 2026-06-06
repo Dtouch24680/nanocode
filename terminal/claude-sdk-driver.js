@@ -116,7 +116,7 @@ export function createClaudeSdkDriver({
       }
     } catch (err) {
       const wasInterrupted = cs.currentProc?._nanocodeInterrupted === true
-      finalSubtype = wasInterrupted ? 'interrupted' : 'error'
+      finalSubtype = wasInterrupted ? 'error_during_execution' : 'error'
       const text = err?.message || String(err)
       if (!wasInterrupted) {
         // Detect resume-miss errors: SDK throws when --resume session doesn't exist
@@ -176,21 +176,13 @@ export function createClaudeSdkDriver({
       }
 
       if (!sawResult) {
-        claudeBroadcast(cs, makeResultEvent(wasInterrupted ? 'interrupted' : finalSubtype, lastSessionId))
+        claudeBroadcast(cs, makeResultEvent(wasInterrupted ? 'error_during_execution' : finalSubtype, lastSessionId))
       }
 
       if (!Array.isArray(cs.queue)) cs.queue = []
-      if (wasInterrupted) {
-        if (cs.queue.length > 0) {
-          const discarded = cs.queue.length
-          cs.queue = []
-          claudeBroadcast(cs, {
-            type: 'system',
-            subtype: 'info',
-            text: `Queue cleared (${discarded} pending message${discarded > 1 ? 's' : ''} discarded after interrupt).`,
-          })
-        }
-      } else if (cs.queue.length > 0) {
+      // On interrupt: keep pending queue intact — user can resubmit or clear manually.
+      // (No "Queue cleared" broadcast — CLI has no such concept.)
+      if (!wasInterrupted && cs.queue.length > 0) {
         const allQueued = cs.queue.splice(0)
         const combinedText = allQueued.join('\n\n')
         setImmediate(() => rerunTurn(cs, combinedText, sessionKey, cwd))

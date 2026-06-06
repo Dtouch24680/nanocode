@@ -258,6 +258,8 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     let lineBuffer = ''
     let _continueAlsoFailed = false
+    // Track whether CLI already emitted a result event via stdout (to avoid double-broadcast)
+    let _sawResultFromStdout = false
 
     proc.stdout.on('data', (chunk) => {
       lineBuffer += chunk.toString('utf8')
@@ -279,6 +281,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
             }
           }
         }
+        if (event?.type === 'result') _sawResultFromStdout = true
         claudeBroadcast(cs, event)
       }
     })
@@ -318,16 +321,19 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       }
 
       const wasInterrupted = signal === 'SIGINT' || proc._nanocodeInterrupted === true
-      const doneEvent = { type: 'result', subtype: wasInterrupted ? 'interrupted' : 'success' }
-      claudeBroadcast(cs, doneEvent)
+      // CLI already emitted result/error_during_execution via stdout when interrupted.
+      // Only broadcast a result here if CLI did NOT emit one.
+      if (!_sawResultFromStdout) {
+        const doneEvent = { type: 'result', subtype: wasInterrupted ? 'error_during_execution' : 'success' }
+        claudeBroadcast(cs, doneEvent)
+      }
       if (code !== 0 && code != null && !wasInterrupted && !_continueAlsoFailed) {
         claudeBroadcast(cs, { type: 'system', subtype: 'stderr', text: `claude exited with code ${code}` })
       }
 
       if (!Array.isArray(cs.queue)) cs.queue = []
-      if (wasInterrupted) {
-        cs.queue = []
-      } else if (cs.queue.length > 0) {
+      // On interrupt: keep pending queue intact — user can resubmit or clear manually.
+      if (!wasInterrupted && cs.queue.length > 0) {
         const allQueued = cs.queue.splice(0)
         const combinedText = allQueued.join('\n\n')
         setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
@@ -424,6 +430,8 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     let _noConversationFound = false
     // Track whether any JSON events came through (if not + exit non-0, likely a resume failure)
     let _sawAnyEvent = false
+    // Track whether CLI already emitted a result event via stdout (to avoid double-broadcast)
+    let _sawResultFromStdout = false
 
     proc.stdout.on('data', (chunk) => {
       lineBuffer += chunk.toString('utf8')
@@ -435,6 +443,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         let event
         try { event = JSON.parse(trimmed) } catch { continue }
         _sawAnyEvent = true
+        if (event?.type === 'result') _sawResultFromStdout = true
         claudeBroadcast(cs, event)
       }
     })
@@ -523,22 +532,21 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       }
 
       const wasInterrupted = signal === 'SIGINT' || proc._nanocodeInterrupted === true
-      const doneEvent = { type: 'result', subtype: wasInterrupted ? 'interrupted' : 'success' }
-      claudeBroadcast(cs, doneEvent)
+      // CLI already emitted result/error_during_execution via stdout when interrupted.
+      // Only broadcast a result here if CLI did NOT emit one (e.g. clean success exit).
+      if (!_sawResultFromStdout) {
+        const doneEvent = { type: 'result', subtype: wasInterrupted ? 'error_during_execution' : 'success' }
+        claudeBroadcast(cs, doneEvent)
+      }
       if (code !== 0 && code != null && !wasInterrupted) {
         const event = { type: 'system', subtype: 'stderr', text: `claude exited with code ${code}` }
         claudeBroadcast(cs, event)
       }
 
       if (!Array.isArray(cs.queue)) cs.queue = []
-      if (wasInterrupted) {
-        if (cs.queue.length > 0) {
-          const discarded = cs.queue.length
-          cs.queue = []
-          const ev = { type: 'system', subtype: 'info', text: `Queue cleared (${discarded} pending message${discarded > 1 ? 's' : ''} discarded after interrupt).` }
-          claudeBroadcast(cs, ev)
-        }
-      } else if (cs.queue.length > 0) {
+      // On interrupt: keep pending queue intact — user can resubmit or clear manually.
+      // (No "Queue cleared" broadcast — CLI has no such concept.)
+      if (!wasInterrupted && cs.queue.length > 0) {
         const allQueued = cs.queue.splice(0)
         const combinedText = allQueued.join('\n\n')
         console.log(`[claude:queue] sessionKey=${sessionKey} flushing ${allQueued.length} queued message(s) as one turn`)
