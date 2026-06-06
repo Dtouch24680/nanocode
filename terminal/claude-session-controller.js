@@ -206,6 +206,142 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return env
   }
 
+  // ── Layer 2: --continue fallback ─────────────────────────────────────────────
+  // Called when --resume <sid> fails with "No conversation found". Spawns claude
+  // with --continue (picks the most recent jsonl in cwd) and updates cs.claudeSessionId
+  // from the init event. If --continue also fails (no jsonl), falls back to new session.
+  function _runClaudeCliContinueFallback(cs, userText, sessionKey, cwd) {
+    cs.busy = true
+    cs.currentProc = null
+
+    const claudeModel = store.getSetting('claude_model') || ''
+    const claudeEffort = store.getSetting('claude_effort') || ''
+    const permMode = store.getSetting('claude_permission_mode') || 'bypass'
+    const tabLabel = cs.tabLabel || ''
+
+    const launchArgs = [
+      '--print',
+      '--output-format=stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--continue',
+    ]
+
+    if (permMode === 'bypass') {
+      launchArgs.push('--dangerously-skip-permissions')
+    } else if (permMode === 'accept-edits') {
+      launchArgs.push('--permission-mode', 'acceptEdits')
+    } else if (permMode === 'auto') {
+      launchArgs.push('--permission-mode', 'auto')
+    }
+
+    if (claudeModel) launchArgs.push('--model', claudeModel)
+    if (claudeEffort) launchArgs.push('--effort', claudeEffort)
+    if (tabLabel) launchArgs.push('--name', tabLabel)
+
+    launchArgs.push('--')
+    launchArgs.push(userText)
+
+    const escapedArgs = launchArgs.map((a) => sq(a))
+    const launchCmd = `exec claude ${escapedArgs.join(' ')}`
+
+    console.log(`[claude:continue-fallback:spawn] sessionKey=${sessionKey}`)
+    const proc = spawn('bash', ['-lc', launchCmd], {
+      cwd,
+      env: buildClaudeChildEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    })
+    proc._nanocodeInterrupted = false
+    cs.currentProc = proc
+    cs.turnCount++  // count this as turn 1
+
+    let lineBuffer = ''
+    let _continueAlsoFailed = false
+
+    proc.stdout.on('data', (chunk) => {
+      lineBuffer += chunk.toString('utf8')
+      const lines = lineBuffer.split('\n')
+      lineBuffer = lines.pop()
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        let event
+        try { event = JSON.parse(trimmed) } catch { continue }
+        // Capture the new sessionId from the init event
+        if (event?.type === 'system' && event?.subtype === 'init' && event?.session_id) {
+          if (event.session_id !== cs.claudeSessionId) {
+            console.log(`[claude:continue-fallback] ${sessionKey}: updated sessionId ${cs.claudeSessionId} -> ${event.session_id}`)
+            cs.claudeSessionId = event.session_id
+            if (store.updateTabMetadata) {
+              const [projectId, , tabId] = sessionKey.split(':')
+              store.updateTabMetadata(projectId, tabId, { claudeSessionId: event.session_id })
+            }
+          }
+        }
+        claudeBroadcast(cs, event)
+      }
+    })
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString('utf8').trim()
+      if (!text) return
+      if (text.includes('No conversation found') || text.includes('no conversation') ||
+          text.includes('no session') || text.includes('Session not found')) {
+        _continueAlsoFailed = true
+        console.warn(`[claude:continue-fallback] ${sessionKey}: --continue also failed, will open new session`)
+        return
+      }
+      console.warn(`[claude:continue-fallback:stderr] ${sessionKey}: ${text.slice(0, 120)}`)
+    })
+
+    proc.on('exit', (code, signal) => {
+      cs.busy = false
+      cs.currentProc = null
+
+      if (_continueAlsoFailed) {
+        // Layer 3: open new session
+        const newSessionId = randomUUID()
+        cs.claudeSessionId = newSessionId
+        cs.turnCount = 0
+        cs.explicitSessionId = false
+        if (store.updateTabMetadata) {
+          const [projectId, , tabId] = sessionKey.split(':')
+          store.updateTabMetadata(projectId, tabId, { claudeSessionId: newSessionId })
+        }
+        claudeBroadcast(cs, {
+          type: 'system', subtype: 'continue_fallback',
+          text: `[--continue also failed — starting fresh new session]`,
+        })
+        setImmediate(() => dispatchClaudeTurn(cs, userText, sessionKey, cwd))
+        return
+      }
+
+      const wasInterrupted = signal === 'SIGINT' || proc._nanocodeInterrupted === true
+      const doneEvent = { type: 'result', subtype: wasInterrupted ? 'interrupted' : 'success' }
+      claudeBroadcast(cs, doneEvent)
+      if (code !== 0 && code != null && !wasInterrupted && !_continueAlsoFailed) {
+        claudeBroadcast(cs, { type: 'system', subtype: 'stderr', text: `claude exited with code ${code}` })
+      }
+
+      if (!Array.isArray(cs.queue)) cs.queue = []
+      if (wasInterrupted) {
+        cs.queue = []
+      } else if (cs.queue.length > 0) {
+        const allQueued = cs.queue.splice(0)
+        const combinedText = allQueued.join('\n\n')
+        setImmediate(() => dispatchClaudeTurn(cs, combinedText, sessionKey, cwd))
+      }
+    })
+
+    proc.on('error', (err) => {
+      cs.busy = false
+      cs.currentProc = null
+      claudeBroadcast(cs, { type: 'result', subtype: 'error' })
+      claudeBroadcast(cs, { type: 'system', subtype: 'spawn_error', text: err.message })
+    })
+  }
+
   function runClaudeCliTurn(cs, userText, sessionKey, cwd) {
     if (cs.busy) {
       if (!Array.isArray(cs.queue)) cs.queue = []
@@ -222,9 +358,24 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     const isFirstTurn = cs.turnCount === 0
     if (isFirstTurn) gcClaudeSessions()
-    const sessionArg = isFirstTurn
-      ? `--session-id=${cs.claudeSessionId}`
-      : `--resume=${cs.claudeSessionId}`
+    // ── Three-layer session fallback ─────────────────────────────────────────
+    // Layer 1: has history or was resumed before → --resume <sid>
+    // Layer 2: first-turn with explicit stored sessionId → also --resume <sid>
+    //          (fallback: if "No conversation found" → retry with --continue)
+    // Layer 3: truly new session → --session-id <new-uuid>
+    //
+    // Previously: isFirstTurn → always --session-id which opened a NEW claude session.
+    // This broke reconnect-after-sleep: cs was rebuilt (server restart or first-WS-msg
+    // before history-fetch primed the seed), turnCount reset to 0, and we opened a brand
+    // new conversation instead of resuming the stored one.
+    const sessionFallback = store.getSetting('claude_session_fallback') || 'continue'
+    const useResumeOnFirstTurn = !isFirstTurn || cs.explicitSessionId
+    let sessionArg
+    if (useResumeOnFirstTurn) {
+      sessionArg = `--resume=${cs.claudeSessionId}`
+    } else {
+      sessionArg = `--session-id=${cs.claudeSessionId}`
+    }
     cs.turnCount++
 
     const claudeModel = store.getSetting('claude_model') || ''
@@ -269,6 +420,10 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     let lineBuffer = ''
     let _sessionConflict = false
+    // Detect "No conversation found" so we can fallback to --continue
+    let _noConversationFound = false
+    // Track whether any JSON events came through (if not + exit non-0, likely a resume failure)
+    let _sawAnyEvent = false
 
     proc.stdout.on('data', (chunk) => {
       lineBuffer += chunk.toString('utf8')
@@ -279,6 +434,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         if (!trimmed) continue
         let event
         try { event = JSON.parse(trimmed) } catch { continue }
+        _sawAnyEvent = true
         claudeBroadcast(cs, event)
       }
     })
@@ -289,6 +445,19 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       if (!_sessionConflict && text.includes('is already in use')) {
         _sessionConflict = true
         console.warn(`[claude:session-conflict] ${sessionKey}: session still locked, will retry`)
+        return
+      }
+      // Detect resume failure: "No conversation found" means --resume <sid> failed because
+      // the claude session doesn't exist (purged or never written). We will retry with
+      // --continue (or new session if fallback=strict).
+      if (!_noConversationFound && (
+        text.includes('No conversation found') ||
+        text.includes('no conversation') ||
+        text.includes('Session not found') ||
+        text.includes('session not found')
+      )) {
+        _noConversationFound = true
+        console.warn(`[claude:resume-miss] ${sessionKey}: session ${cs.claudeSessionId} not found, will fallback`)
         return
       }
       console.warn(`[claude:stderr] ${sessionKey}: ${text.slice(0, 120)}`)
@@ -320,6 +489,37 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
           const [projectId, , tabId] = sessionKey.split(':')
           store.updateTabMetadata(projectId, tabId, { claudeSessionId: newSessionId })
         }
+      }
+
+      // ── Continue-fallback: --resume failed with "No conversation found" ──────
+      // Layer 2: retry with --continue (picks up the most recent jsonl in cwd).
+      // Layer 3: if sessionFallback=strict, skip --continue and open a new session.
+      if (_noConversationFound && !_sawAnyEvent && code !== 0) {
+        cs.turnCount--  // undo the increment so retry uses the same turn slot
+        cs.explicitSessionId = false  // clear so next retry doesn't loop
+        if (sessionFallback !== 'strict') {
+          console.warn(`[claude:continue-fallback] ${sessionKey}: --resume missed, retrying with --continue`)
+          claudeBroadcast(cs, {
+            type: 'system', subtype: 'continue_fallback',
+            text: `[Session not found — falling back to --continue to pick up most recent context]`,
+          })
+          setImmediate(() => _runClaudeCliContinueFallback(cs, userText, sessionKey, cwd))
+        } else {
+          console.warn(`[claude:continue-fallback] ${sessionKey}: --resume missed, fallback=strict → new session`)
+          const newSessionId = randomUUID()
+          cs.claudeSessionId = newSessionId
+          cs.turnCount = 0
+          if (store.updateTabMetadata) {
+            const [projectId, , tabId] = sessionKey.split(':')
+            store.updateTabMetadata(projectId, tabId, { claudeSessionId: newSessionId })
+          }
+          claudeBroadcast(cs, {
+            type: 'system', subtype: 'continue_fallback',
+            text: `[Session not found — starting new session (fallback=strict)]`,
+          })
+          setImmediate(() => dispatchClaudeTurn(cs, userText, sessionKey, cwd))
+        }
+        return
       }
 
       const wasInterrupted = signal === 'SIGINT' || proc._nanocodeInterrupted === true
@@ -426,12 +626,20 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       // Explicit sessionId path: skip _activeSessionOverride entirely (it won't
       // be set for explicit sessions), so hasHistory wins and turnCount starts at 1.
       const initialTurnCount = (!_activeSessionOverride && seed?.hasHistory) ? 1 : 0
+      // explicitSessionId=true means the sessionId came from store (this tab had a prior session).
+      // We record it on cs so that the first-turn session arg can use --resume instead of
+      // --session-id even when history replay returned empty (e.g. jsonl was purged, or race
+      // between history fetch and WS attach). This is the basis for the continue-fallback chain.
+      const resolvedExplicit = explicitSessionId && !_activeSessionOverride
       cs = {
         claudeSessionId,
         clients: new Set(),
         history: [],
         busy: false,
         turnCount: initialTurnCount,
+        // Carries the "this sessionId came from store, try --resume on first turn" flag.
+        // Reset to false after the first successful turn so we don't retry forever.
+        explicitSessionId: resolvedExplicit,
         cwd: project.cwd,
         currentProc: null,
         tabLabel: tab?.label || '',

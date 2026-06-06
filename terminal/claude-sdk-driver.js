@@ -56,10 +56,17 @@ export function createClaudeSdkDriver({
     const claudeModel = store.getSetting('claude_model') || ''
     const claudeEffort = store.getSetting('claude_effort') || ''
     const permMode = store.getSetting('claude_permission_mode') || 'bypass'
+    const sessionFallback = store.getSetting('claude_session_fallback') || 'continue'
     const sdkPermissionMode = mapPermissionMode(permMode)
-    const sessionOptions = isFirstTurn
-      ? { sessionId: cs.claudeSessionId }
-      : { resume: cs.claudeSessionId }
+    // ── Three-layer session fallback (SDK path) ─────────────────────────────
+    // Layer 1: not first turn → resume
+    // Layer 2: first turn with explicitSessionId → also resume
+    //          (if SDK throws "not found", runCliFallback handles --continue)
+    // Layer 3: truly new session → sessionId
+    const useResumeOnFirstTurn = !isFirstTurn || cs.explicitSessionId
+    const sessionOptions = useResumeOnFirstTurn
+      ? { resume: cs.claudeSessionId }
+      : { sessionId: cs.claudeSessionId }
 
     let sawResult = false
     let sawInit = false
@@ -112,14 +119,35 @@ export function createClaudeSdkDriver({
       finalSubtype = wasInterrupted ? 'interrupted' : 'error'
       const text = err?.message || String(err)
       if (!wasInterrupted) {
-        // If we have a CLI fallback, broadcast sdk_error_fallback and retry this turn via CLI
+        // Detect resume-miss errors: SDK throws when --resume session doesn't exist
+        const isResumeMiss = (
+          text.includes('No conversation found') ||
+          text.includes('no conversation') ||
+          text.includes('Session not found') ||
+          text.includes('session not found') ||
+          text.includes('not found')
+        ) && (useResumeOnFirstTurn || !isFirstTurn)
+
+        // If we have a CLI fallback, broadcast sdk_error_fallback and retry this turn via CLI.
+        // For resume-miss: if sessionFallback=continue, the CLI will use --continue.
+        // For other errors: CLI retries the same args (existing behaviour).
         if (typeof runCliFallback === 'function') {
-          const reason = text.length > 120 ? text.slice(0, 120) + '…' : text
-          claudeBroadcast(cs, {
-            type: 'system',
-            subtype: 'sdk_error_fallback',
-            text: `SDK error: ${reason}，已自动切回 CLI 这一 turn`,
-          })
+          if (isResumeMiss && sessionFallback !== 'strict') {
+            console.warn(`[sdk:resume-miss] ${sessionKey}: SDK resume failed (${text.slice(0, 80)}), falling back to CLI --continue`)
+            cs.explicitSessionId = false  // clear so CLI fallback uses --continue path
+            claudeBroadcast(cs, {
+              type: 'system',
+              subtype: 'continue_fallback',
+              text: `[Session not found — falling back to --continue to pick up most recent context]`,
+            })
+          } else {
+            const reason = text.length > 120 ? text.slice(0, 120) + '…' : text
+            claudeBroadcast(cs, {
+              type: 'system',
+              subtype: 'sdk_error_fallback',
+              text: `SDK error: ${reason}，已自动切回 CLI 这一 turn`,
+            })
+          }
           _cliFallbackTriggered = true
           sawResult = true  // suppress the finally result broadcast
         } else {
