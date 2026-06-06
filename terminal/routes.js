@@ -890,17 +890,34 @@ export function createTerminalRoutes(store) {
         relTime: _relTime(e.mtimeMs, now),
         summary: extractSummary(e.fullPath),
         active: now - e.mtimeMs <= H24,
-        // Internal field for cache recompute — stripped before sending is fine
-        // (clients just ignore unknown fields)
         _mtimeMs: e.mtimeMs,
       }
     })
+  }
 
-    // Store in cache so subsequent requests within 10s skip file I/O
+  function getRecentAgentsCached({ forceRefresh = false } = {}) {
+    const now = Date.now()
+    const H24 = 24 * 60 * 60 * 1000
+    if (!forceRefresh && _recentAgentsCache && now - _recentAgentsCacheAt < RECENT_AGENTS_CACHE_MS) {
+      return _recentAgentsCache.map((e) => ({
+        ...e,
+        relTime: _relTime(e._mtimeMs, now),
+        active: now - e._mtimeMs <= H24,
+      }))
+    }
+
+    const result = scanRecentAgents(now)
     _recentAgentsCache = result
     _recentAgentsCacheAt = now
+    return result
+  }
 
-    res.json(result)
+  function primeRecentAgentsCache() {
+    try { getRecentAgentsCached() } catch {}
+  }
+
+  router.get('/api/recent-agents', (req, res) => {
+    res.json(getRecentAgentsCached())
   })
 
   const IS_WIN = platform() === 'win32'
@@ -1070,6 +1087,7 @@ export function createTerminalRoutes(store) {
       //
       // Normally: single-pid SIGINT only. force=1 escalates to SIGKILL on the same
       // single pid (never a process-group kill, to preserve detached sub-agents).
+      cs.currentProc._nanocodeInterrupted = true
       if (force) {
         cs.currentProc.kill('SIGKILL')
       } else {
@@ -1300,6 +1318,7 @@ export function createTerminalRoutes(store) {
     // NOTE: we intentionally do NOT call proc.unref() — the turn is the
     // foreground generation and should still die with the worker. detached
     // here is purely for process-group isolation, not for outliving nanocode.
+    proc._nanocodeInterrupted = false
     cs.currentProc = proc
 
     let lineBuffer = ''
@@ -1375,7 +1394,7 @@ export function createTerminalRoutes(store) {
 
       // Broadcast a synthetic 'result' event so the frontend knows the turn ended
       // (needed for the thinking-state UI to reset even on interrupt/error)
-      const wasInterrupted = signal === 'SIGINT'
+      const wasInterrupted = signal === 'SIGINT' || proc._nanocodeInterrupted === true
       const doneEvent = { type: 'result', subtype: wasInterrupted ? 'interrupted' : 'success' }
       claudeBroadcast(cs, doneEvent)
       if (code !== 0 && code != null && !wasInterrupted) {
