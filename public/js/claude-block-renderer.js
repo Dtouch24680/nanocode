@@ -604,17 +604,25 @@ export class ClaudeBlockRenderer {
       `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
       `<polyline points="6 9 12 15 18 9"/></svg>`
     this._scrollBtn.addEventListener('click', () => {
+      // User explicitly asked to go to bottom — resume auto-scroll
+      this._userScrolledUp = false
       this._scroll.scrollTo({ top: this._scroll.scrollHeight, behavior: 'smooth' })
     })
     container.appendChild(this._scrollBtn)
 
-    // Show/hide the button based on scroll position (debounced via rAF)
+    // Smart auto-scroll state: true when the user has scrolled away from the bottom
+    this._userScrolledUp = false
+
+    // Show/hide the button AND track user scroll intent (debounced via rAF)
     let _scrollRafPending = false
     this._scroll.addEventListener('scroll', () => {
       if (_scrollRafPending) return
       _scrollRafPending = true
       requestAnimationFrame(() => {
         _scrollRafPending = false
+        const s = this._scroll
+        const atBottom = s.scrollHeight - s.scrollTop - s.clientHeight < 40
+        this._userScrolledUp = !atBottom
         this._updateScrollBtn()
       })
     }, { passive: true })
@@ -684,6 +692,8 @@ export class ClaudeBlockRenderer {
     const nonce = (Math.random() * 0xFFFFFFFF | 0).toString(36) + Date.now().toString(36)
     if (!this._pendingNonces) this._pendingNonces = new Set()
     this._pendingNonces.add(nonce)
+    // User is actively sending — always scroll to bottom regardless of scroll position
+    this._userScrolledUp = false
     this._appendUserBlock(text)
     this._send({ type: 'claude-input', text, _nonce: nonce })
     // Clear any live assistant block so next response starts fresh
@@ -844,7 +854,9 @@ export class ClaudeBlockRenderer {
       this._replayMode = false
     }
 
-    // Single scroll-to-bottom after all initial blocks are in DOM
+    // Single scroll-to-bottom after all initial blocks are in DOM.
+    // Reset _userScrolledUp so auto-scroll resumes from a clean state after history load.
+    this._userScrolledUp = false
     requestAnimationFrame(() => {
       this._scroll.scrollTop = this._scroll.scrollHeight
       this._updateScrollBtn()
@@ -1618,9 +1630,9 @@ export class ClaudeBlockRenderer {
           // P3-1: pass streaming:true so unclosed ``` fences are trimmed before parse
           try { html = renderMarkdown(latestText, { streaming: true }) } catch { html = `<p>${escHtml(latestText)}</p>` }
           this._liveAssistantBlock.innerHTML = `<div class="cbr-text">${html}</div>`
-          // Scroll only if user is near bottom (avoid fighting manual scroll)
-          const s = this._scroll
-          if (s.scrollHeight - s.scrollTop - s.clientHeight < 120) {
+          // Smart auto-scroll: only scroll if user has not scrolled up
+          if (!this._userScrolledUp) {
+            const s = this._scroll
             s.scrollTop = s.scrollHeight
           }
           this._updateScrollBtn()
@@ -1890,9 +1902,11 @@ export class ClaudeBlockRenderer {
     this._scrollBottom()
   }
 
-  _scrollBottom() {
+  _scrollBottom({ force = false } = {}) {
     // During replay, skip per-block rAF scroll — _fetchAndReplayHistory does one at the end
     if (this._replayMode) return
+    // Smart auto-scroll: if the user has scrolled up, do NOT auto-scroll (unless forced)
+    if (!force && this._userScrolledUp) return
     requestAnimationFrame(() => {
       this._scroll.scrollTop = this._scroll.scrollHeight
       // After programmatic scroll, re-evaluate button visibility
