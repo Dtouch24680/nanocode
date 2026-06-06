@@ -240,6 +240,21 @@
                 <span class="settings-status" id="claude-permission-mode-status"></span>
               </div>
             </div>
+
+            <!-- Claude Driver (SDK vs CLI) -->
+            <div class="settings-subsection">
+              <div class="settings-label-row">Claude 驱动 <span class="settings-hint-inline">SDK 驱动是 Claude Agent SDK，正在迁移中。问题切回 CLI。</span></div>
+              <div class="settings-field">
+                <select id="claude-driver-select" class="settings-input">
+                  <option value="cli">CLI（默认，稳定）</option>
+                  <option value="sdk">SDK（实验，新驱动）</option>
+                </select>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="claude-driver-save-btn">Save</button>
+                <span class="settings-status" id="claude-driver-status"></span>
+              </div>
+            </div>
           </section>
 
           <!-- ══ 显示 ══ -->

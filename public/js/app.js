@@ -375,6 +375,7 @@ function loadSettings(serverSettings) {
   loadClaudeModelSettings(serverSettings)
   loadClaudeEffortSettings(serverSettings)
   loadPermissionModeSettings(serverSettings)
+  loadClaudeDriverSettings(serverSettings)
 }
 
 if (cliSaveBtn) {
@@ -771,6 +772,35 @@ if (permissionModeSaveBtn) {
     const statusEl = document.getElementById('claude-permission-mode-status')
     try {
       await updateSetting('claude_permission_mode', selected?.value || 'bypass')
+      if (statusEl) {
+        statusEl.textContent = 'Saved — 新 session 生效'
+        statusEl.className = 'settings-status success'
+        setTimeout(() => { statusEl.textContent = '' }, 2500)
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = err.message
+        statusEl.className = 'settings-status error'
+        setTimeout(() => { statusEl.textContent = '' }, 3000)
+      }
+    }
+  })
+}
+
+// ─── Claude Driver selector ───────────────────────────────────────────────────
+
+function loadClaudeDriverSettings(serverSettings) {
+  const sel = document.getElementById('claude-driver-select')
+  if (sel) sel.value = serverSettings?.claude_driver || 'cli'
+}
+
+const claudeDriverSaveBtn = document.getElementById('claude-driver-save-btn')
+if (claudeDriverSaveBtn) {
+  claudeDriverSaveBtn.addEventListener('click', async () => {
+    const sel = document.getElementById('claude-driver-select')
+    const statusEl = document.getElementById('claude-driver-status')
+    try {
+      await updateSetting('claude_driver', sel?.value || 'cli')
       if (statusEl) {
         statusEl.textContent = 'Saved — 新 session 生效'
         statusEl.className = 'settings-status success'
