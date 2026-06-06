@@ -78,4 +78,17 @@ describe('store', () => {
     assert.equal(project.ssh_port, null)
     assert.equal(project.ssh_key, null)
   })
+
+  it('persists codex thread metadata for codex tabs', () => {
+    const project = store.createProject('Codex', '/tmp/codex')
+    const tab = store.createTab(project.id, { type: 'codex', label: 'codex 1' })
+
+    assert.equal(tab.codexThreadId, null)
+
+    const updated = store.updateTabMetadata(project.id, tab.id, { codexThreadId: 'thread-123' })
+    assert.equal(updated.codexThreadId, 'thread-123')
+
+    const fetched = store.getTab(project.id, tab.id)
+    assert.equal(fetched.codexThreadId, 'thread-123')
+  })
 })
