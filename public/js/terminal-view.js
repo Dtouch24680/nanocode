@@ -386,6 +386,10 @@ function setupChatInput() {
     queueTray.hidden = !visible
     if (!visible) { queueTray.innerHTML = ''; return }
     queueTray.innerHTML =
+      `<div class="cq-header">` +
+        `<span class="cq-header-label">排队中 (${_pendingQueue.length})</span>` +
+        `<button class="cq-send-now" title="中断当前回合，立即发送所有排队消息">⏵ 立即发送</button>` +
+      `</div>` +
       _pendingQueue.map((text, i) => {
         const truncated = text.length > 72 ? text.slice(0, 72) + '…' : text
         return `<div class="cq-item">` +
@@ -402,6 +406,46 @@ function setupChatInput() {
         updateQueueTray()
       })
     })
+    // "立即发送" button: interrupt current turn then immediately flush pending queue
+    const sendNowBtn = queueTray.querySelector('.cq-send-now')
+    if (sendNowBtn) {
+      sendNowBtn.addEventListener('click', async (e) => {
+        e.stopPropagation()
+        if (_pendingQueue.length === 0) return
+        // Grab all queued messages before interrupting
+        const all = _pendingQueue.splice(0)
+        updateQueueTray()
+        // Interrupt the current turn, then wait for the result event (thinking=false)
+        // before sending so the backend is idle and ready for the new turn.
+        const combined = all.join('\n\n')
+        let sent = false
+        const doSend = () => {
+          if (sent) return
+          sent = true
+          if (activePane) activePane.sendInputWithEcho(combined)
+          pushHistory(combined)
+          resetHistoryNav()
+          chatInput.focus()
+        }
+        // One-shot listener: fires when Claude goes idle after the interrupt
+        const onIdle = (ev) => {
+          const detail = ev.detail || {}
+          const activeId = tabManager ? tabManager.activeId : null
+          if (activeId && detail.tabId !== activeId) return  // wrong tab
+          if (detail.thinking) return  // still thinking
+          document.removeEventListener('nanocode:claude-thinking', onIdle)
+          doSend()
+        }
+        document.addEventListener('nanocode:claude-thinking', onIdle)
+        // Interrupt the current turn (fires SIGINT → triggers WS result event → onIdle)
+        await doInterrupt()
+        // Safety fallback: if the result event never fires within 3s, send anyway
+        setTimeout(() => {
+          document.removeEventListener('nanocode:claude-thinking', onIdle)
+          doSend()
+        }, 3000)
+      })
+    }
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
