@@ -1695,18 +1695,25 @@ export class ClaudeBlockRenderer {
     // Root B: build display text; handle string, array (text+image), and empty content
     let text = ''
     let hasImage = false
+    // P2-4: collect image items for inline rendering
+    const imageItems = []
     if (typeof content === 'string') {
       text = content
     } else if (Array.isArray(content)) {
       const textParts = content.filter((c) => c.type === 'text').map((c) => c.text)
       text = textParts.join('\n')
-      hasImage = content.some((c) => c.type === 'image')
+      for (const c of content) {
+        if (c.type === 'image') {
+          hasImage = true
+          imageItems.push(c)
+        }
+      }
     }
     // Root B: do NOT silently return on empty/non-text content — always show something
     const displayText = text.trim()
       ? text
       : hasImage
-        ? '(image result)'
+        ? ''
         : content == null
           ? '(no result)'
           : '(empty result)'
@@ -1717,10 +1724,22 @@ export class ClaudeBlockRenderer {
     // Root C: add error class when is_error is true
     const errorClass = isError ? ' cbr-tool-result--error' : ''
 
+    // P2-4: build image HTML for each image item
+    let imageHtml = ''
+    for (const img of imageItems) {
+      const src = img.source
+      if (src && src.type === 'base64' && src.media_type && src.data) {
+        imageHtml += `<img class="cbr-inline-img" src="data:${escHtml(src.media_type)};base64,${src.data}" alt="tool image result" loading="lazy">`
+      } else if (src && src.type === 'url' && src.url) {
+        imageHtml += `<img class="cbr-inline-img" src="${escHtml(src.url)}" alt="tool image result" loading="lazy">`
+      }
+    }
+
     const resultHtml =
       `<div class="cbr-tool-result${errorClass}">` +
       (isError ? `<div class="cbr-tool-result-error-label">tool error</div>` : '') +
-      `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(displaySlice)}</pre>` +
+      (displaySlice ? `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(displaySlice)}</pre>` : '') +
+      (imageHtml ? `<div class="cbr-inline-img-wrap">${imageHtml}</div>` : '') +
       `</div>`
 
     // Root A: try to pair with the originating tool_use block by tool_use_id

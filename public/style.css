@@ -3196,6 +3196,20 @@ body.workspace-active .landing-overlay { display: none; }
   padding: 0;
 }
 
+/* P2-4: inline image rendering in tool_result */
+.cbr-inline-img-wrap {
+  padding: var(--s-2) var(--s-3) var(--s-1);
+}
+
+.cbr-inline-img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border);
+  margin: var(--s-1) 0;
+}
+
 /* ── Tool result error state (Root C: is_error) ─────────────────── */
 .cbr-tool-result--error {
   background: rgba(239, 68, 68, 0.08);
