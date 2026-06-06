@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import * as sessions from './sessions.js'
 import { buildReplaySeed, buildUserReplayId } from './claude-history.js'
 import { createClaudeSdkDriver } from './claude-sdk-driver.js'
+import { createCodexSdkDriver } from './codex-sdk-driver.js'
 
 export function createClaudeSessionController({ store, home, recentAgents }) {
   const IS_WIN = platform() === 'win32'
@@ -16,6 +17,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
   // Map: sessionKey -> { claudeSessionId, clients, history, busy }
   const claudeSessions = new Map()
+  const codexSessions = new Map()
   const replaySeeds = new Map()
 
   const TAB_LAUNCHERS = {
@@ -67,6 +69,10 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return `${projectId}:claude:${tabId}`
   }
 
+  function codexSessionKeyFor(projectId, tabId) {
+    return `${projectId}:codex:${tabId}`
+  }
+
   function setClaudeSessionId(projectId, tabId, claudeSessionId, { resetTurnCount = false } = {}) {
     const cs = claudeSessions.get(sessionKeyFor(projectId, tabId))
     if (!cs) return
@@ -115,11 +121,48 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return store.getSetting('claude_driver') === 'sdk' ? 'sdk' : 'cli'
   }
 
+  function appendCodexScrollback(cs, text) {
+    if (!text) return
+    cs.scrollback += text
+    if (cs.scrollback.length > 250_000) {
+      cs.scrollback = cs.scrollback.slice(-250_000)
+    }
+  }
+
+  function codexBroadcast(cs, text, { historyOnly = false } = {}) {
+    appendCodexScrollback(cs, text)
+    if (historyOnly) return
+    const msg = JSON.stringify({ type: 'output', data: text })
+    for (const client of cs.clients) {
+      if (client.readyState === 1) try { client.send(msg) } catch {}
+    }
+  }
+
+  function codexBroadcastEvent(cs, event) {
+    cs.eventHistory.push(event)
+    if (cs.eventHistory.length > 500) cs.eventHistory.shift()
+    const msg = JSON.stringify({ type: 'codex-event', event })
+    for (const client of cs.clients) {
+      if (client.readyState === 1) try { client.send(msg) } catch {}
+    }
+  }
+
+  function getCodexDriver() {
+    return store.getSetting('codex_driver') === 'sdk' ? 'sdk' : 'pty'
+  }
+
   let dispatchClaudeTurn = null
   const sdkDriver = createClaudeSdkDriver({
     store,
     claudeBroadcast,
     rerunTurn: (...args) => dispatchClaudeTurn(...args),
+  })
+  let dispatchCodexTurn = null
+  const codexSdkDriver = createCodexSdkDriver({
+    store,
+    codexBroadcast,
+    codexBroadcastEvent,
+    rerunTurn: (...args) => dispatchCodexTurn(...args),
   })
 
   let _lastGcMs = 0
@@ -325,6 +368,10 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return runClaudeCliTurn(cs, userText, sessionKey, cwd)
   }
 
+  dispatchCodexTurn = (cs, userText, sessionKey, cwd) => (
+    codexSdkDriver.runCodexTurn(cs, userText, sessionKey, cwd)
+  )
+
   function attachClaudeSession(ws, { projectId, tabId, project }) {
     const sessionKey = sessionKeyFor(projectId, tabId)
     let cs = claudeSessions.get(sessionKey)
@@ -443,10 +490,100 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     })
   }
 
+  function attachCodexSession(ws, { projectId, tabId, project }) {
+    const sessionKey = codexSessionKeyFor(projectId, tabId)
+    let cs = codexSessions.get(sessionKey)
+
+    if (!cs) {
+      const tab = store.getTab ? store.getTab(projectId, tabId) : null
+      cs = {
+        codexThreadId: tab?.codexThreadId || null,
+        clients: new Set(),
+        scrollback: '',
+        eventHistory: [],
+        busy: false,
+        turnCount: 0,
+        cwd: project.cwd,
+        currentProc: null,
+        queue: [],
+        inputBuffer: '',
+      }
+      codexSessions.set(sessionKey, cs)
+    }
+
+    if (cs.scrollback && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'history', data: cs.scrollback })) } catch {}
+    }
+    for (const event of cs.eventHistory) {
+      if (ws.readyState === 1) {
+        try { ws.send(JSON.stringify({ type: 'codex-event', event })) } catch {}
+      }
+    }
+
+    cs.clients.add(ws)
+
+    const flushCodexInput = (buffer) => {
+      const text = buffer.trim()
+      if (!text) return
+      appendCodexScrollback(cs, `› ${text}\n`)
+      dispatchCodexTurn(cs, text, sessionKey, project.cwd)
+    }
+
+    const onMsg = (raw) => {
+      let msg
+      try { msg = JSON.parse(raw) } catch { return }
+
+      if (msg.type === 'input' && typeof msg.data === 'string') {
+        const data = msg.data
+        if (data === '\x03') {
+          if (cs.busy && cs.currentProc) {
+            try {
+              cs.currentProc._nanocodeInterrupted = true
+              cs.currentProc.kill('SIGINT')
+            } catch {}
+          }
+          return
+        }
+        if (data === '\x0c') {
+          cs.scrollback = ''
+          codexBroadcast(cs, '\x1b[2J\x1b[H')
+          return
+        }
+
+        cs.inputBuffer += data
+        const segments = cs.inputBuffer.split('\r')
+        cs.inputBuffer = segments.pop() || ''
+        for (const segment of segments) {
+          flushCodexInput(segment)
+        }
+      } else if (msg.type === 'ping') {
+        try { ws.send(JSON.stringify({ type: 'pong', id: msg.id })) } catch {}
+      }
+    }
+
+    ws.on('message', onMsg)
+    ws.on('close', () => {
+      ws.removeListener('message', onMsg)
+      cs.clients.delete(ws)
+    })
+  }
+
   function handleInterrupt(req, res) {
     const sessionKey = sessionKeyFor(req.params.id, req.params.tabId)
     const cs = claudeSessions.get(sessionKey)
-    if (!cs) return res.status(404).json({ error: 'no claude session' })
+    if (!cs) {
+      const codexSessionKey = codexSessionKeyFor(req.params.id, req.params.tabId)
+      const codexSession = codexSessions.get(codexSessionKey)
+      if (!codexSession) return res.status(404).json({ error: 'no claude or codex session' })
+      if (!codexSession.busy || !codexSession.currentProc) return res.json({ ok: false, reason: 'not busy' })
+      try {
+        codexSession.currentProc._nanocodeInterrupted = true
+        codexSession.currentProc.kill('SIGINT')
+        return res.json({ ok: true, force: false })
+      } catch (err) {
+        return res.status(500).json({ error: err.message })
+      }
+    }
     if (!cs.busy || !cs.currentProc) return res.json({ ok: false, reason: 'not busy' })
     const force = req.query.force === '1' || req.body?.force === true
     try {
@@ -532,6 +669,12 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         }
       }
 
+      if (tabType === 'codex' && !project.ssh_host && getCodexDriver() === 'sdk') {
+        console.log('[ws:attach] routing codex to sdk bridge')
+        attachCodexSession(ws, { projectId, tabId, project })
+        return
+      }
+
       const launcherFn = TAB_LAUNCHERS[tabType] || TAB_LAUNCHERS.bash
       const launchCmd = launcherFn()
 
@@ -581,6 +724,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
   return {
     claudeSessions,
+    codexSessions,
     handleInterrupt,
     handleReset,
     handleTerminalWs,
