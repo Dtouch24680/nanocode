@@ -1099,7 +1099,13 @@ export class ClaudeBlockRenderer {
     if (event.subtype === 'init') {
       const toolCount = Array.isArray(event.tools) ? event.tools.length : '?'
       const sessionId = event.session_id ? event.session_id.slice(0, 8) + '…' : '—'
-      this._addSystemBlock(`[Session ${sessionId} · ${toolCount} tools available]`)
+      // P1-2: show model, plugin count, fast_mode_state in addition to basic session info
+      const model = event.model ? ` · ${escHtml(event.model)}` : ''
+      const pluginCount = Array.isArray(event.plugins) && event.plugins.length > 0
+        ? ` · ${event.plugins.length} plugin${event.plugins.length !== 1 ? 's' : ''}`
+        : ''
+      const fastMode = event.fast_mode_state != null ? ` · fast:${escHtml(String(event.fast_mode_state))}` : ''
+      this._addSystemBlock(`[Session ${sessionId} · ${toolCount} tools available${model}${pluginCount}${fastMode}]`)
     } else if (event.subtype === 'hook_started' || event.subtype === 'hook_response') {
       // Default: suppress hook noise. Debug mode could show them.
       // No-op intentionally.
