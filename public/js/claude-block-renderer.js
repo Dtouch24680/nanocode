@@ -24,6 +24,18 @@
  *   {type:'pong', id}
  */
 
+import {
+  buildToolResultHtml,
+  createStandaloneToolResultBlock,
+  createSystemBlock,
+  createTextBlock,
+  createThinkingBlock,
+  createToolUseBlock,
+  createUserBlock,
+} from './claude-block-renderer/dom-render.js'
+import { ReplayCache } from './claude-block-renderer/replay-cache.js'
+import { pairToolResult, stampToolUseIdentity } from './claude-block-renderer/tool-result-pair.js'
+
 // ── WS constants ──────────────────────────────────────────────────────────────
 const WS_PATH = '/ws/terminal'
 const BACKOFF_BASE = 500
@@ -623,24 +635,7 @@ export class ClaudeBlockRenderer {
     // Track the in-progress subagent streaming activity block (separate from main live block)
     this._liveSubagentBlock = null
 
-    // UUID dedup set for subagent history-replay events (avoid double-render on reconnect)
-    this._seenSubagentUuids = new Set()
-
-    // Transport-level dedup set for jsonl history replay. The server annotates
-    // replayable events with a stable replay_id so reconnect-time ws replays can
-    // be skipped without client-side message-text heuristics.
-    this._replayedTransportKeys = new Set()
-
-    // ── Lazy history state ──────────────────────────────────────────────────────
-    // Full fetched event array from the server (never discarded).
-    // _historyRenderedStart is the index into this array of the earliest event
-    // that has been rendered. Rendering always proceeds from [_historyRenderedStart]
-    // upward. Events below that index are "older" and will be prepended on scroll.
-    this._historyEvents = []       // all events fetched from server
-    this._historyRenderedStart = 0 // index of oldest rendered event in _historyEvents
-    this._historyLoadingSentinel = null  // <div> at top, watched by IntersectionObserver
-    this._historyObserver = null   // IntersectionObserver for the sentinel
-    this._historyLoading = false   // prevent concurrent load-more
+    this._replayCache = new ReplayCache()
 
     // Thinking state: true when claude is processing a turn
     this._thinking = false
@@ -722,9 +717,7 @@ export class ClaudeBlockRenderer {
   clearAfterReset() {
     // Stop lazy-history observer
     this._removeHistorySentinel()
-    this._historyEvents = []
-    this._historyRenderedStart = 0
-    this._historyLoading = false
+    this._replayCache.resetAll()
 
     // Clear visible DOM
     this._scroll.innerHTML = ''
@@ -734,8 +727,6 @@ export class ClaudeBlockRenderer {
     if (this._liveToolBlocks) this._liveToolBlocks.clear()
 
     // Reset dedup sets so new session events are not silently skipped
-    this._replayedTransportKeys = new Set()
-    this._seenSubagentUuids = new Set()
     this._pendingNonces = new Set()
 
     // Exit thinking state
@@ -753,8 +744,9 @@ export class ClaudeBlockRenderer {
    * Text matches the Claude CLI: "[Request interrupted by user]".
    */
   showInterruptBlock() {
-    const article = this._makeBlock('cbr-block-system cbr-block-interrupted')
-    article.innerHTML = `<p class="cbr-system cbr-interrupted">[Request interrupted by user]</p>`
+    const article = createSystemBlock('[Request interrupted by user]', { escHtml })
+    article.className += ' cbr-block-interrupted'
+    article.querySelector('.cbr-system')?.classList?.add('cbr-interrupted')
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
@@ -786,10 +778,10 @@ export class ClaudeBlockRenderer {
    *     view doesn't jump when older content is prepended.
    *
    * De-dup strategy: ALL fetched events' transport replay keys are recorded in
-   * _replayedTransportKeys (even those not yet rendered). When the WS subsequently
+   * ReplayCache.transportKeys (even those not yet rendered). When the WS subsequently
    * replays cs.history the dedup guard will skip already-seen events regardless
    * of render status. When "load more" renders older events they are NOT re-added
-   * to _replayedTransportKeys
+   * to ReplayCache.transportKeys
    * (they're already there), so no issues arise.
    */
   async _fetchAndReplayHistory() {
@@ -810,13 +802,7 @@ export class ClaudeBlockRenderer {
     // This is important: WS cs.history replay must skip ALL of these events,
     // not just the ones we rendered. Otherwise older-but-not-yet-rendered events
     // would be rendered again when a WS reconnect replays cs.history.
-    for (const event of events) {
-      const replayKey = this._eventReplayKey(event)
-      if (replayKey) this._replayedTransportKeys.add(replayKey)
-    }
-
-    // Store the full event list. Rendering will happen in slices.
-    this._historyEvents = events
+    this._replayCache.rememberFetchedEvents(events)
 
     // ── Determine which slice to render initially ────────────────────────────
     // We render the last INITIAL_HISTORY_BLOCKS events (most recent), so the
@@ -824,7 +810,7 @@ export class ClaudeBlockRenderer {
     // that index is available for "load more" when scrolling up.
     const totalEvents = events.length
     const initialStart = Math.max(0, totalEvents - INITIAL_HISTORY_BLOCKS)
-    this._historyRenderedStart = initialStart
+    this._replayCache.historyRenderedStart = initialStart
 
     const hasOlderHistory = initialStart > 0
 
@@ -867,7 +853,7 @@ export class ClaudeBlockRenderer {
    * becomes visible (i.e. the user scrolled up to the top).
    */
   _insertHistorySentinel() {
-    if (this._historyLoadingSentinel) return  // already installed
+    if (this._replayCache.historyLoadingSentinel) return
 
     const sentinel = document.createElement('div')
     sentinel.className = 'cbr-history-sentinel'
@@ -876,7 +862,7 @@ export class ClaudeBlockRenderer {
     // history is loaded. Height=1px ensures IntersectionObserver fires reliably.
     sentinel.style.cssText = 'height:32px;display:flex;align-items:center;justify-content:center;color:var(--text-muted,#888);font-size:12px;opacity:0.6;'
     sentinel.textContent = '↑ scroll up to load older messages'
-    this._historyLoadingSentinel = sentinel
+    this._replayCache.historyLoadingSentinel = sentinel
 
     // Prepend: must be the very first child so it's at the top visually
     if (this._scroll.firstChild) {
@@ -888,7 +874,7 @@ export class ClaudeBlockRenderer {
     // IntersectionObserver: fires when sentinel enters the viewport.
     // threshold:0 = fires as soon as even 1px is visible.
     // We use rootMargin:0px so it only fires when truly in view.
-    this._historyObserver = new IntersectionObserver(
+    this._replayCache.historyObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
@@ -898,7 +884,7 @@ export class ClaudeBlockRenderer {
       },
       { root: this._scroll, threshold: 0, rootMargin: '0px' }
     )
-    this._historyObserver.observe(sentinel)
+    this._replayCache.historyObserver.observe(sentinel)
   }
 
   /**
@@ -907,19 +893,19 @@ export class ClaudeBlockRenderer {
    * Called by the IntersectionObserver when the sentinel scrolls into view.
    */
   _loadMoreHistory() {
-    if (this._historyLoading) return
-    if (this._historyRenderedStart <= 0) {
+    if (this._replayCache.historyLoading) return
+    if (this._replayCache.historyRenderedStart <= 0) {
       // Nothing more to load — remove sentinel and observer
       this._removeHistorySentinel()
       return
     }
 
-    this._historyLoading = true
+    this._replayCache.historyLoading = true
 
     // Determine the slice to prepend
-    const endIdx = this._historyRenderedStart
+    const endIdx = this._replayCache.historyRenderedStart
     const startIdx = Math.max(0, endIdx - HISTORY_PAGE_SIZE)
-    this._historyRenderedStart = startIdx
+    this._replayCache.historyRenderedStart = startIdx
 
     // Capture current scroll offset for position compensation
     const scrollEl = this._scroll
@@ -941,7 +927,7 @@ export class ClaudeBlockRenderer {
     this._replayMode = true
     try {
       for (let i = startIdx; i < endIdx; i++) {
-        this._handleEvent(this._historyEvents[i], { fromReplay: true })
+        this._handleEvent(this._replayCache.historyEvents[i], { fromReplay: true })
       }
     } finally {
       this._replayMode = false
@@ -954,7 +940,7 @@ export class ClaudeBlockRenderer {
     }
 
     // Find insertion point: just after the sentinel (index 1 if sentinel is [0])
-    const sentinel = this._historyLoadingSentinel
+    const sentinel = this._replayCache.historyLoadingSentinel
     const insertAfter = sentinel || null
 
     if (insertAfter && insertAfter.parentNode === scrollEl) {
@@ -983,7 +969,7 @@ export class ClaudeBlockRenderer {
     const addedHeight = scrollHeightAfter - scrollHeightBefore
     scrollEl.scrollTop = scrollTopBefore + addedHeight
 
-    this._historyLoading = false
+    this._replayCache.historyLoading = false
 
     // If we just rendered all remaining history, remove the sentinel
     if (startIdx <= 0) {
@@ -996,15 +982,15 @@ export class ClaudeBlockRenderer {
    * Called when all history has been loaded.
    */
   _removeHistorySentinel() {
-    if (this._historyObserver) {
-      this._historyObserver.disconnect()
-      this._historyObserver = null
+    if (this._replayCache.historyObserver) {
+      this._replayCache.historyObserver.disconnect()
+      this._replayCache.historyObserver = null
     }
-    if (this._historyLoadingSentinel) {
-      if (this._historyLoadingSentinel.parentNode) {
-        this._historyLoadingSentinel.parentNode.removeChild(this._historyLoadingSentinel)
+    if (this._replayCache.historyLoadingSentinel) {
+      if (this._replayCache.historyLoadingSentinel.parentNode) {
+        this._replayCache.historyLoadingSentinel.parentNode.removeChild(this._replayCache.historyLoadingSentinel)
       }
-      this._historyLoadingSentinel = null
+      this._replayCache.historyLoadingSentinel = null
     }
   }
 
@@ -1028,24 +1014,19 @@ export class ClaudeBlockRenderer {
       //   - WS reconnects also get a fresh jsonl replay so long sessions whose
       //     cs.history ring buffer rolled over don't lose older messages.
       //
-      // De-dup: _replayedTransportKeys is reset below so the fresh jsonl replay is not
+      // De-dup: ReplayCache.transportKeys is reset below so the fresh jsonl replay is not
       // blocked by the previous session's dedup set. WS cs.history events that
       // arrive AFTER the attach are deduplicated against the new set.
       if (isReconnect) {
         // Clean up lazy loading state before clearing the DOM
         this._removeHistorySentinel()
-        this._historyEvents = []
-        this._historyRenderedStart = 0
-        this._historyLoading = false
+        this._replayCache.resetAll()
 
         this._scroll.innerHTML = ''
         this._liveAssistantBlock = null
         this._liveAssistantId = null
         this._liveSubagentBlock = null
-        this._seenSubagentUuids = new Set()
         this._pendingNonces = new Set()
-        // Reset dedup sets so fresh jsonl events are not silently skipped.
-        this._replayedTransportKeys = new Set()
         this._thinking = false
         // Clear the "Connection lost" dedup block on successful reconnect (N34)
         this._connLostEl = null
@@ -1058,9 +1039,9 @@ export class ClaudeBlockRenderer {
       // IMPORTANT: send the attach message AFTER _fetchAndReplayHistory resolves.
       // The server replays cs.history immediately upon attach; if we sent attach
       // first, those WS events would race with the jsonl fetch and arrive before
-      // _replayedTransportKeys is populated — causing double-render of all events that
+      // ReplayCache.transportKeys is populated — causing double-render of all events that
       // exist in both cs.history and the jsonl. Awaiting the fetch first ensures
-      // _replayedTransportKeys is already filled so WS duplicates are deduped correctly.
+      // ReplayCache.transportKeys is already filled so WS duplicates are deduped correctly.
       this._fetchAndReplayHistory().finally(() => {
         // Always send attach — even if jsonl fetch failed (404, network error).
         // Without attach the session never starts and the tab hangs blank.
@@ -1152,8 +1133,7 @@ export class ClaudeBlockRenderer {
     // Dedup: if this event was already rendered via _fetchAndReplayHistory (jsonl replay),
     // skip it to avoid double-rendering when cs.history replays the same events.
     // opts.fromReplay=true means the call IS the initial jsonl replay -> skip the dedup check.
-    const replayKey = this._eventReplayKey(event)
-    if (!opts.fromReplay && replayKey && this._replayedTransportKeys.has(replayKey)) {
+    if (!opts.fromReplay && this._replayCache.hasTransportReplay(event)) {
       return
     }
 
@@ -1222,10 +1202,7 @@ export class ClaudeBlockRenderer {
     if (parentToolUseId) {
       // UUID dedup: on history replay the same subagent events come again; skip if seen
       const uuid = event.uuid
-      if (uuid) {
-        if (this._seenSubagentUuids.has(uuid)) return
-        this._seenSubagentUuids.add(uuid)
-      }
+      if (uuid && this._replayCache.markSubagentSeen(uuid)) return
       const isVisible = getSubagentActivityVisible()
       // Render subagent prompt (text) or tool_result inside the subagent context
       for (const c of content) {
@@ -1301,10 +1278,7 @@ export class ClaudeBlockRenderer {
     if (isSubagentAssistant) {
       // UUID dedup: history replay may resend subagent events; skip if already seen
       const uuid = event.uuid || (event.message && event.message.id)
-      if (uuid) {
-        if (this._seenSubagentUuids.has(uuid)) return
-        this._seenSubagentUuids.add(uuid)
-      }
+      if (uuid && this._replayCache.markSubagentSeen(uuid)) return
       // Finalize subagent live block (independent from main agent live block)
       if (this._liveSubagentBlock) {
         this._liveSubagentBlock.style.opacity = ''
@@ -1580,63 +1554,25 @@ export class ClaudeBlockRenderer {
 
   _renderThinkingPart(text) {
     if (!text) return
-    const charCount = text.length
-    const article = this._makeBlock('cbr-block-thinking')
-    article.dataset.collapsed = '1'
-    article.innerHTML =
-      `<div class="cbr-thinking-header" role="button" tabindex="0" aria-expanded="false">` +
-      `<svg class="cbr-thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
-      `<span class="cbr-thinking-label">Thinking</span>` +
-      `<span class="cbr-thinking-count">${charCount.toLocaleString()} chars</span>` +
-      `</div>` +
-      `<div class="cbr-thinking-body" hidden><pre class="cbr-pre cbr-thinking-pre">${escHtml(text)}</pre></div>`
-
-    const header = article.querySelector('.cbr-thinking-header')
-    const body = article.querySelector('.cbr-thinking-body')
-    const chevron = article.querySelector('.cbr-thinking-chevron')
-
-    const toggle = () => {
-      const collapsed = article.dataset.collapsed === '1'
-      if (collapsed) {
-        article.dataset.collapsed = '0'
-        body.hidden = false
-        header.setAttribute('aria-expanded', 'true')
-        chevron.style.transform = 'rotate(180deg)'
-      } else {
-        article.dataset.collapsed = '1'
-        body.hidden = true
-        header.setAttribute('aria-expanded', 'false')
-        chevron.style.transform = ''
-      }
-    }
-
-    header.addEventListener('click', toggle)
-    header.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } })
-
+    const article = createThinkingBlock(text, { escHtml })
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
 
   _renderTextPart(text, live) {
     if (!text.trim()) return
-    const article = this._makeBlock('cbr-block-text' + (live ? ' cbr-live' : ''))
-    let html
-    try {
-      html = renderMarkdown(text)
-    } catch {
-      html = `<p>${escHtml(text)}</p>`
-    }
-    article.innerHTML = `<div class="cbr-text">${html}</div>`
-    attachCopyHandlers(article)
-    // Feature 2 & 3: linkify paths and bare URLs in rendered text nodes
-    attachPathAndUrlHandlers(article)
+    const article = createTextBlock(text, {
+      live,
+      renderMarkdown,
+      escHtml,
+      attachCopyHandlers,
+      attachPathAndUrlHandlers,
+    })
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
 
   _renderToolUsePart(part, opts = {}) {
-    const toolName = escHtml(part.name || 'tool')
-
     // ── Subagent prompt detection ─────────────────────────────────────────────
     // The Agent tool (and TaskCreate in some versions) represents dispatching a
     // subagent. Its input.prompt is the message we send to the subagent.
@@ -1723,243 +1659,54 @@ export class ClaudeBlockRenderer {
       }
     }
 
-    const extraClass = isSubagentPrompt ? ' cbr-block-subagent-prompt' : ''
-    const activityClass = isSubagentActivity ? ' cbr-block-subagent-activity' : ''
-    const loadingClass = isLoading ? ' cbr-tool-loading-state' : ''
-    const article = this._makeBlock('cbr-block-tool' + extraClass + activityClass + loadingClass)
-
-    // Root A: stamp data-tool-id so tool_result can find this block by tool_use_id
-    if (part.id) {
-      article.setAttribute('data-tool-id', part.id)
-    }
-
     // P2-1: prepend tool icon if available (inline SVG, 16×16)
     const toolIcon = getToolIcon(part.name || '')
-
-    article.innerHTML =
-      `<div class="cbr-tool-card">` +
-      `<div class="cbr-tool-header">` +
-      (toolIcon ? `<span class="cbr-tool-icon-wrap">${toolIcon}</span>` : '') +
-      `<span class="cbr-tool-name">${toolName}</span>` +
-      (isSubagentTool ? `<span class="cbr-subagent-badge">subagent</span>` : '') +
-      (isLoading ? `<span class="cbr-tool-running-badge">running…</span>` : '') +
-      `<button class="cbr-tool-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
-      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
-      `</button>` +
-      `</div>` +
-      `<div class="cbr-tool-body">${inputHtml}</div>` +
-      `<div class="cbr-tool-output"></div>` +
-      `</div>`
-
-    // Apply subagent-prompt visibility
-    if (isSubagentPrompt && !getSubagentPromptVisible()) {
-      article.style.display = 'none'
-    }
-
-    // Root F: apply subagent-activity visibility (for tool blocks inside subagent internals)
-    if (isSubagentActivity && activityVisible === false) {
-      article.style.display = 'none'
-    }
-
-    // ── Unified 3-state cycle handler (R17 architecture refactor) ──────────────
-    // All Claude tool_use blocks share the same cycle: full → header → line → full
-    // (Q2 answer A). The header element is the primary tap/click target.
-    // In line mode, the entire article becomes the tap target (min-height 44px).
-    //
-    // Unified cycle function — works from any state:
-    //   full  → header   (fold to header-only)
-    //   header → line    (fold to thin stripe)
-    //   line  → full     (expand back to full)
-    //
-    // iOS Safari: touchend fires before the 300ms synthesized click. We use a
-    // _touchHandled flag to prevent double-firing. The flag is per-article so
-    // header-tap and article-tap don't interfere.
-    article.style.cursor = 'pointer'
-
-    let _touchHandled = false
-
-    const _onCycle = (e) => {
-      // Suppress if user taps a copy button or link
-      const target = e.target
-      if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
-      cycleToolFold(article)
-      e.stopPropagation()
-    }
-
-    // Attach to both header AND article so:
-    //   - In full/header state: header tap cycles (header is visible)
-    //   - In line state: article tap cycles (header is hidden, article = stripe)
-    //
-    // To avoid double-fire (article click fires after header click bubbles up),
-    // headerEl click calls stopPropagation, but we still need article fallback
-    // for the line-state where the header is hidden.
-    const headerEl = article.querySelector('.cbr-tool-header')
-
-    // Shared touch/click listeners for the header element
-    if (headerEl) {
-      headerEl.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
-      headerEl.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
-      headerEl.addEventListener('touchend', (e) => {
-        if (_touchHandled) return
-        _touchHandled = true
-        _onCycle(e)
-        e.preventDefault()
-      }, { passive: false })
-      headerEl.addEventListener('click', (e) => {
-        if (_touchHandled) { _touchHandled = false; return }
-        _onCycle(e)
-      })
-    }
-
-    // Article-level listeners (primary tap target in line state)
-    article.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
-    article.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
-    article.addEventListener('touchend', (e) => {
-      if (_touchHandled) return
-      // Only handle at article level when in line state (header invisible)
-      // In full/header state the header's own touchend already handled it
-      const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-      if (cur !== 'line') return
-      _touchHandled = true
-      _onCycle(e)
-      e.preventDefault()
-    }, { passive: false })
-    article.addEventListener('click', (e) => {
-      if (_touchHandled) { _touchHandled = false; return }
-      const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-      if (cur !== 'line') return  // header already handled non-line states
-      _onCycle(e)
+    const article = createToolUseBlock({
+      part,
+      inputHtml,
+      toolIcon,
+      isLoading,
+      isSubagentTool,
+      isSubagentPrompt,
+      isSubagentActivity,
+      activityVisible,
+      getSubagentPromptVisible,
+      applyToolFold,
+      getToolFoldLevel,
+      cycleToolFold,
+      attachCopyHandlers,
+      escHtml,
     })
-    // Subagent-prompt blocks: always start at 'full' so the prompt text is
-    // visible even when the global tool-fold level is 'header' or 'line'.
-    // Without this the user enables the toggle and the block appears but the
-    // body is folded away by the global fold CSS — confusingly blank.
-    if (isSubagentPrompt) {
-      article.setAttribute('data-fold', 'full')
-    } else {
-      applyToolFold(article)
-    }
-    attachCopyHandlers(article)
+    stampToolUseIdentity(article, part.id)
     this._scroll.appendChild(article)
     this._scrollBottom()
     return article
   }
 
   _renderToolResultPart(part, opts = {}) {
-    // tool_result: show output, paired with the originating tool_use block if possible
-    const content = part.content
-    const isError = part.is_error === true  // Root C: read is_error flag
-    // Root F: for subagent activity tool results, fallback block should respect visibility toggle
     const isSubagentActivity = opts.subagentActivity === true
     const activityVisible = opts.visible
+    const { resultHtml, isError } = buildToolResultHtml(part, { escHtml })
 
-    // Root B: build display text; handle string, array (text+image), and empty content
-    let text = ''
-    let hasImage = false
-    // P2-4: collect image items for inline rendering
-    const imageItems = []
-    if (typeof content === 'string') {
-      text = content
-    } else if (Array.isArray(content)) {
-      const textParts = content.filter((c) => c.type === 'text').map((c) => c.text)
-      text = textParts.join('\n')
-      for (const c of content) {
-        if (c.type === 'image') {
-          hasImage = true
-          imageItems.push(c)
-        }
-      }
-    }
-    // Root B: do NOT silently return on empty/non-text content — always show something
-    const displayText = text.trim()
-      ? text
-      : hasImage
-        ? ''
-        : content == null
-          ? '(no result)'
-          : '(empty result)'
+    const paired = pairToolResult({
+      scrollRoot: this._scroll,
+      toolUseId: part.tool_use_id,
+      resultHtml,
+      isError,
+      attachCopyHandlers,
+    })
 
-    const truncated = displayText.length > 2000
-    const displaySlice = truncated ? displayText.slice(0, 2000) + '\n…' : displayText
+    if (paired) return
 
-    // Root C: add error class when is_error is true
-    const errorClass = isError ? ' cbr-tool-result--error' : ''
-
-    // P2-4: build image HTML for each image item
-    let imageHtml = ''
-    for (const img of imageItems) {
-      const src = img.source
-      if (src && src.type === 'base64' && src.media_type && src.data) {
-        imageHtml += `<img class="cbr-inline-img" src="data:${escHtml(src.media_type)};base64,${src.data}" alt="tool image result" loading="lazy">`
-      } else if (src && src.type === 'url' && src.url) {
-        imageHtml += `<img class="cbr-inline-img" src="${escHtml(src.url)}" alt="tool image result" loading="lazy">`
-      }
-    }
-
-    const resultHtml =
-      `<div class="cbr-tool-result${errorClass}">` +
-      (isError ? `<div class="cbr-tool-result-error-label">tool error</div>` : '') +
-      (displaySlice ? `<pre class="cbr-pre cbr-tool-result-pre">${escHtml(displaySlice)}</pre>` : '') +
-      (imageHtml ? `<div class="cbr-inline-img-wrap">${imageHtml}</div>` : '') +
-      `</div>`
-
-    // Root A: try to pair with the originating tool_use block by tool_use_id
-    const toolUseId = part.tool_use_id
-    let paired = false
-    if (toolUseId) {
-      const toolBlock = this._scroll.querySelector(`[data-tool-id="${CSS.escape(toolUseId)}"]`)
-      if (toolBlock) {
-        // Remove loading state badge/class
-        toolBlock.classList.remove('cbr-tool-loading-state')
-        const runningBadge = toolBlock.querySelector('.cbr-tool-running-badge')
-        if (runningBadge) runningBadge.remove()
-
-        // Inject result into the .cbr-tool-output section of the existing tool block
-        const outputDiv = toolBlock.querySelector('.cbr-tool-output')
-        if (outputDiv) {
-          outputDiv.innerHTML = resultHtml
-          // No inline display override needed — CSS controls visibility via data-fold
-          // Add error border to the whole tool block if is_error
-          if (isError) toolBlock.classList.add('cbr-tool-block--error')
-          attachCopyHandlers(outputDiv)
-          paired = true
-        }
-      }
-    }
-
-    // Fallback (Root A): if no matching tool block, render as standalone result block
-    if (!paired) {
-      const extraClass = isSubagentActivity ? ' cbr-block-subagent-activity' : ''
-      const article = this._makeBlock('cbr-block-tool-result' + extraClass)
-      if (isSubagentActivity && activityVisible === false) {
-        article.style.display = 'none'
-      }
-      article.innerHTML = resultHtml
-      applyToolFold(article)
-
-      // R17: attach 3-state cycle handler to standalone result blocks
-      article.style.cursor = 'pointer'
-      let _resultTouchHandled = false
-      const _onResultCycle = (e) => {
-        if (e.target.closest('.cbr-copy-btn') || e.target.closest('a') || e.target.tagName === 'A') return
-        cycleToolFold(article)
-      }
-      article.addEventListener('touchstart', () => { _resultTouchHandled = false }, { passive: true })
-      article.addEventListener('touchmove', () => { _resultTouchHandled = true }, { passive: true })
-      article.addEventListener('touchend', (e) => {
-        if (_resultTouchHandled) return
-        _resultTouchHandled = true
-        _onResultCycle(e)
-        e.preventDefault()
-      }, { passive: false })
-      article.addEventListener('click', (e) => {
-        if (_resultTouchHandled) { _resultTouchHandled = false; return }
-        _onResultCycle(e)
-      })
-
-      this._scroll.appendChild(article)
-      this._scrollBottom()
-    }
+    const article = createStandaloneToolResultBlock({
+      resultHtml,
+      isSubagentActivity,
+      activityVisible,
+      applyToolFold,
+      cycleToolFold,
+    })
+    this._scroll.appendChild(article)
+    this._scrollBottom()
   }
 
   // ── Utility blocks ─────────────────────────────────────────────────────────
@@ -1971,23 +1718,16 @@ export class ClaudeBlockRenderer {
   }
 
   _addSystemBlock(msg) {
-    const article = this._makeBlock('cbr-block-system')
-    article.innerHTML = `<p class="cbr-system">${escHtml(msg)}</p>`
+    const article = createSystemBlock(msg, { escHtml })
     this._scroll.appendChild(article)
     this._scrollBottom()
     return article
   }
 
   _appendUserBlock(text) {
-    const article = this._makeBlock('cbr-block-prompt cbr-user-prompt')
-    article.innerHTML = `<p class="cbr-prompt-text">&#10095; ${escHtml(text)}</p>`
-    attachPathAndUrlHandlers(article)
+    const article = createUserBlock(text, { escHtml, attachPathAndUrlHandlers })
     this._scroll.appendChild(article)
     this._scrollBottom()
-  }
-
-  _eventReplayKey(event) {
-    return event?.replay_id || event?.uuid || null
   }
 
   _scrollBottom() {

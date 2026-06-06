@@ -107,7 +107,7 @@ function makeRenderer() {
 describe('ClaudeBlockRenderer transport replay dedup', () => {
   it('skips a replayed user event when replay_id matches even if the uuid differs', () => {
     const renderer = makeRenderer()
-    renderer._replayedTransportKeys.add('user:abc:1')
+    renderer._replayCache.transportKeys.add('user:abc:1')
 
     renderer._handleEvent({
       type: 'user',
@@ -121,7 +121,7 @@ describe('ClaudeBlockRenderer transport replay dedup', () => {
 
   it('renders repeated user text when replay_id differs', () => {
     const renderer = makeRenderer()
-    renderer._replayedTransportKeys.add('user:abc:1')
+    renderer._replayCache.transportKeys.add('user:abc:1')
 
     renderer._handleEvent({
       type: 'user',
