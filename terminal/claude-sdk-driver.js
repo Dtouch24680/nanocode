@@ -1,8 +1,31 @@
 import { query as defaultQuery } from '@anthropic-ai/claude-agent-sdk'
 
-function mapPermissionMode(raw) {
-  if (raw === 'accept-edits') return 'acceptEdits'
-  if (raw === 'auto') return 'auto'
+// Resolve the SDK permissionMode from nanocode settings.
+//
+// The UI persists the three-tier `global_permission` setting (same one the CLI
+// driver reads at claude-session-controller.js): full-auto / auto-edits / ask.
+// We map each tier to the matching SDK PermissionMode so SDK behaviour is 1:1
+// with the CLI:
+//   full-auto  → bypassPermissions (CLI: --dangerously-skip-permissions)
+//   auto-edits → acceptEdits       (CLI: --permission-mode acceptEdits)
+//   ask        → default           (CLI: --permission-mode default)
+//
+// Legacy `claude_permission_mode` (bypass / accept-edits / auto) is still
+// honoured for backward compat if it was ever set, but the UI no longer writes
+// it. global_permission takes precedence.
+function resolvePermissionMode(store) {
+  const globalPerm = store.getSetting('global_permission')
+  if (globalPerm === 'auto-edits') return 'acceptEdits'
+  if (globalPerm === 'ask') return 'default'
+  if (globalPerm === 'full-auto') return 'bypassPermissions'
+
+  // Fallback: legacy claude_permission_mode (kept for old stores).
+  const legacy = store.getSetting('claude_permission_mode')
+  if (legacy === 'accept-edits') return 'acceptEdits'
+  if (legacy === 'auto') return 'auto'
+  if (legacy === 'default' || legacy === 'ask') return 'default'
+
+  // Default matches CLI default (global_permission defaults to full-auto).
   return 'bypassPermissions'
 }
 
@@ -55,9 +78,8 @@ export function createClaudeSdkDriver({
 
     const claudeModel = store.getSetting('claude_model') || ''
     const claudeEffort = store.getSetting('claude_effort') || ''
-    const permMode = store.getSetting('claude_permission_mode') || 'bypass'
     const sessionFallback = store.getSetting('claude_session_fallback') || 'continue'
-    const sdkPermissionMode = mapPermissionMode(permMode)
+    const sdkPermissionMode = resolvePermissionMode(store)
     // ── Three-layer session fallback (SDK path) ─────────────────────────────
     // Layer 1: not first turn → resume
     // Layer 2: first turn with explicitSessionId → also resume
