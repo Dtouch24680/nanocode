@@ -67,9 +67,22 @@ let _unreadCount = 0
 let _originalTitle = document.title
 let _faviconCanvas = null
 let _faviconOriginalHref = null
+let _faviconBaseImage = null   // preloaded original favicon as Image
 
 function _getFaviconEl() {
   return document.querySelector('link[rel~="icon"]')
+}
+
+// Preload the original favicon SVG as an Image for use in canvas drawImage.
+// Called once at startup; result stored in _faviconBaseImage.
+function _preloadFaviconImage() {
+  const favEl = _getFaviconEl()
+  if (!favEl) return
+  _faviconOriginalHref = favEl.href
+  const img = new Image()
+  img.onload = () => { _faviconBaseImage = img }
+  // Use the href directly — same-origin SVG, no CORS issue
+  img.src = _faviconOriginalHref
 }
 
 function _drawFaviconDot() {
@@ -80,22 +93,40 @@ function _drawFaviconDot() {
   }
   const ctx = _faviconCanvas.getContext('2d')
   ctx.clearRect(0, 0, 32, 32)
-  // Draw base favicon as a colored square (since SVG favicon can't be drawn via img cors easily)
-  ctx.fillStyle = '#8cc63f'
-  ctx.beginPath()
-  ctx.roundRect(2, 2, 28, 28, 6)
-  ctx.fill()
-  // Red dot
+
+  if (_faviconBaseImage && _faviconBaseImage.complete) {
+    // Draw original logo as the base
+    ctx.drawImage(_faviconBaseImage, 0, 0, 32, 32)
+  } else {
+    // Fallback: recreate original favicon in canvas if image not ready yet
+    ctx.fillStyle = '#08090a'
+    ctx.beginPath()
+    ctx.roundRect(0, 0, 32, 32, 6)
+    ctx.fill()
+    ctx.fillStyle = '#8cc63f'
+    ctx.font = 'bold 20px monospace'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText('>_', 4, 23)
+  }
+
+  // Small red badge in top-right corner
+  const badgeR = 6
+  const badgeX = 32 - badgeR - 1
+  const badgeY = badgeR + 1
   ctx.fillStyle = '#e53935'
   ctx.beginPath()
-  ctx.arc(24, 8, 7, 0, Math.PI * 2)
+  ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2)
   ctx.fill()
-  // Count text
-  ctx.fillStyle = '#fff'
-  ctx.font = 'bold 10px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(_unreadCount > 9 ? '9+' : String(_unreadCount), 24, 8)
+  // Count text inside badge
+  if (_unreadCount > 0) {
+    ctx.fillStyle = '#fff'
+    ctx.font = 'bold 8px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(_unreadCount > 9 ? '9+' : String(_unreadCount), badgeX, badgeY)
+  }
+
   const favEl = _getFaviconEl()
   if (favEl) {
     if (!_faviconOriginalHref) _faviconOriginalHref = favEl.href
@@ -1196,6 +1227,7 @@ async function init() {
   // i18n must run first
   initI18n()
   _updateMuteBtn()
+  _preloadFaviconImage()
 
   initThemeToggle()
   initNotifyWs()

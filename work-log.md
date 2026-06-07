@@ -1,5 +1,14 @@
 # Work Log
 
+## 2026-06-07 [light mode 完整配色]
+- 任务：实现 light mode 完整配色，修复切换机制 bug，覆盖所有面板
+- 机制修复：theme.js applyTheme() 改用 setAttribute('data-theme','light') 替代 removeAttribute，[data-theme="light"] CSS 规则正确生效
+- CSS 变量：style.css 新增 [data-theme="light"] 显式块，镜像 :root 浅色值，确保属性选择器优先级对称
+- 覆盖组件：settings-panel、agent-drawer、TTS 按钮、service 健康状态、diff colors、subagent badge — 全部从硬编码暗色 fallback（rgba(255,255,255,0.x)）改为 var(--token) 覆盖
+- 测试：新增 server/tests/theme-regression.test.js，验证 setAttribute 机制/默认 dark/CSS 选择器；全 69 tests pass，0 fail
+- 截图验收：landing/project-picker/workspace/settings/agent-drawer/mobile 均呈浅色；dark mode 零回归（settings-panel 暗色确认）
+- commit: d744205，push fork zhining/nanocode-selfresume-bugs
+
 ## 2026-06-07 13:40 [修复桌面端 busy 发消息不入队/滚走]
 - 任务：桌面端 Claude busy 时发消息，队列框不显示、消息直接滚走（期望对齐手机端/CLI：忙时入队列框留着）。分支 zhining/nanocode-selfresume-bugs。
 - 复现（桌面视口 1280x860，Playwright 真模拟键盘/事件链）：
@@ -346,3 +355,12 @@ commit 03beb00
 - 测试：npm test 55/55 pass，3001 200 OK
 - 产出：commit bc197e3, 8431296；push fork zhining/nanocode-selfresume-bugs
 - 截图：/tmp/before_workspace_390.png, /tmp/after_workspace_390.png, /tmp/final_mobile_390.png, /tmp/final_desktop.png
+
+## 2026-06-07 [Favicon 红点角标修复]
+- 任务：修复 _drawFaviconDot() 把 favicon 换成纯绿方块的 bug，改为原 logo + 右上角小红点角标
+- 根因：原实现用 fillRect(#8cc63f) 画了绿方块当底，没有 drawImage 原 SVG
+- 操作：public/js/app.js - 新增 _preloadFaviconImage()，在 init() 里调用；_drawFaviconDot() 改为 drawImage(原SVG) + 右上角 r=6 红圆点+数字
+- 原 favicon：SVG（黑底圆角矩形 + 绿色 >_ 文字），`/favicon.svg`
+- 验证：browse 渲染测试截图 /tmp/favicon-badge-test.png，左=logo+badge(3) 右=原始logo，SVG drawImage 成功
+- 测试：npm test 71/71 pass，run-favicon.log 干净，curl 3001/api/health 200
+- 截图：/tmp/favicon-badge-test.png
