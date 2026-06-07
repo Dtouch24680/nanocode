@@ -2165,12 +2165,12 @@ body.workspace-active .landing-overlay { display: none; }
   background: var(--bg-tertiary);
   color: var(--text);
 }
-[data-theme="light"] .tts-replay-btn {
+[data-theme="light"] .compact-ctx-btn {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
-[data-theme="light"] .tts-replay-btn:hover {
+[data-theme="light"] .compact-ctx-btn:hover {
   background: var(--bg-tertiary);
   color: var(--text);
 }
@@ -2366,7 +2366,7 @@ body.workspace-active .landing-overlay { display: none; }
   letter-spacing: 0.05em;
 }
 
-.tts-replay-btn {
+.compact-ctx-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2380,8 +2380,8 @@ body.workspace-active .landing-overlay { display: none; }
   flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
-.tts-replay-btn.disabled { opacity: 0.3; cursor: default; }
-.tts-replay-btn:hover { background: var(--surface-3, rgba(255,255,255,0.1)); color: var(--fg, #fff); }
+.compact-ctx-btn.disabled { opacity: 0.3; cursor: default; }
+.compact-ctx-btn:hover { background: var(--surface-3, rgba(255,255,255,0.1)); color: var(--fg, #fff); }
 
 /* ── Mobile: 统一 input-row 三键尺寸/圆角，touch-toolbar 等宽网格 ── */
 @media (max-width: 480px) {
@@ -2389,7 +2389,7 @@ body.workspace-active .landing-overlay { display: none; }
      改为 38px 与 textarea 一致，垂直居中靠 input-row align-items:center 保证。
      宽度保持 44px 维持触控目标。 */
   .tts-btn,
-  .tts-replay-btn,
+  .compact-ctx-btn,
   .send-btn {
     width: 44px;
     height: 38px;
@@ -3406,6 +3406,41 @@ body.workspace-active .landing-overlay { display: none; }
   font-style: italic;
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+/* ── Compact progress ────────────────────────────────────────────── */
+
+.cbr-compact-progress .cbr-system {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-style: italic;
+  color: var(--fg-2, rgba(255,255,255,0.55));
+}
+
+.cbr-compact-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: var(--fg-2, rgba(255,255,255,0.55));
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: cbr-spin 0.8s linear infinite;
+}
+
+@keyframes cbr-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cbr-compact-done {
+  font-style: normal;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.cbr-compact-label.cbr-compact-failed {
+  color: var(--text-error, #f44336);
 }
 
 /* ── Interrupted block (CLI-style: "[Request interrupted by user]") ─ */

@@ -1056,6 +1056,15 @@ function setupChatInput() {
 
   sendBtn.addEventListener('click', sendInput)
 
+  // ── Compact context button ────────────────────────────────────────────────
+  // Sends /compact to the active pane (works for both claude and codex tabs).
+  const compactCtxBtn = document.getElementById('compact-ctx-btn')
+  if (compactCtxBtn) {
+    compactCtxBtn.addEventListener('click', () => {
+      if (activePane) activePane.sendInputWithEcho('/compact')
+    })
+  }
+
   // ── IME composition guard ─────────────────────────────────────────────────
   // Track whether the user is mid-composition (e.g. Chinese/Japanese IME).
   // Some browsers (Chrome on Windows/Mac) set e.isComposing=true during

@@ -635,6 +635,9 @@ export class ClaudeBlockRenderer {
     // Track the "Connection lost" system block for in-place update (N34 dedup)
     this._connLostEl = null
 
+    // Track the in-progress compact block for in-place update
+    this._compactProgressEl = null
+
     // Track the in-progress assistant message block (partial_message updates)
     this._liveAssistantBlock = null
     this._liveAssistantId = null  // message id if available
@@ -1481,6 +1484,52 @@ export class ClaudeBlockRenderer {
   }
 
   _handleSystem(event) {
+    // ── Compact progress feedback ────────────────────────────────────────────
+    // SDK emits: status{status:'compacting'} → compact_boundary → status{status:null, compact_result}
+    if (event.subtype === 'status') {
+      if (event.status === 'compacting') {
+        // Show an in-progress "Compacting context…" block
+        const article = document.createElement('article')
+        article.className = 'cbr-block cbr-block-system cbr-compact-progress'
+        article.innerHTML = `<p class="cbr-system cbr-compact-label"><span class="cbr-compact-spinner"></span>Compacting context…</p>`
+        this._scroll.appendChild(article)
+        this._compactProgressEl = article
+        this._scrollBottom()
+        return
+      }
+      if (event.status === null && event.compact_result != null) {
+        // Compact finished: update the progress block to show result
+        if (this._compactProgressEl) {
+          const success = event.compact_result === 'success'
+          const label = success ? 'Context compacted' : `Compact failed: ${event.compact_error || 'unknown error'}`
+          const p = this._compactProgressEl.querySelector('p')
+          if (p) {
+            p.innerHTML = `<span class="cbr-compact-done">${success ? '✓' : '✗'}</span>${escHtml(label)}`
+            p.classList.toggle('cbr-compact-failed', !success)
+          }
+          this._compactProgressEl.classList.remove('cbr-compact-progress')
+          this._compactProgressEl = null
+        }
+        return
+      }
+      // Other status values (e.g. 'requesting') — ignore silently
+      return
+    }
+    if (event.subtype === 'compact_boundary') {
+      // compact_boundary arrives after the summary is written but before status{null}.
+      // Update progress block text to "Context compacted" eagerly.
+      if (this._compactProgressEl) {
+        const meta = event.compact_metadata || {}
+        const postTok = meta.post_tokens ? ` (${meta.post_tokens.toLocaleString()} tokens)` : ''
+        const p = this._compactProgressEl.querySelector('p')
+        if (p) {
+          p.innerHTML = `<span class="cbr-compact-done">✓</span>${escHtml('Context compacted' + postTok)}`
+        }
+        this._compactProgressEl.classList.remove('cbr-compact-progress')
+        this._compactProgressEl = null
+      }
+      return
+    }
     if (event.subtype === 'init') {
       const toolCount = Array.isArray(event.tools) ? event.tools.length : '?'
       const sessionId = event.session_id ? event.session_id.slice(0, 8) + '…' : '—'

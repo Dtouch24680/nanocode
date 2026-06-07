@@ -19,7 +19,6 @@ let ttsLastText = ''
 let ttsFirstCheck = true
 
 const ttsLogPanel = document.getElementById('tts-log-panel')
-const ttsReplayBtn = document.getElementById('tts-replay-btn')
 const ttsCheckbox = document.getElementById('tts-enabled')
 const ttsStreamingCheckbox = document.getElementById('tts-streaming')
 const ttsStatusDot = document.getElementById('tts-status-dot')
@@ -170,7 +169,6 @@ function simpleHash(s) {
 
 function setLastTtsText(text) {
   ttsLastText = text
-  if (ttsReplayBtn) ttsReplayBtn.classList.remove('disabled')
 }
 
 function enqueueTts(text) {
@@ -244,17 +242,6 @@ async function checkTtsStatus() {
 // Listen for terminal output via custom event
 document.addEventListener('nanocode:terminal-output', (e) => onTerminalOutput(e.detail))
 
-if (ttsReplayBtn) {
-  ttsReplayBtn.classList.add('disabled')
-  ttsReplayBtn.addEventListener('click', () => {
-    if (!ttsLastText) { ttsLog('Replay: nothing to replay', 'warn'); return }
-    ttsLog('Replay: ' + ttsLastText.slice(0, 50))
-    unlockAudio()
-    stopTts()
-    ttsQueue.push(ttsLastText)
-    playNextTts()
-  })
-}
 if (ttsCheckbox) ttsCheckbox.addEventListener('change', () => setTtsEnabled(ttsCheckbox.checked))
 if (ttsStreamingCheckbox) ttsStreamingCheckbox.addEventListener('change', () => {
   ttsStreaming = ttsStreamingCheckbox.checked
