@@ -1859,10 +1859,13 @@ body.workspace-active .landing-overlay { display: none; }
     height: calc(var(--vvh, 100dvh) - 48px);
   }
 
+  /* 问题3修复: Terminal/Explorer 两 tab — 中间 gap 与左右 padding 均衡。
+     原 padding:8px 12px → 改为 6px 8px：左右缩小使两键间距与边缘留白对称；
+     按钮高度 32px 上下 padding 各 6px → 总行高 44px，上下对称。 */
   .mobile-pane-switch {
     display: flex;
-    gap: 4px;
-    padding: var(--s-2) var(--s-3);
+    gap: 8px;
+    padding: 6px 8px;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border);
     flex-shrink: 0;
@@ -1877,6 +1880,9 @@ body.workspace-active .landing-overlay { display: none; }
     font-weight: 500;
     border-radius: var(--radius-sm);
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .mobile-pane-btn.active {
     background: var(--primary-subtle);
@@ -2058,18 +2064,20 @@ body.workspace-active .landing-overlay { display: none; }
 
 /* ── Mobile: 统一 input-row 三键尺寸/圆角，touch-toolbar 等宽网格 ── */
 @media (max-width: 480px) {
-  /* 三键统一：44×44、同一圆角，视觉成体系 */
+  /* 问题1修复: 三键高度与输入框 (38px) 协调——44px 超过输入框导致按钮顶上沿突出。
+     改为 38px 与 textarea 一致，垂直居中靠 input-row align-items:center 保证。
+     宽度保持 44px 维持触控目标。 */
   .tts-btn,
   .tts-replay-btn,
   .send-btn {
     width: 44px;
-    height: 44px;
+    height: 38px;
     border-radius: var(--radius-md);   /* 8px — 与输入框圆角一致 */
     flex-shrink: 0;
   }
   .claude-stop-btn {
     min-width: 44px;
-    height: 44px;
+    height: 38px;
     border-radius: var(--radius-md);
   }
 
@@ -2812,6 +2820,11 @@ body.workspace-active .landing-overlay { display: none; }
   gap: 2px;
   background: var(--bg-secondary);
 }
+/* 问题2修复: 空队列托盘隐藏——避免在 touch-toolbar 和 input-row 之间
+   产生一条无意义的黑条（空 div 仍有 padding + bg-secondary 背景）。 */
+.claude-queue-tray:empty {
+  display: none;
+}
 .cq-item {
   display: flex;
   align-items: center;
@@ -3165,9 +3178,13 @@ body.workspace-active .landing-overlay { display: none; }
   flex-direction: column;
 }
 
+/* 问题4修复: tool block header — icon 与 tool-name 之间缺少 gap，
+   造成图标和文字紧贴/错位。加 gap: var(--s-2) (8px) 使间距一致。
+   align-items: center 已有；icon/name/badge 都随 flex 基线居中。 */
 .cbr-tool-header {
   display: flex;
   align-items: center;
+  gap: var(--s-2);
   padding: var(--s-1) var(--s-3);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
@@ -3182,10 +3199,14 @@ body.workspace-active .landing-overlay { display: none; }
   background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
 }
 
-/* P2-1: tool icon wrapper */
+/* P2-1: tool icon wrapper — inline-flex + align-items:center 确保 SVG
+   在行内垂直居中，与 cbr-tool-name 基线对齐。width/height 固定避免压缩。 */
 .cbr-tool-icon-wrap {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   opacity: 0.7;
 }
@@ -3195,10 +3216,13 @@ body.workspace-active .landing-overlay { display: none; }
   color: var(--text-secondary);
 }
 
+/* 问题5修复: tool-name line-height 统一为 1，与 icon 16px 高对齐，
+   避免 line-height 默认值 (~1.4) 导致的 name 比 icon 高度多出错位。 */
 .cbr-tool-name {
   font-family: var(--font-mono);
   font-size: 0.8rem;
   font-weight: 600;
+  line-height: 1;
   color: var(--primary);
   /* Prevent very long tool names (e.g. mcp__ prefixed names) from breaking flex layout */
   min-width: 0;
@@ -3470,12 +3494,15 @@ body.workspace-active .landing-overlay { display: none; }
 }
 
 /* ── Tool loading/running state (Root D: partial streaming) ──────── */
+/* 问题4修复: running badge 不用 margin-left，gap 已处理间距。
+   vertical-align 改为 middle 使 badge 与 name 基线对齐。 */
 .cbr-tool-running-badge {
   font-family: var(--font-mono);
   font-size: 0.7rem;
+  line-height: 1;
   color: var(--text-muted);
-  margin-left: var(--s-2);
   opacity: 0.7;
+  flex-shrink: 0;
   animation: cbr-pulse 1.5s ease-in-out infinite;
 }
 
