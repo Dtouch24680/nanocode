@@ -46,7 +46,7 @@ describe('claude sdk driver', () => {
       getSetting(key) {
         if (key === 'claude_model') return 'claude-opus-4-8'
         if (key === 'claude_effort') return 'high'
-        if (key === 'claude_permission_mode') return 'bypass'
+        if (key === 'global_permission') return 'full-auto'
         return null
       },
       updateTabMetadata(projectId, tabId, patch) {
@@ -90,6 +90,8 @@ describe('claude sdk driver', () => {
     assert.equal(calls[0].options.allowDangerouslySkipPermissions, true)
     assert.equal(calls[0].options.includePartialMessages, true)
     assert.equal(calls[0].options.forwardSubagentText, true)
+    assert.equal(calls[0].options.model, 'claude-opus-4-8')
+    assert.equal(calls[0].options.effort, 'high')
     assert.equal(cs.claudeSessionId, 'sdk-session')
     assert.deepEqual(metadataUpdates, [
       { projectId: 'project-1', tabId: 'tab-9', patch: { claudeSessionId: 'sdk-session' } },
@@ -229,5 +231,67 @@ describe('claude sdk driver', () => {
       broadcasted.some((event) => event.type === 'system' && event.subtype === 'info' && /Resuming with/.test(event.text || '')),
       true
     )
+  })
+
+  // ── Permission mapping: global_permission → SDK permissionMode ──────────────
+  // Verifies the SDK driver maps all three nanocode permission tiers the same
+  // way the CLI driver does, and that allowDangerouslySkipPermissions only fires
+  // on the bypass tier. Also covers the legacy claude_permission_mode fallback.
+  async function runWithPermission(settings) {
+    const calls = []
+    const store = {
+      getSetting(key) { return settings[key] ?? null },
+      updateTabMetadata() {},
+    }
+    const queryImpl = makeQueryFromPlan([
+      {
+        events: [
+          { type: 'system', subtype: 'init', session_id: 'sdk-session', tools: [] },
+          { type: 'result', subtype: 'success', session_id: 'sdk-session', result: 'OK' },
+        ],
+      },
+    ], calls)
+    const driver = createClaudeSdkDriver({
+      store,
+      claudeBroadcast: () => {},
+      rerunTurn: () => {},
+      queryImpl,
+    })
+    const cs = {
+      claudeSessionId: 's', busy: false, turnCount: 0,
+      queue: [], history: [], clients: new Set(),
+    }
+    await driver.runSdkTurn(cs, 'hi', 'p:claude:t', '/tmp')
+    return calls[0].options
+  }
+
+  it('maps global_permission=full-auto → bypassPermissions + dangerous skip', async () => {
+    const opts = await runWithPermission({ global_permission: 'full-auto' })
+    assert.equal(opts.permissionMode, 'bypassPermissions')
+    assert.equal(opts.allowDangerouslySkipPermissions, true)
+  })
+
+  it('maps global_permission=auto-edits → acceptEdits (no dangerous skip)', async () => {
+    const opts = await runWithPermission({ global_permission: 'auto-edits' })
+    assert.equal(opts.permissionMode, 'acceptEdits')
+    assert.equal(opts.allowDangerouslySkipPermissions, false)
+  })
+
+  it('maps global_permission=ask → default (no dangerous skip)', async () => {
+    const opts = await runWithPermission({ global_permission: 'ask' })
+    assert.equal(opts.permissionMode, 'default')
+    assert.equal(opts.allowDangerouslySkipPermissions, false)
+  })
+
+  it('defaults to bypassPermissions when no permission setting is present', async () => {
+    const opts = await runWithPermission({})
+    assert.equal(opts.permissionMode, 'bypassPermissions')
+    assert.equal(opts.allowDangerouslySkipPermissions, true)
+  })
+
+  it('honours legacy claude_permission_mode=accept-edits when global_permission absent', async () => {
+    const opts = await runWithPermission({ claude_permission_mode: 'accept-edits' })
+    assert.equal(opts.permissionMode, 'acceptEdits')
+    assert.equal(opts.allowDangerouslySkipPermissions, false)
   })
 })

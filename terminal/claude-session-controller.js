@@ -129,7 +129,15 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
   }
 
   function getClaudeDriver() {
-    return store.getSetting('claude_driver') === 'sdk' ? 'sdk' : 'cli'
+    // SDK is now the default driver for block mode (feature-aligned with CLI:
+    // model/effort, three-tier permission, resume + continue-fallback, tool/
+    // thinking/text events, interrupt, slash/subagent/MCP/skills via inherited
+    // settingSources). The CLI driver remains as the per-turn fallback when the
+    // SDK query errors (e.g. Anthropic 529 Overloaded) — see claude-sdk-driver.js.
+    //
+    // Opt-out: an explicit claude_driver='cli' still forces the legacy CLI path.
+    // The UI no longer exposes this toggle, but the internal escape hatch stays.
+    return store.getSetting('claude_driver') === 'cli' ? 'cli' : 'sdk'
   }
 
   function appendCodexScrollback(cs, text) {

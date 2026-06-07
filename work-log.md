@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-06-07 [SDK driver 取代 CLI 成为 block 模式默认驱动]
+- 任务：调查 Claude SDK driver 能否在 block 模式完全取代 CLI driver，有 gap 就修，最终改默认。
+- 逐项对比结论：除权限 gap 外全部对齐（model/effort/resume+continue-fallback/工具事件/interrupt/queue-flush/init-snapshot/slash/subagent/MCP/skills 经 inherited settingSources 全支持/529 fallback）。
+- 修复的 gap：SDK driver 之前读 claude_permission_mode（UI 从不写入的幽灵设置）→ 永远 bypassPermissions，忽略 auto-edits/ask。改为读 global_permission（与 CLI 同源）三档 1:1 映射：full-auto→bypassPermissions / auto-edits→acceptEdits / ask→default。保留 claude_permission_mode 旧值兜底。
+- 默认 driver：getClaudeDriver() 改为默认 'sdk'，仅 claude_driver==='cli' 显式 opt-out 才走 CLI。529/出错仍 fallback CLI。
+- 测试：npm test → 55 pass 0 fail（新增 5 个权限映射用例）。
+- 3001 实测：health 200；WS 真发 claude turn，SDK resume-miss→CLI --continue fallback 链路通；纯 SDK turn（turn2 resume 命中）工具渲染（Bash tool_use+result）/thinking/stream_event partial/assistant text/result success 全正常。
+- 产出：见下方 commit SHA。
+- 下一步：等主人统一验收后推 main。
+
 ## 2026-06-07 [手机端 UI 对齐 — 三键统一圆角+touch-toolbar等宽]
 - 操作: public/style.css @media(max-width:480px) — 三键(.tts-btn/.tts-replay-btn/.send-btn)统一 44x44px + border-radius:var(--radius-md)(8px)
 - 操作: touch-toolbar 6键改 flex:1 等宽 + height:36px + font-size:12px + white-space:nowrap
