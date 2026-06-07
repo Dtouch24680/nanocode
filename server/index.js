@@ -134,6 +134,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
 
+// ─── Version endpoint — used by the browser to detect server restarts ─────────
+// Returns the same ASSET_VERSION computed at startup (git SHA or timestamp).
+// The browser records this on page load and polls / checks on WS reconnect;
+// when the version changes it knows the server was updated and shows a banner.
+app.get('/api/version', (_req, res) => {
+  res.json({ version: ASSET_VERSION })
+})
+
 // ─── Turn-complete ntfy push ──────────────────────────────────────────────────
 // Front-end calls this after detecting elapsed > threshold.
 // Backend does the actual ntfy push so the API key / URL stays server-side.
@@ -512,6 +520,15 @@ terminalWss.on('connection', (ws) => handleTerminalWs(ws))
 tabsWss.on('connection', (ws) => handleTabsWs(ws))
 notifyWss.on('connection', (ws) => {
   ws.on('error', () => {})
+  // Push server version immediately on every (re)connect so the browser can
+  // detect whether the server was restarted while the page was open.
+  if (ws.readyState === 1) {
+    try { ws.send(JSON.stringify({ type: 'server_version', version: ASSET_VERSION })) } catch {}
+  } else {
+    ws.once('open', () => {
+      try { ws.send(JSON.stringify({ type: 'server_version', version: ASSET_VERSION })) } catch {}
+    })
+  }
 })
 
 function broadcastNotify(msg) {

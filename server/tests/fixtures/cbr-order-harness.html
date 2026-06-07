@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/marked/marked.umd.js"></script>
+  <script src="/vendor/dompurify/purify.min.js"></script>
+  <script src="/vendor/highlight/highlight.min.js"></script>
+</head>
+<body>
+  <div id="root" style="height:100vh"></div>
+  <script type="module">
+    import { ClaudeBlockRenderer } from '/js/claude-block-renderer.js'
+
+    // Stub WebSocket so the renderer's _connect() never opens a real socket.
+    class FakeWS {
+      constructor() { this.readyState = 0 /* CONNECTING */; FakeWS.instances.push(this) }
+      send() {}
+      close() { this.readyState = 3 }
+    }
+    FakeWS.instances = []
+    FakeWS.CONNECTING = 0; FakeWS.OPEN = 1; FakeWS.CLOSING = 2; FakeWS.CLOSED = 3
+    window.WebSocket = FakeWS
+
+    const root = document.getElementById('root')
+    const r = new ClaudeBlockRenderer(root, { projectId: 'p', tabId: 't' })
+    window.__cbr = r
+
+    // Replay a list of events exactly like _fetchAndReplayHistory does.
+    window.__replay = (events) => {
+      r._replayMode = true
+      try {
+        for (const ev of events) r._handleEvent(ev, { fromReplay: true })
+      } finally {
+        r._replayMode = false
+      }
+    }
+
+    // Return the ordered list of top-level conversation blocks with a short label.
+    window.__blockOrder = () => {
+      const out = []
+      for (const el of r._scroll.children) {
+        const cls = el.className || ''
+        if (cls.includes('cbr-history-sentinel')) continue
+        let kind = 'other'
+        if (cls.includes('cbr-block-text')) kind = 'text'
+        else if (cls.includes('cbr-block-tool-result')) kind = 'tool-result-standalone'
+        else if (cls.includes('cbr-block-tool')) kind = 'tool'
+        else if (cls.includes('cbr-block-user')) kind = 'user'
+        else if (cls.includes('cbr-block-system')) kind = 'system'
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50)
+        out.push({ kind, text })
+      }
+      return out
+    }
+  </script>
+</body>
+</html>
