@@ -35,6 +35,7 @@ export function initAgentDrawer() {
   // 【保留·暂隐藏】按钮在 index.html 已注释掉，discoverBtn 为 null，?. 保证此绑定安全跳过，功能代码(_discover)完整保留
   discoverBtn?.addEventListener('click', _discover)
 
+  // 【保留·暂隐藏】手动创建 agent 表单。主人改用 tab 栏加号开会话，面板入口隐藏以保持清爽；提交逻辑保留，以后需要时放回入口即可。
   addForm?.addEventListener('submit', async (e) => {
     e.preventDefault()
     const name = document.getElementById('agent-add-name')?.value.trim()
