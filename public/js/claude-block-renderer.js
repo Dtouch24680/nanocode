@@ -1359,6 +1359,28 @@ export class ClaudeBlockRenderer {
       return
     }
 
+    // Filter system-injected protocol tags that pollute the history replay.
+    // These are injected by the Claude SDK/harness into the conversation context
+    // and should never be shown as visible user messages. We drop any user turn
+    // whose text content, after stripping all recognised protocol tags, is empty.
+    //
+    // Recognised tags: <task-notification>…</task-notification>
+    //                  <system-reminder>…</system-reminder>
+    //
+    // Strategy: strip tag content, trim whitespace — if nothing remains, skip render.
+    // This works for both replay (history) and real-time events (unlikely but possible).
+    if (content.length === 1 && content[0]?.type === 'text') {
+      const rawText = content[0].text || ''
+      const stripped = rawText
+        .replace(/<task-notification>[\s\S]*?<\/task-notification>/g, '')
+        .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+        .trim()
+      if (!stripped) {
+        // Entire message was protocol noise — do not render
+        return
+      }
+    }
+
     // Subagent activity: events with parent_tool_use_id are messages TO a subagent
     // or results FROM a subagent. Visibility controlled by the subagent-activity toggle.
     // Root F fix: NEVER return early — always build DOM, set display:none if toggle off.

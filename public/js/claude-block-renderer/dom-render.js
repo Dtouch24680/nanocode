@@ -95,8 +95,16 @@ function bindToolFoldCycle(article, { cycleToolFold, getToolFoldLevel }) {
   const onCycle = (e) => {
     const target = e.target
     if (target.closest('.cbr-copy-btn') || target.closest('a') || target.tagName === 'A') return
-    cycleToolFold(article)
+    // Prevent browser default (stops mobile keyboard from popping up on touch)
+    // and stop propagation so any parent click-to-focus handlers don't run.
+    e.preventDefault()
     e.stopPropagation()
+    cycleToolFold(article)
+    // On mobile the touch may have shifted focus to this element or chat-input;
+    // blur whatever is focused so the soft keyboard stays hidden.
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur()
+    }
   }
 
   const headerEl = article.querySelector('.cbr-tool-header')
@@ -134,7 +142,12 @@ function bindStandaloneResultFoldCycle(article, cycleToolFold) {
   let touchHandled = false
   const onCycle = (e) => {
     if (e.target.closest('.cbr-copy-btn') || e.target.closest('a') || e.target.tagName === 'A') return
+    e.preventDefault()
+    e.stopPropagation()
     cycleToolFold(article)
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur()
+    }
   }
 
   article.addEventListener('touchstart', () => { touchHandled = false }, { passive: true })
