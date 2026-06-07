@@ -172,22 +172,16 @@ describe('ClaudeBlockRenderer.showInterruptBlock()', () => {
   })
 })
 
-describe('sendRaw("\\x03") uses showInterruptBlock (not the old text)', () => {
-  it('appends block with new CLI text, not old "[interrupting…]" text', () => {
+describe('sendRaw("\\x03") POSTs interrupt and does NOT insert a client-side block', () => {
+  it('does not insert any cbr-block-interrupted (CLI emits the block via stdout)', () => {
     const { renderer } = makeRenderer()
     // sendRaw also calls fetch — that's fine with the global stub above.
     renderer.sendRaw('\x03')
     const blocks = getBlocks(renderer)
-    const block = blocks.find(b => b.className.includes('cbr-block-interrupted'))
-    assert.ok(block, 'sendRaw("\\x03") must insert interrupted block')
-    assert.ok(
-      block.innerHTML.includes('[Request interrupted by user]'),
-      'Old text "[interrupting…]" must be gone; expected CLI text'
-    )
-    assert.ok(
-      !block.innerHTML.includes('interrupting…'),
-      'Old "[interrupting…]" text must not appear'
-    )
+    const interrupted = blocks.filter(b => b.className.includes('cbr-block-interrupted'))
+    // a33d294: showInterruptBlock() call removed from sendRaw — CLI emits
+    // result/error_during_execution via stdout which nanocode forwards transparently.
+    assert.equal(interrupted.length, 0, 'sendRaw("\\x03") must NOT insert a client-side interrupted block; CLI owns that')
   })
 })
 

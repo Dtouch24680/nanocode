@@ -211,15 +211,22 @@ describe('claude sdk driver', () => {
     cs.currentProc.kill('SIGINT')
     interrupted.resolve()
     await run
+    // Let setImmediate callbacks fire (auto-flush uses setImmediate(() => rerunTurn(...)))
+    await new Promise((resolve) => setImmediate(resolve))
 
-    assert.equal(reruns.length, 0)
+    // After interrupt + auto-flush: rerunTurn fires for the queued message,
+    // then queue is drained (length=0). reruns contains the auto-flush call.
+    assert.equal(reruns.length, 1)
+    assert.equal(reruns[0][1], 'queued after interrupt')
     assert.equal(cs.queue.length, 0)
+    // a33d294: interrupt subtype is 'error_during_execution' (matches CLI stdout output)
     assert.equal(
-      broadcasted.some((event) => event.type === 'result' && event.subtype === 'interrupted'),
+      broadcasted.some((event) => event.type === 'result' && event.subtype === 'error_during_execution'),
       true
     )
+    // 9840310: auto-flush emits "Resuming with N queued message(s)…" not "Queue cleared"
     assert.equal(
-      broadcasted.some((event) => event.type === 'system' && event.subtype === 'info' && /Queue cleared/.test(event.text || '')),
+      broadcasted.some((event) => event.type === 'system' && event.subtype === 'info' && /Resuming with/.test(event.text || '')),
       true
     )
   })

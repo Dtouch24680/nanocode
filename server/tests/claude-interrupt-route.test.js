@@ -179,19 +179,30 @@ done
           3000,
           'result event'
         )
+        // 9840310: auto-flush emits "Resuming with N queued message(s)…" then runs the
+        // queued turn. No "Queue cleared" event — that was the old pre-9840310 behavior.
         await waitUntil(
-          () => ws.sent.find((m) => m.type === 'claude-event' && m.event?.subtype === 'info' && /Queue cleared/.test(m.event.text || '')),
+          () => ws.sent.find((m) => m.type === 'claude-event' && m.event?.subtype === 'info' && /Resuming with/.test(m.event.text || '')),
           3000,
-          'queue cleared info event'
+          'resuming with queued messages info event'
         )
 
-        await delay(500)
+        // Wait for the auto-flushed SECOND_PAYLOAD turn to also complete
+        await waitUntil(
+          () => ws.sent.filter((m) => m.type === 'claude-event' && m.event?.type === 'result').length >= 2,
+          3000,
+          'second result event (auto-flushed turn)'
+        )
+
+        await delay(200)
 
         const resultEvents = ws.sent
           .filter((m) => m.type === 'claude-event' && m.event?.type === 'result')
           .map((m) => m.event)
-        assert.equal(resultEvents.length, 1)
-        assert.equal(resultEvents[0].subtype, 'interrupted')
+        // First result: the interrupted turn; second: the auto-flushed SECOND_PAYLOAD turn
+        assert.ok(resultEvents.length >= 2, `Expected ≥2 result events, got ${resultEvents.length}`)
+        // a33d294: interrupt subtype is 'error_during_execution' (matches CLI stdout output)
+        assert.equal(resultEvents[0].subtype, 'error_during_execution')
 
         store.close()
         ws.close()

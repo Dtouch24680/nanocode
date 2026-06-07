@@ -19,7 +19,6 @@ let ttsLastText = ''
 let ttsFirstCheck = true
 
 const ttsLogPanel = document.getElementById('tts-log-panel')
-const ttsBtn = document.getElementById('tts-btn')
 const ttsReplayBtn = document.getElementById('tts-replay-btn')
 const ttsCheckbox = document.getElementById('tts-enabled')
 const ttsStreamingCheckbox = document.getElementById('tts-streaming')
@@ -74,11 +73,6 @@ function showTtsToast(msg, duration = 4000) {
 }
 
 function updateTtsUi() {
-  if (ttsBtn) {
-    ttsBtn.classList.toggle('active', ttsEnabled)
-    ttsBtn.classList.toggle('tts-pulse', ttsAvailable && !ttsEnabled)
-    ttsBtn.title = ttsEnabled ? 'Text-to-Speech (on)' : 'Text-to-Speech (off)'
-  }
   if (ttsCheckbox) ttsCheckbox.checked = ttsEnabled
   if (ttsStreamingCheckbox) ttsStreamingCheckbox.checked = ttsStreaming
 }
@@ -250,7 +244,6 @@ async function checkTtsStatus() {
 // Listen for terminal output via custom event
 document.addEventListener('nanocode:terminal-output', (e) => onTerminalOutput(e.detail))
 
-if (ttsBtn) ttsBtn.addEventListener('click', () => setTtsEnabled(!ttsEnabled))
 if (ttsReplayBtn) {
   ttsReplayBtn.classList.add('disabled')
   ttsReplayBtn.addEventListener('click', () => {

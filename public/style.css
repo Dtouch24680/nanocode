@@ -1973,6 +1973,7 @@ body.workspace-active .landing-overlay { display: none; }
   .agent-drawer-toggle {
     flex-shrink: 0;
   }
+
 }
 
 /* -- Reduced motion -------------------------------------------- */
@@ -2054,6 +2055,24 @@ body.workspace-active .landing-overlay { display: none; }
 }
 .tts-replay-btn.disabled { opacity: 0.3; cursor: default; }
 .tts-replay-btn:hover { background: var(--surface-3, rgba(255,255,255,0.1)); color: var(--fg, #fff); }
+
+/* ── Mobile: increase input-row button tap targets to ≥44px on narrow phones ── */
+@media (max-width: 480px) {
+  .tts-btn,
+  .tts-replay-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+  }
+  .claude-stop-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+}
 
 /* ── Settings toggle button in header ───────────────────────────── */
 

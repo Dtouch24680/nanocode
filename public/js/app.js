@@ -578,8 +578,8 @@ async function loadNtfySettings() {
       try { await updateSetting('ntfy_url', 'http://localhost') } catch {}
     }
     if (!ntfyTopic) {
-      if (topicEl) topicEl.placeholder = 'zhiningwork'
-      try { await updateSetting('ntfy_topic', 'zhiningwork') } catch {}
+      if (topicEl) topicEl.placeholder = 'yourname'
+      // Do not auto-set a default topic — leave blank until the user fills it
     }
   } catch {}
 }
