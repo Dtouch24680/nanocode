@@ -401,8 +401,13 @@ function setupChatInput() {
       if (!r.ok) return
       const data = await r.json()
       if (Array.isArray(data.queue) && data.queue.length > 0) {
-        _pendingQueue = data.queue
-        updateQueueTray()
+        // Only overwrite when the local queue is still empty.  If the user
+        // typed a new message while the fetch was in flight we must not clobber
+        // it (problem-4 hydrate race).
+        if (_pendingQueue.length === 0) {
+          _pendingQueue = data.queue
+          updateQueueTray()
+        }
       }
     } catch { /* non-fatal */ }
   }
@@ -490,7 +495,7 @@ function setupChatInput() {
   let isCodexThinking = false  // is codex currently thinking? (P2: visual feedback)
   let claudeSlashOpen = false  // is the slash commands dropdown open?
 
-  function updateInputBarForTabType() {
+  function updateInputBarForTabType({ skipFlush = false } = {}) {
     const tabType = _activeTabType
     isClaudeTab = tabType === 'claude'
     isCodexTab = tabType === 'codex'
@@ -503,10 +508,10 @@ function setupChatInput() {
       chatInput.placeholder = 'Type a command...'
     }
     // Stop btn only visible when claude is thinking
-    updateThinkingState(isClaudeThinking && isClaudeTab)
+    updateThinkingState(isClaudeThinking && isClaudeTab, { skipFlush })
   }
 
-  function updateThinkingState(thinking) {
+  function updateThinkingState(thinking, { skipFlush = false } = {}) {
     isClaudeThinking = thinking
     if (isClaudeTab && thinking) {
       chatInput.classList.add('claude-thinking')
@@ -526,7 +531,9 @@ function setupChatInput() {
       sendBtn.hidden = false
       // Auto-flush: when Claude becomes idle, send all pending queued messages
       // as one combined turn (matches CLI "send all at once when idle" behaviour).
-      if (!thinking && isClaudeTab && _pendingQueue.length > 0) {
+      // skipFlush=true when called from nanocode:tab-active to prevent premature
+      // flush — flush must only happen on a real WS result event (b67a2b6, P0).
+      if (!thinking && isClaudeTab && _pendingQueue.length > 0 && !skipFlush) {
         const all = _pendingQueue.splice(0)
         _schedulePersist()
         updateQueueTray()
@@ -542,26 +549,36 @@ function setupChatInput() {
   const origOnActiveChange = tabManager ? null : null  // will hook via event
   document.addEventListener('nanocode:tab-active', (e) => {
     _activeTabType = e.detail?.type || 'bash'
+
+    // Hydrate the pending queue from the backend when switching to a claude tab.
+    // Must happen BEFORE isClaudeThinking reset + updateInputBarForTabType() to
+    // prevent a stale _pendingQueue from being flushed while Claude is still busy
+    // on the target tab (P0 queue-flush race, problem-3).
+    const newTabId = e.detail?.tabId || null
+    const newProjectId = currentProjectId
+    const switchedTab = newTabId !== _queueTabId || newProjectId !== _queueProjectId
+    if (switchedTab) {
+      // Clear in-memory queue FIRST so updateThinkingState() (called below via
+      // updateInputBarForTabType) cannot see a stale queue and flush it prematurely.
+      _pendingQueue = []
+      _queueProjectId = newProjectId
+      _queueTabId = newTabId
+    }
+
     isClaudeThinking = false  // reset on tab switch
     isCodexThinking = false
     // Reset codex-thinking CSS state on tab switch
     chatInput.classList.remove('codex-thinking')
     sendBtn.classList.remove('codex-thinking-btn')
     sendBtn.disabled = false
-    updateInputBarForTabType()  // updates isClaudeTab + isCodexTab first
+    // skipFlush=true: do NOT flush _pendingQueue on tab-switch — flush must only
+    // happen when the WS 'result' event arrives confirming Claude is truly idle.
+    updateInputBarForTabType({ skipFlush: true })
 
-    // Hydrate the pending queue from the backend when switching to a claude tab.
-    const newTabId = e.detail?.tabId || null
-    const newProjectId = currentProjectId
-    const switchedTab = newTabId !== _queueTabId || newProjectId !== _queueProjectId
-    if (switchedTab) {
-      // Clear in-memory queue before loading the new tab's queue
-      _pendingQueue = []
-      _queueProjectId = newProjectId
-      _queueTabId = newTabId
-      if (_activeTabType === 'claude' && newProjectId && newTabId) {
-        _hydrateQueue(newProjectId, newTabId)
-      }
+    // Start async hydrate AFTER the sync flush-guard above.  _hydrateQueue will
+    // only overwrite _pendingQueue when it is still empty (problem-4 hydrate race).
+    if (switchedTab && _activeTabType === 'claude' && newProjectId && newTabId) {
+      _hydrateQueue(newProjectId, newTabId)
     }
 
     updateQueueTray()           // then update tray with fresh isClaudeTab
