@@ -599,6 +599,28 @@ export function createTerminalRoutes(store) {
     return res.json({ model: null, tools: [], plugins: [], skills: [], agents: [], slash_commands: [], cached: false, fallback: true })
   })
 
+  // ── GET /api/codex/config ─────────────────────────────────────────────────
+  //
+  // Read ~/.codex/config.toml and return the configured model value.
+  // Response: { model: string|null }
+  // The model field is null when the file doesn't exist or contains no model key.
+  //
+  router.get('/api/codex/config', (req, res) => {
+    const configPath = join(home, '.codex', 'config.toml')
+    let model = null
+    try {
+      if (existsSync(configPath)) {
+        const content = readFileSync(configPath, 'utf8')
+        // Parse the top-level model = "..." line (before any [section] headers)
+        const match = content.match(/^model\s*=\s*"([^"]+)"/m)
+        if (match) model = match[1]
+      }
+    } catch (err) {
+      console.warn('[codex/config] failed to read config.toml:', err.message)
+    }
+    res.json({ model })
+  })
+
   // ── GET /api/recent-agents ────────────────────────────────────────────────
   //
   // Scan ~/.claude/projects/*/*.jsonl by mtime descending.

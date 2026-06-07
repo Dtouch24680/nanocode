@@ -973,30 +973,14 @@ function _applyDynamicModelOptions(snapshot) {
 
   const currentVal = sel.value
 
-  // Build model options: always include the blank "default" option
+  // Build model options: always include the blank "default" option.
+  // No hardcoded model names — only the live model reported by the CLI.
   const options = [{ value: '', label: t('settings.claude.model.default') }]
 
-  // If snapshot has a current model, add it as first real option
+  // If snapshot has a current model, add it as the only explicit option
   if (snapshot.model) {
-    // Check if we already have this model in the hardcoded list
-    const knownModels = [
-      'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5',
-      'claude-opus-4', 'claude-sonnet-4',
-    ]
-    const isKnown = knownModels.some(m => snapshot.model.includes(m.split('-').slice(0, 2).join('-')))
-    if (!isKnown) {
-      options.push({ value: snapshot.model, label: `${snapshot.model} (current)` })
-    }
+    options.push({ value: snapshot.model, label: `${snapshot.model} (current)` })
   }
-
-  // Add standard hardcoded models
-  options.push(
-    { value: 'claude-opus-4-5', label: 'claude-opus-4-5' },
-    { value: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
-    { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-    { value: 'claude-opus-4', label: 'claude-opus-4' },
-    { value: 'claude-sonnet-4', label: 'claude-sonnet-4' },
-  )
 
   // Rebuild select options
   sel.innerHTML = ''
@@ -1029,6 +1013,51 @@ function _applyDynamicModelOptions(snapshot) {
   }
 }
 
+// ─── Dynamic Codex model list from /api/codex/config ─────────────────────────
+
+async function fetchCodexConfig() {
+  try {
+    const resp = await fetch('/api/codex/config')
+    if (!resp.ok) return null
+    return await resp.json()
+  } catch {
+    return null
+  }
+}
+
+function _applyCodexModelOptions(config) {
+  const sel = document.getElementById('codex-model-select')
+  if (!sel) return
+
+  const currentVal = sel.value
+  const configModel = config?.model || null
+
+  // Build options: Default + config model if available (no invented model names)
+  const defaultLabel = configModel
+    ? `${t('settings.codex.model.default')} (config: ${configModel})`
+    : t('settings.codex.model.default')
+  const options = [{ value: '', label: defaultLabel }]
+
+  if (configModel) {
+    options.push({ value: configModel, label: configModel })
+  }
+
+  // Rebuild select options
+  sel.innerHTML = ''
+  for (const opt of options) {
+    const el = document.createElement('option')
+    el.value = opt.value
+    el.textContent = opt.label
+    sel.appendChild(el)
+  }
+
+  // Restore selection
+  if (currentVal) {
+    sel.value = currentVal
+    if (sel.value !== currentVal) sel.value = ''
+  }
+}
+
 // ─── Settings panel tab switch ────────────────────────────────────────────────
 
 const settingsPanel = document.getElementById('settings-panel')
@@ -1046,6 +1075,9 @@ async function openSettingsPanel() {
   // Load dynamic model options in background
   fetchInitSnapshot().then((snapshot) => {
     if (snapshot) _applyDynamicModelOptions(snapshot)
+  })
+  fetchCodexConfig().then((config) => {
+    _applyCodexModelOptions(config)
   })
 }
 
