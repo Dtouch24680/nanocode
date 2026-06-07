@@ -624,7 +624,8 @@
     <div class="agent-drawer" id="agent-drawer">
       <div class="agent-drawer-header">
         <span class="agent-drawer-title">Agents</span>
-        <button type="button" class="btn-icon" id="agent-discover-btn" title="Auto-discover from tmux">&#8635;</button>
+        <!-- 【保留·暂隐藏】Discovered = 扫描 tmux 窗口发现外部 agent。当前工作流已全在 nanocode 内，面板入口隐藏以保持清爽；功能代码保留，以后做"监控 subagent"(自动发现并监控 tmux agent)会用到。 -->
+        <!-- <button type="button" class="btn-icon" id="agent-discover-btn" title="Auto-discover from tmux">&#8635;</button> -->
         <button type="button" class="btn-icon" id="agent-drawer-close" aria-label="Close">&#10005;</button>
       </div>
       <div class="agent-list" id="agent-list"></div>

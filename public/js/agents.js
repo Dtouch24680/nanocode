@@ -32,6 +32,7 @@ export function initAgentDrawer() {
   toggleBtn?.addEventListener('click', () => drawer.classList.contains('open') ? close() : open())
   closeBtn?.addEventListener('click', close)
   backdrop?.addEventListener('click', close)
+  // 【保留·暂隐藏】按钮在 index.html 已注释掉，discoverBtn 为 null，?. 保证此绑定安全跳过，功能代码(_discover)完整保留
   discoverBtn?.addEventListener('click', _discover)
 
   addForm?.addEventListener('submit', async (e) => {
@@ -244,6 +245,7 @@ function _render() {
   }
 }
 
+// 【保留·暂隐藏】Discovered = 扫描 tmux 窗口发现外部 agent。当前工作流已全在 nanocode 内，面板入口隐藏以保持清爽；功能代码保留，以后做"监控 subagent"(自动发现并监控 tmux agent)会用到。
 async function _discover() {
   const list = document.getElementById('agent-list')
   if (!list) return

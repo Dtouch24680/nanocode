@@ -429,6 +429,7 @@ app.put('/api/agents', (req, res) => {
   res.json({ ok: true })
 })
 
+// 【保留·暂隐藏】Discovered = 扫描 tmux 窗口发现外部 agent。当前工作流已全在 nanocode 内，面板入口隐藏以保持清爽；功能代码保留，以后做"监控 subagent"(自动发现并监控 tmux agent)会用到。
 app.get('/api/agents/discover', async (_req, res) => {
   try {
     const { stdout } = await execFileAsync(
