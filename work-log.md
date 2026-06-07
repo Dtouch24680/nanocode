@@ -1,5 +1,13 @@
 # Work Log
 
+## 2026-06-07 [手机端 UI 对齐 — 三键统一圆角+touch-toolbar等宽]
+- 操作: public/style.css @media(max-width:480px) — 三键(.tts-btn/.tts-replay-btn/.send-btn)统一 44x44px + border-radius:var(--radius-md)(8px)
+- 操作: touch-toolbar 6键改 flex:1 等宽 + height:36px + font-size:12px + white-space:nowrap
+- 操作: .chat-textarea 移动端 placeholder 防换行
+- 结果: 44 pass 0 fail; 3001 curl 200; 三键 borderRadius 全8px 实测；touch-btns 等宽 59px 实测
+- 截图: /storage/home/zhiningjiao/code/nanocode/before-workspace.png(before) → after-workspace-390.png(after 390) after-mobile-360.png(after 360) after-desktop-1280.png(桌面无回归)
+- commit: acd53e5 pushed fork/zhining/nanocode-selfresume-bugs
+
 ## 2026-06-07 [selfresume-bugs 收尾 — 喇叭合并+ntfy通用+interrupt测试+手机UI]
 - 任务2: 删 public/index.html:514 旧 #tts-btn 元素(15行)，清 tts.js ttsBtn引用3处
 - 任务3: index.html:340 placeholder zhiningwork→yourname; app.js 不写死 ntfy_topic 默认值
