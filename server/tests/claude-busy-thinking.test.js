@@ -10,6 +10,11 @@
 // turn-progress event marks thinking=true; 'result' ends it. jsonl replay
 // (fromReplay) must NOT mark busy so restoring a completed session stays idle.
 //
+// Also covers: subagent event isolation (parent_tool_use_id guard).
+// Subagent events (assistant/stream_event/result with parent_tool_use_id set)
+// must NOT affect main-turn thinking state. Subagent result must NOT dispatch
+// nanocode:turn-complete or call _setThinking(false) for the main turn.
+//
 // This test drives the REAL ClaudeBlockRenderer through its REAL _handleEvent
 // entry point with the actual event shapes the SDK emits (captured live via a
 // WS probe against the SDK driver). No internal helpers are bypassed.
@@ -82,6 +87,8 @@ global.requestAnimationFrame = (fn) => { fn(); return 0 }
 global.location = { protocol: 'http:', host: 'localhost:3001' }
 global.WebSocket = class { constructor() {} set onopen(_v) {} set onmessage(_v) {} set onerror(_v) {} set onclose(_v) {} close() {} }
 global.fetch = async () => ({ ok: true, json: async () => ({}) })
+// localStorage stub: getItem returns null (→ default behaviour: subagent activity visible)
+global.localStorage = { _store: {}, getItem(k) { return this._store[k] ?? null }, setItem(k, v) { this._store[k] = v }, removeItem(k) { delete this._store[k] } }
 
 let ClaudeBlockRenderer
 before(async () => {
@@ -163,5 +170,122 @@ describe('ClaudeBlockRenderer server-driven busy detection', () => {
     // _setThinking no-ops when unchanged → only ONE thinking=true dispatch
     const trueEvents = thinkingEvents().filter((e) => e.detail.thinking === true)
     assert.equal(trueEvents.length, 1, 'thinking=true should dispatch exactly once for one turn')
+  })
+})
+
+// ── Subagent event isolation ──────────────────────────────────────────────────
+// Regression guard for: subagent events (parent_tool_use_id set) must NOT
+// affect main-turn thinking state. The main turn dispatched a Task tool and is
+// waiting — thinking should stay stable (true) while the subagent runs, and
+// subagent result must NOT trigger turn-complete or _setThinking(false).
+
+describe('ClaudeBlockRenderer subagent event isolation (parent_tool_use_id guard)', () => {
+  it('subagent assistant event does NOT trigger _setThinking(true) when main turn is idle', () => {
+    const r = makeRenderer()
+    assert.equal(r.isThinking(), false)
+    // A subagent assistant event arrives (parent_tool_use_id set) — must not change thinking
+    r._handleEvent({
+      type: 'assistant',
+      parent_tool_use_id: 'toolu_sa1',
+      message: { role: 'assistant', id: 'msg_sa1', content: [{ type: 'text', text: 'subagent says hi' }] },
+    })
+    assert.equal(r.isThinking(), false,
+      'subagent assistant event must NOT set thinking=true on idle main turn')
+    const evs = thinkingEvents()
+    assert.equal(evs.length, 0, 'no nanocode:claude-thinking event should fire for subagent assistant')
+  })
+
+  it('subagent stream_event does NOT trigger _setThinking(true)', () => {
+    const r = makeRenderer()
+    r._handleEvent({
+      type: 'stream_event',
+      parent_tool_use_id: 'toolu_sa1',
+      event: { type: 'content_block_delta' },
+    })
+    assert.equal(r.isThinking(), false,
+      'subagent stream_event must NOT mark main turn as thinking')
+  })
+
+  it('subagent events do NOT cause thinking to flicker when main turn is thinking', () => {
+    const r = makeRenderer()
+    // Main turn starts
+    r._handleEvent({ type: 'system', subtype: 'init', session_id: 's1', tools: [] })
+    assert.equal(r.isThinking(), true, 'main turn should be thinking after init')
+
+    // Track thinking events from here on
+    const baseLen = thinkingEvents().length
+
+    // Subagent streams several events
+    r._handleEvent({
+      type: 'assistant',
+      parent_tool_use_id: 'toolu_sa1',
+      message: { role: 'assistant', id: 'msg_sa1', content: [{ type: 'text', text: 'sub output' }] },
+    })
+    r._handleEvent({
+      type: 'stream_event',
+      parent_tool_use_id: 'toolu_sa1',
+      event: { type: 'content_block_delta' },
+    })
+
+    // thinking must remain true, no extra thinking events dispatched
+    assert.equal(r.isThinking(), true, 'thinking must stay true while subagent runs')
+    const newEvs = thinkingEvents().slice(baseLen)
+    assert.equal(newEvs.length, 0, 'subagent events must NOT dispatch any nanocode:claude-thinking events')
+  })
+
+  it('subagent result does NOT trigger turn-complete or _setThinking(false) on main turn', () => {
+    const r = makeRenderer()
+    // Main turn starts
+    r._handleEvent({ type: 'system', subtype: 'init', session_id: 's1', tools: [] })
+    assert.equal(r.isThinking(), true)
+
+    // Subagent finishes — sends result with parent_tool_use_id
+    r._handleEvent({
+      type: 'result',
+      parent_tool_use_id: 'toolu_sa1',
+      subtype: 'success',
+      usage: {},
+    })
+
+    // Main turn must still be thinking
+    assert.equal(r.isThinking(), true,
+      'subagent result must NOT end the main turn (thinking should remain true)')
+
+    // No turn-complete event should have fired
+    const turnCompleteEvs = dispatched.filter((e) => e.type === 'nanocode:turn-complete')
+    assert.equal(turnCompleteEvs.length, 0,
+      'subagent result must NOT dispatch nanocode:turn-complete')
+  })
+
+  it('main turn result (no parent_tool_use_id) still correctly ends the turn after subagent ran', () => {
+    const r = makeRenderer()
+    // Main turn start
+    r._handleEvent({ type: 'system', subtype: 'init', session_id: 's1', tools: [] })
+    assert.equal(r.isThinking(), true)
+
+    // Subagent runs and completes
+    r._handleEvent({
+      type: 'assistant',
+      parent_tool_use_id: 'toolu_sa1',
+      message: { role: 'assistant', id: 'msg_sa1', content: [{ type: 'text', text: 'sub done' }] },
+    })
+    r._handleEvent({
+      type: 'result',
+      parent_tool_use_id: 'toolu_sa1',
+      subtype: 'success',
+      usage: {},
+    })
+
+    // Main turn still active
+    assert.equal(r.isThinking(), true, 'still thinking after subagent result')
+
+    // Main turn now actually ends (no parent_tool_use_id)
+    r._handleEvent({ type: 'result', subtype: 'success', usage: {} })
+
+    assert.equal(r.isThinking(), false, 'main turn result (no parent) must end thinking')
+
+    const turnCompleteEvs = dispatched.filter((e) => e.type === 'nanocode:turn-complete')
+    assert.equal(turnCompleteEvs.length, 1,
+      'exactly one turn-complete for the main turn result')
   })
 })

@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-06-07 [subagent 事件隔离 — 输入框闪烁修复]
+- 任务：修复 claude tab 派出 subagent 时，输入框闪烁 + 消息被误锁进队列
+- 根因：`_isLiveTurnEvent` 未检查 `parent_tool_use_id`，subagent 流式事件被误当主 turn 进行中 → thinking 抖动 → 输入框闪；`_handleResult` 未检查 `parent_tool_use_id`，subagent result 误触发主 turn 的 `_setThinking(false)` + `turn-complete` + flush
+- 修复 1：`_isLiveTurnEvent`(line 696)开头加 `if (event.parent_tool_use_id) return false`
+- 修复 2：`_handleResult`(line 1739)开头加 `if (event.parent_tool_use_id) { /* 清 subagent live block */ return }` 守卫
+- 回归测试：`server/tests/claude-busy-thinking.test.js` 新增 5 个 subagent 隔离测试用例(describe: "subagent event isolation")；新增 `global.localStorage` stub；86 tests pass 0 fail
+- 热部署：kill 3001 → 新 3001 起 → `curl /api/health` 200
+- browse 实测：workspace 截图存 /tmp/nanocode-*.png，输入框空闲无闪，无 JS 错误
+- commit: (本次)，push fork zhining/nanocode-selfresume-bugs
+
 ## 2026-06-07 [turn-complete 自动通知]
 - 任务：nanocode 自监控 claude turn 完成，自动触发通知(音效+favicon红点+ntfy)
 - 前端 claude-block-renderer.js: _setThinking(true) 记录 _turnStartTime，_handleResult 计算 elapsed，dispatch nanocode:turn-complete 事件

@@ -690,6 +690,10 @@ export class ClaudeBlockRenderer {
   // 'system' subtypes (queued/info/resume-trigger/error/hook/stderr/fallback).
   _isLiveTurnEvent(event) {
     if (!event || !event.type) return false
+    // Subagent events carry parent_tool_use_id. They are NOT main-turn progress —
+    // the main turn is waiting, not actively generating. Returning false here keeps
+    // the main turn's thinking state stable (no flicker) while subagents run.
+    if (event.parent_tool_use_id) return false
     switch (event.type) {
       case 'assistant':
       case 'partial_message':
@@ -1726,6 +1730,21 @@ export class ClaudeBlockRenderer {
   }
 
   _handleResult(event) {
+    // Subagent result: do NOT trigger main-turn end-of-turn logic.
+    // Subagents emit their own 'result' events (parent_tool_use_id is set).
+    // These must NOT call _setThinking(false), dispatch nanocode:turn-complete,
+    // or clear/flush main-turn live blocks — the main turn is still in progress.
+    // Visual wrap-up of the subagent live block is already handled in
+    // _handleAssistant (isSubagentAssistant branch). Just bail out here.
+    if (event.parent_tool_use_id) {
+      // Clean up any lingering subagent live block
+      if (this._liveSubagentBlock) {
+        this._liveSubagentBlock.style.opacity = ''
+        this._liveSubagentBlock = null
+      }
+      return
+    }
+
     // End-of-turn: flush live blocks, exit thinking state.
     // N47/N52 fix: also physically remove the live assistant block from DOM
     // (see parallel fix in _handleAssistant). When claude --print sends an
