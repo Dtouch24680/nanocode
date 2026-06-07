@@ -1,5 +1,16 @@
 # Work Log
 
+## 2026-06-07 [turn-complete 自动通知]
+- 任务：nanocode 自监控 claude turn 完成，自动触发通知(音效+favicon红点+ntfy)
+- 前端 claude-block-renderer.js: _setThinking(true) 记录 _turnStartTime，_handleResult 计算 elapsed，dispatch nanocode:turn-complete 事件
+- 前端 app.js: 监听 nanocode:turn-complete，elapsed >= 阈值 → playNotifySound + _addUnread + POST /api/notify/turn-complete
+- 后端 server/index.js: 新增 POST /api/notify/turn-complete 路由
+- 后端 server/qa-watcher.js: 新增 pushNtfyTurnComplete 导出
+- Settings: 通知音效区域新增阈值输入(默认10s)和 ntfy 开关(默认开)，两控件均走 i18n
+- 测试: server/tests/turn-notify.test.js 10 回归，全 pass (81 tests pass 0 fail)
+- 3001 热部署: 3002 起 → kill 3001 → 新 3001 起 → 确认 /api/health 200
+- commit: 2cc96f6，push fork zhining/nanocode-selfresume-bugs
+
 ## 2026-06-07 [light mode 完整配色]
 - 任务：实现 light mode 完整配色，修复切换机制 bug，覆盖所有面板
 - 机制修复：theme.js applyTheme() 改用 setAttribute('data-theme','light') 替代 removeAttribute，[data-theme="light"] CSS 规则正确生效
