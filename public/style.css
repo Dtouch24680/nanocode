@@ -2056,21 +2056,47 @@ body.workspace-active .landing-overlay { display: none; }
 .tts-replay-btn.disabled { opacity: 0.3; cursor: default; }
 .tts-replay-btn:hover { background: var(--surface-3, rgba(255,255,255,0.1)); color: var(--fg, #fff); }
 
-/* ── Mobile: increase input-row button tap targets to ≥44px on narrow phones ── */
+/* ── Mobile: 统一 input-row 三键尺寸/圆角，touch-toolbar 等宽网格 ── */
 @media (max-width: 480px) {
+  /* 三键统一：44×44、同一圆角，视觉成体系 */
   .tts-btn,
-  .tts-replay-btn {
-    width: 44px;
-    height: 44px;
-  }
+  .tts-replay-btn,
   .send-btn {
     width: 44px;
     height: 44px;
-    border-radius: 10px;
+    border-radius: var(--radius-md);   /* 8px — 与输入框圆角一致 */
+    flex-shrink: 0;
   }
   .claude-stop-btn {
     min-width: 44px;
     height: 44px;
+    border-radius: var(--radius-md);
+  }
+
+  /* touch-toolbar：6 个键等宽填满整行，高度提升到 36px */
+  .touch-toolbar {
+    gap: 4px;
+  }
+  .touch-btn {
+    flex: 1;                           /* 等宽分配 */
+    height: 36px;
+    padding: 0;                        /* 不依赖 padding 定宽 */
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  /* 输入框移动端：确保 placeholder 不换行 */
+  .chat-textarea {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chat-textarea::placeholder {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
