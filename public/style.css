@@ -2016,6 +2016,28 @@ body.workspace-active .landing-overlay { display: none; }
 }
 .tts-btn.tts-pulse { animation: tts-pulse 2s ease-in-out infinite; }
 
+/* Mute button */
+.mute-btn.muted { color: var(--text-error, #f44336); opacity: 0.75; }
+.mute-btn.muted:hover { opacity: 1; }
+
+/* Language selector in settings */
+.settings-lang-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+  margin-bottom: 4px;
+}
+.settings-lang-row .settings-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2, rgba(255,255,255,0.6));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .tts-replay-btn {
   display: inline-flex;
   align-items: center;

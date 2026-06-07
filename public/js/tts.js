@@ -137,8 +137,18 @@ async function playTtsStreaming(text) {
   })
 }
 
+function _isGloballyMuted() {
+  try { return localStorage.getItem('nanocodeMuted') === 'true' } catch { return false }
+}
+
 async function playNextTts() {
   if (ttsPlaying || !ttsQueue.length) return
+  if (_isGloballyMuted()) {
+    // Discard queue silently when muted
+    ttsQueue = []
+    ttsPlaying = false
+    return
+  }
   const text = ttsQueue.shift()
   if (!text.trim()) { playNextTts(); return }
   ttsPlaying = true
@@ -170,7 +180,7 @@ function setLastTtsText(text) {
 }
 
 function enqueueTts(text) {
-  if (!ttsEnabled || !ttsAvailable) return
+  if (!ttsEnabled || !ttsAvailable || _isGloballyMuted()) return
   const hash = simpleHash(text)
   if (ttsPlayedHashes.has(hash)) { ttsLog('Skipped duplicate: ' + text.slice(0, 40), 'skip'); return }
   if (ttsQueue.some(t => simpleHash(t) === hash)) { ttsLog('Skipped queued: ' + text.slice(0, 40), 'skip'); return }

@@ -60,7 +60,18 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         'exec bash -l',
       ].join(' ')
     },
-    codex: () => 'codex --dangerously-bypass-approvals-and-sandbox; exec bash -l',
+    codex: () => {
+      const globalPerm = store.getSetting('global_permission') || 'full-auto'
+      if (globalPerm === 'auto-edits') {
+        // workspace-write sandbox, ask on request
+        return 'codex -s workspace-write -a on-request; exec bash -l'
+      } else if (globalPerm === 'ask') {
+        // read-only sandbox, ask every time (untrusted mode)
+        return 'codex -s read-only -a untrusted; exec bash -l'
+      }
+      // full-auto (default): bypass all confirmations and sandbox
+      return 'codex --dangerously-bypass-approvals-and-sandbox; exec bash -l'
+    },
     agent: () => 'agent --force --approve-mcps; exec bash -l',
     opencode: () => 'opencode .; exec bash -l',
   }
@@ -216,7 +227,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     const claudeModel = store.getSetting('claude_model') || ''
     const claudeEffort = store.getSetting('claude_effort') || ''
-    const permMode = store.getSetting('claude_permission_mode') || 'bypass'
+    const globalPerm = store.getSetting('global_permission') || 'full-auto'
     const tabLabel = cs.tabLabel || ''
 
     const launchArgs = [
@@ -227,12 +238,13 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       '--continue',
     ]
 
-    if (permMode === 'bypass') {
-      launchArgs.push('--dangerously-skip-permissions')
-    } else if (permMode === 'accept-edits') {
+    if (globalPerm === 'auto-edits') {
       launchArgs.push('--permission-mode', 'acceptEdits')
-    } else if (permMode === 'auto') {
-      launchArgs.push('--permission-mode', 'auto')
+    } else if (globalPerm === 'ask') {
+      launchArgs.push('--permission-mode', 'default')
+    } else {
+      // full-auto (default)
+      launchArgs.push('--dangerously-skip-permissions')
     }
 
     if (claudeModel) launchArgs.push('--model', claudeModel)
@@ -392,7 +404,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     const claudeModel = store.getSetting('claude_model') || ''
     const claudeEffort = store.getSetting('claude_effort') || ''
-    const permMode = store.getSetting('claude_permission_mode') || 'bypass'
+    const globalPerm = store.getSetting('global_permission') || 'full-auto'
     const tabLabel = cs.tabLabel || ''
 
     const launchArgs = [
@@ -402,12 +414,13 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       '--include-partial-messages',
     ]
 
-    if (permMode === 'bypass') {
-      launchArgs.push('--dangerously-skip-permissions')
-    } else if (permMode === 'accept-edits') {
+    if (globalPerm === 'auto-edits') {
       launchArgs.push('--permission-mode', 'acceptEdits')
-    } else if (permMode === 'auto') {
-      launchArgs.push('--permission-mode', 'auto')
+    } else if (globalPerm === 'ask') {
+      launchArgs.push('--permission-mode', 'default')
+    } else {
+      // full-auto (default)
+      launchArgs.push('--dangerously-skip-permissions')
     }
 
     if (claudeModel) launchArgs.push('--model', claudeModel)

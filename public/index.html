@@ -115,105 +115,81 @@
     <div class="settings-panel" id="settings-panel">
       <div class="settings-panel-inner">
         <div class="settings-panel-header">
-          <span class="settings-panel-title">Settings</span>
-          <button type="button" class="btn-icon" id="settings-panel-close" onclick="document.getElementById('settings-panel').classList.remove('open')" aria-label="Close">&#10005;</button>
+          <span class="settings-panel-title" data-i18n="settings.title">Settings</span>
+          <button type="button" class="btn-icon" id="settings-panel-close" onclick="document.getElementById('settings-panel').classList.remove('open')" aria-label="Close" data-i18n-title="settings.close">&#10005;</button>
         </div>
         <div class="settings-container">
 
-          <!-- ══ 会话 ══ -->
+          <!-- ══ Language ══ -->
+          <div class="settings-subsection settings-lang-row">
+            <label class="settings-label" data-i18n="settings.language">Language</label>
+            <select id="lang-select" class="settings-input" style="width:auto;min-width:110px">
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+            </select>
+          </div>
+
+          <!-- ══ Session ══ -->
           <section class="settings-section" data-section="session">
             <h3 class="settings-section-title settings-group-title settings-section-toggle" data-target="session">
-              <span class="settings-section-label">会话</span>
+              <span class="settings-section-label" data-i18n="settings.section.session">Session</span>
               <span class="settings-section-chevron">&#9660;</span>
             </h3>
             <div class="settings-section-body" data-body="session">
 
-            <!-- CLI Provider -->
-            <div class="settings-subsection">
-              <div class="settings-label-row">CLI Provider</div>
-              <div class="settings-radio-group" id="cli-provider-group">
-                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="claude" checked /> Claude Code</label>
-                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="agent" /> Cursor Agent</label>
-                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="opencode" /> OpenCode</label>
-                <label class="settings-radio-label"><input type="radio" name="cli-provider" value="codex" /> Codex</label>
-              </div>
-              <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="cli-save-btn">Save</button>
-                <span class="settings-status" id="cli-status"></span>
-              </div>
-            </div>
-
-            <!-- Codex Model: removed R9 — use codex /model command instead -->
-            <!-- (The /model slash command opens codex's native model picker TUI) -->
-
             <!-- Render Mode (Claude tab) -->
             <div class="settings-subsection">
-              <div class="settings-label-row">渲染模式 (claude tab) <span class="settings-hint-inline">block=富文本 / terminal=PTY 兜底</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.rendermode.claude.label">Render mode (claude tab)</span> <span class="settings-hint-inline" data-i18n="settings.rendermode.claude.hint">block=rich text / terminal=PTY fallback</span></div>
               <div class="settings-radio-group" id="render-mode-group">
-                <label class="settings-radio-label"><input type="radio" name="render-mode" value="block" checked /> Block（默认，富文本）</label>
-                <label class="settings-radio-label"><input type="radio" name="render-mode" value="terminal" /> Terminal（PTY raw，兜底）</label>
+                <label class="settings-radio-label"><input type="radio" name="render-mode" value="block" checked /> <span data-i18n="settings.rendermode.claude.block">Block (default, rich text)</span></label>
+                <label class="settings-radio-label"><input type="radio" name="render-mode" value="terminal" /> <span data-i18n="settings.rendermode.claude.terminal">Terminal (PTY raw, fallback)</span></label>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="render-mode-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="render-mode-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="render-mode-status"></span>
               </div>
             </div>
 
             <!-- Render Mode (Codex tab) -->
             <div class="settings-subsection">
-              <div class="settings-label-row">渲染模式 (codex tab) <span class="settings-hint-inline">terminal=PTY raw 最稳 / block=实验性富文本</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.rendermode.codex.label">Render mode (codex tab)</span> <span class="settings-hint-inline" data-i18n="settings.rendermode.codex.hint">terminal=PTY raw, stable / block=experimental rich text</span></div>
               <div class="settings-radio-group" id="codex-render-mode-group">
-                <label class="settings-radio-label"><input type="radio" name="codex-render-mode" value="terminal" checked /> Terminal（默认，PTY raw 兜底）</label>
-                <label class="settings-radio-label"><input type="radio" name="codex-render-mode" value="block" /> Block（实验，富文本+折叠）</label>
+                <label class="settings-radio-label"><input type="radio" name="codex-render-mode" value="terminal" checked /> <span data-i18n="settings.rendermode.codex.terminal">Terminal (default, PTY raw)</span></label>
+                <label class="settings-radio-label"><input type="radio" name="codex-render-mode" value="block" /> <span data-i18n="settings.rendermode.codex.block">Block (experimental, rich text+fold)</span></label>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="codex-render-mode-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="codex-render-mode-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="codex-render-mode-status"></span>
               </div>
             </div>
 
             <!-- Auto-Resume -->
             <div class="settings-subsection">
-              <div class="settings-label-row">Auto-Resume <span class="settings-hint-inline">claude 退出后自动 --continue</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.autoresume.label">Auto-Resume</span> <span class="settings-hint-inline" data-i18n="settings.autoresume.hint">Auto --continue when claude exits</span></div>
               <div class="settings-toggle-row">
                 <label class="toggle-label">
                   <input type="checkbox" id="claude-autoresume-enabled" checked />
-                  <span>启用 auto-resume（3s 倒计时可取消）</span>
+                  <span data-i18n="settings.autoresume.toggle">Enable auto-resume (3s countdown, cancelable)</span>
                 </label>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="claude-autoresume-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="claude-autoresume-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="claude-autoresume-status"></span>
-              </div>
-            </div>
-
-            <!-- Queue auto-flush on interrupt -->
-            <div class="settings-subsection">
-              <div class="settings-label-row">打断后自动发送队列 <span class="settings-hint-inline">Esc/Stop 后自动执行排队消息</span></div>
-              <div class="settings-toggle-row">
-                <label class="toggle-label">
-                  <input type="checkbox" id="auto-flush-queue-on-interrupt-enabled" checked />
-                  <span>打断当前回合后自动发送所有排队消息</span>
-                </label>
-              </div>
-              <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="auto-flush-queue-on-interrupt-save-btn">Save</button>
-                <span class="settings-status" id="auto-flush-queue-on-interrupt-status"></span>
               </div>
             </div>
 
             <!-- Auth Status (P1-4) -->
             <div class="settings-subsection" id="auth-status-subsection">
-              <div class="settings-label-row">账号状态 <span class="settings-hint-inline">claude auth status</span></div>
-              <div id="auth-status-display" style="font-size:13px;color:var(--text-secondary,#aaa);padding:4px 0">加载中…</div>
+              <div class="settings-label-row"><span data-i18n="settings.auth.label">Account Status</span> <span class="settings-hint-inline" data-i18n="settings.auth.hint">claude auth status</span></div>
+              <div id="auth-status-display" style="font-size:13px;color:var(--text-secondary,#aaa);padding:4px 0" data-i18n="settings.auth.loading">Loading…</div>
             </div>
 
-            <!-- Model selector (P1-3) -->
+            <!-- Claude Model selector -->
             <div class="settings-subsection">
-              <div class="settings-label-row">Claude 模型 <span class="settings-hint-inline">空=CLI 默认</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.claude.model.label">Claude Model</span> <span class="settings-hint-inline" data-i18n="settings.claude.model.hint">Empty = CLI default</span></div>
               <div class="settings-field">
                 <select id="claude-model-select" class="settings-input">
-                  <option value="">默认（CLI 决定）</option>
+                  <option value="" data-i18n="settings.claude.model.default">Default (CLI decides)</option>
                   <option value="claude-opus-4-5">claude-opus-4-5</option>
                   <option value="claude-sonnet-4-5">claude-sonnet-4-5</option>
                   <option value="claude-haiku-4-5">claude-haiku-4-5</option>
@@ -222,17 +198,35 @@
                 </select>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="claude-model-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="claude-model-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="claude-model-status"></span>
               </div>
             </div>
 
-            <!-- Effort selector (P1-3) -->
+            <!-- Codex Model selector (restored) -->
             <div class="settings-subsection">
-              <div class="settings-label-row">Effort 级别 <span class="settings-hint-inline">空=CLI 默认</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.codex.model.label">Codex Model</span> <span class="settings-hint-inline" data-i18n="settings.codex.model.hint">Empty = Codex default</span></div>
+              <div class="settings-field">
+                <select id="codex-model-select" class="settings-input">
+                  <option value="" data-i18n="settings.codex.model.default">Default (Codex decides)</option>
+                  <option value="o3">o3</option>
+                  <option value="o4-mini">o4-mini</option>
+                  <option value="gpt-4.1">gpt-4.1</option>
+                  <option value="gpt-4o">gpt-4o</option>
+                </select>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="codex-model-save-btn" data-i18n="btn.save">Save</button>
+                <span class="settings-status" id="codex-model-status"></span>
+              </div>
+            </div>
+
+            <!-- Effort selector -->
+            <div class="settings-subsection">
+              <div class="settings-label-row"><span data-i18n="settings.effort.label">Effort Level</span> <span class="settings-hint-inline" data-i18n="settings.effort.hint">Empty = CLI default</span></div>
               <div class="settings-field">
                 <select id="claude-effort-select" class="settings-input">
-                  <option value="">默认</option>
+                  <option value="" data-i18n="settings.effort.default">Default</option>
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
@@ -241,158 +235,144 @@
                 </select>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="claude-effort-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="claude-effort-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="claude-effort-status"></span>
               </div>
             </div>
 
-            <!-- Permission mode (P2-5) -->
+            <!-- Global Permission mode (drives both Claude and Codex) -->
             <div class="settings-subsection">
-              <div class="settings-label-row">Permission 模式 <span class="settings-hint-inline">默认 bypass（跳过所有确认）</span></div>
-              <div class="settings-radio-group" id="claude-permission-mode-group">
-                <label class="settings-radio-label"><input type="radio" name="claude-permission-mode" value="bypass" checked /> bypass（默认，跳过所有确认）</label>
-                <label class="settings-radio-label"><input type="radio" name="claude-permission-mode" value="auto" /> auto（--permission-mode auto）</label>
-                <label class="settings-radio-label"><input type="radio" name="claude-permission-mode" value="accept-edits" /> accept-edits（--permission-mode acceptEdits）</label>
+              <div class="settings-label-row"><span data-i18n="settings.permission.label">Permission Mode</span> <span class="settings-hint-inline" data-i18n="settings.permission.hint">Applies to both Claude and Codex. Takes effect on next session.</span></div>
+              <div class="settings-radio-group" id="global-permission-mode-group">
+                <label class="settings-radio-label"><input type="radio" name="global-permission-mode" value="full-auto" checked /> <span data-i18n="settings.permission.full-auto">Full Auto (default) — skip all confirmations</span></label>
+                <label class="settings-radio-label"><input type="radio" name="global-permission-mode" value="auto-edits" /> <span data-i18n="settings.permission.auto-edits">Auto Edits — apply edits, ask for shell commands</span></label>
+                <label class="settings-radio-label"><input type="radio" name="global-permission-mode" value="ask" /> <span data-i18n="settings.permission.ask">Ask / Careful — confirm every action</span></label>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="claude-permission-mode-save-btn">Save</button>
-                <span class="settings-status" id="claude-permission-mode-status"></span>
+                <button type="button" class="btn btn-primary" id="global-permission-mode-save-btn" data-i18n="btn.save">Save</button>
+                <span class="settings-status" id="global-permission-mode-status"></span>
               </div>
             </div>
 
-            <!-- Claude Driver (SDK vs CLI) -->
-            <div class="settings-subsection">
-              <div class="settings-label-row">Claude 驱动 <span class="settings-hint-inline">SDK 驱动是 Claude Agent SDK，正在迁移中。问题切回 CLI。</span></div>
-              <div class="settings-field">
-                <select id="claude-driver-select" class="settings-input">
-                  <option value="cli">CLI（默认，稳定）</option>
-                  <option value="sdk">SDK（实验，新驱动）</option>
-                </select>
-              </div>
-              <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="claude-driver-save-btn">Save</button>
-                <span class="settings-status" id="claude-driver-status"></span>
-              </div>
-            </div>
             </div><!-- /settings-section-body[session] -->
           </section>
 
-          <!-- ══ 显示 ══ -->
+          <!-- ══ Display ══ -->
           <section class="settings-section" data-section="display">
             <h3 class="settings-section-title settings-group-title settings-section-toggle" data-target="display">
-              <span class="settings-section-label">显示</span>
+              <span class="settings-section-label" data-i18n="settings.section.display">Display</span>
               <span class="settings-section-chevron">&#9660;</span>
             </h3>
             <div class="settings-section-body" data-body="display">
 
             <!-- Tool fold -->
             <div class="settings-subsection">
-              <div class="settings-label-row">Tool block 折叠</div>
+              <div class="settings-label-row" data-i18n="settings.toolfold.label">Tool block folding</div>
               <div class="settings-radio-group" id="tool-fold-group">
-                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="full" /> Full（工具名+内容）</label>
-                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="header" /> Header only（只显示工具名）</label>
-                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="line" /> Line（折叠为细条）</label>
+                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="full" /> <span data-i18n="settings.toolfold.full">Full (tool name + content)</span></label>
+                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="header" /> <span data-i18n="settings.toolfold.header">Header only</span></label>
+                <label class="settings-radio-label"><input type="radio" name="tool-fold" value="line" /> <span data-i18n="settings.toolfold.line">Line (collapsed to bar)</span></label>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="tool-fold-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="tool-fold-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="tool-fold-status"></span>
               </div>
             </div>
 
             <!-- Subagent visibility -->
             <div class="settings-subsection">
-              <div class="settings-label-row">Subagent 可见性 <span class="settings-hint-inline">立即生效</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.subagent.label">Subagent Visibility</span> <span class="settings-hint-inline" data-i18n="settings.subagent.hint">Takes effect immediately</span></div>
               <div class="settings-toggle-row">
                 <label class="toggle-label">
                   <input type="checkbox" id="subagent-prompt-visible" checked />
-                  <span>显示发给 subagent 的 prompt</span>
+                  <span data-i18n="settings.subagent.prompt">Show prompts sent to subagents</span>
                 </label>
               </div>
               <div class="settings-toggle-row">
                 <label class="toggle-label">
                   <input type="checkbox" id="subagent-activity-visible" />
-                  <span>显示 subagent 活动（通常较冗长，默认关）</span>
+                  <span data-i18n="settings.subagent.activity">Show subagent activity (verbose, off by default)</span>
                 </label>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="subagent-vis-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="subagent-vis-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="subagent-vis-status"></span>
               </div>
             </div>
 
             <!-- Font size -->
             <div class="settings-subsection">
-              <div class="settings-label-row">终端字号</div>
+              <div class="settings-label-row" data-i18n="settings.fontsize.label">Terminal font size</div>
               <div class="settings-range-row">
                 <input type="range" id="font-size-range" min="10" max="22" step="1" value="14" class="settings-range" />
                 <span class="settings-range-value" id="font-size-value">14px</span>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="font-size-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="font-size-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="font-size-status"></span>
               </div>
             </div>
             </div><!-- /settings-section-body[display] -->
           </section>
 
-          <!-- ══ 服务监控 ══ -->
+          <!-- ══ Monitor ══ -->
           <section class="settings-section" data-section="monitor">
             <h3 class="settings-section-title settings-group-title settings-section-toggle" data-target="monitor">
-              <span class="settings-section-label">服务监控</span>
+              <span class="settings-section-label" data-i18n="settings.section.monitor">Monitor</span>
               <span class="settings-section-chevron">&#9660;</span>
             </h3>
             <div class="settings-section-body" data-body="monitor">
 
             <!-- Services -->
             <div class="settings-subsection">
-              <div class="settings-label-row">端口健康 <span class="settings-hint-inline">每 30s 检查</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.services.label">Port Health</span> <span class="settings-hint-inline" data-i18n="settings.services.hint">Checked every 30s</span></div>
               <p class="services-local-ip" id="services-local-ip"></p>
               <div class="services-grid" id="services-grid"></div>
               <form class="services-add-form" id="services-add-form" autocomplete="off">
                 <input type="text" id="svc-add-name" class="settings-input" placeholder="Name" />
                 <input type="text" id="svc-add-host" class="settings-input" placeholder="IP / host" />
                 <input type="number" id="svc-add-port" class="settings-input" placeholder="Port" min="1" max="65535" />
-                <button type="submit" class="btn btn-secondary">+ Add</button>
+                <button type="submit" class="btn btn-secondary" data-i18n="settings.services.add">+ Add</button>
               </form>
               <p class="services-checked-at" id="services-checked-at"></p>
             </div>
 
             <!-- ntfy -->
             <div class="settings-subsection">
-              <div class="settings-label-row">ntfy 推送 <span class="settings-hint-inline">留空禁用</span></div>
+              <div class="settings-label-row"><span data-i18n="settings.ntfy.label">ntfy Push</span> <span class="settings-hint-inline" data-i18n="settings.ntfy.hint">Leave blank to disable</span></div>
               <div class="settings-field">
-                <label class="settings-label">Server URL</label>
-                <input type="text" id="ntfy-url" class="settings-input" placeholder="https://ntfy.sh" />
+                <label class="settings-label" data-i18n="settings.ntfy.url">Server URL</label>
+                <input type="text" id="ntfy-url" class="settings-input" placeholder="http://localhost" />
               </div>
               <div class="settings-field">
-                <label class="settings-label">Topic</label>
-                <input type="text" id="ntfy-topic" class="settings-input" placeholder="zhining-watchdog" />
+                <label class="settings-label" data-i18n="settings.ntfy.topic">Topic</label>
+                <input type="text" id="ntfy-topic" class="settings-input" placeholder="zhiningwork" />
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="ntfy-save-btn">Save</button>
-                <button type="button" class="btn btn-secondary" id="ntfy-test-btn">Test</button>
+                <button type="button" class="btn btn-primary" id="ntfy-save-btn" data-i18n="btn.save">Save</button>
+                <button type="button" class="btn btn-secondary" id="ntfy-test-btn" data-i18n="settings.ntfy.test">Test</button>
                 <span class="settings-status" id="ntfy-status"></span>
               </div>
             </div>
 
             <!-- Notification sounds -->
             <div class="settings-subsection">
-              <div class="settings-label-row">通知音效</div>
+              <div class="settings-label-row" data-i18n="settings.notify.label">Notification Sounds</div>
               <div class="settings-toggle-row">
                 <label class="toggle-label">
                   <input type="checkbox" id="notify-sound-enabled" />
-                  <span>启用音效（done / blocked / QA）</span>
+                  <span data-i18n="settings.notify.enabled">Enable sounds (done / blocked / QA)</span>
                 </label>
               </div>
               <div class="settings-field">
-                <label class="settings-label">音量</label>
+                <label class="settings-label" data-i18n="settings.notify.volume">Volume</label>
                 <div style="display:flex;align-items:center;gap:8px">
                   <input type="range" id="notify-sound-volume" min="0" max="1" step="0.05" value="0.7" style="flex:1" />
                   <span id="notify-sound-volume-value" style="min-width:36px;text-align:right">70%</span>
                 </div>
               </div>
               <div class="settings-field">
-                <label class="settings-label">Done</label>
+                <label class="settings-label" data-i18n="settings.notify.done">Done</label>
                 <div style="display:flex;align-items:center;gap:8px">
                   <select id="notify-sound-done" class="settings-input" style="flex:1">
                     <option value="bamboo">Bamboo knock</option>
@@ -403,7 +383,7 @@
                 </div>
               </div>
               <div class="settings-field">
-                <label class="settings-label">Blocked</label>
+                <label class="settings-label" data-i18n="settings.notify.blocked">Blocked</label>
                 <div style="display:flex;align-items:center;gap:8px">
                   <select id="notify-sound-blocked" class="settings-input" style="flex:1">
                     <option value="thud">Low thud</option>
@@ -414,7 +394,7 @@
                 </div>
               </div>
               <div class="settings-field">
-                <label class="settings-label">QA</label>
+                <label class="settings-label" data-i18n="settings.notify.qa">QA</label>
                 <div style="display:flex;align-items:center;gap:8px">
                   <select id="notify-sound-qa" class="settings-input" style="flex:1">
                     <option value="ding">Bright ding</option>
@@ -425,35 +405,35 @@
                 </div>
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="notify-sound-save-btn">Save</button>
+                <button type="button" class="btn btn-primary" id="notify-sound-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="notify-sound-status"></span>
               </div>
             </div>
 
             <!-- TTS -->
             <div class="settings-subsection">
-              <div class="settings-label-row">TTS（GPT-SoVITS） <span class="settings-hint-inline"><span class="tts-status-dot" id="tts-status-dot"></span><span class="tts-status-text" id="tts-status-text"></span></span></div>
+              <div class="settings-label-row"><span data-i18n="settings.tts.label">TTS (GPT-SoVITS)</span> <span class="settings-hint-inline"><span class="tts-status-dot" id="tts-status-dot"></span><span class="tts-status-text" id="tts-status-text"></span></span></div>
               <div class="settings-toggle-row">
-                <label class="toggle-label"><input type="checkbox" id="tts-enabled" /> <span>启用 TTS</span></label>
+                <label class="toggle-label"><input type="checkbox" id="tts-enabled" /> <span data-i18n="settings.tts.enabled">Enable TTS</span></label>
               </div>
               <div class="settings-toggle-row">
-                <label class="toggle-label"><input type="checkbox" id="tts-streaming" /> <span>流式模式（低延迟）</span></label>
+                <label class="toggle-label"><input type="checkbox" id="tts-streaming" /> <span data-i18n="settings.tts.streaming">Streaming mode (low latency)</span></label>
               </div>
               <div class="settings-field">
-                <label class="settings-label">参考音频路径</label>
+                <label class="settings-label" data-i18n="settings.tts.refaudio">Reference audio path</label>
                 <input type="text" id="tts-ref-audio" class="settings-input" placeholder="/path/to/voice.wav" />
               </div>
               <div class="settings-field">
-                <label class="settings-label">参考文本</label>
-                <input type="text" id="tts-prompt-text" class="settings-input" placeholder="参考音频的文字内容" />
+                <label class="settings-label" data-i18n="settings.tts.prompttext">Reference text</label>
+                <input type="text" id="tts-prompt-text" class="settings-input" placeholder="Reference audio transcript" />
               </div>
               <div class="settings-actions">
-                <button type="button" class="btn btn-primary" id="tts-save-btn">Save</button>
-                <button type="button" class="btn btn-secondary" id="tts-test-btn">Test</button>
+                <button type="button" class="btn btn-primary" id="tts-save-btn" data-i18n="btn.save">Save</button>
+                <button type="button" class="btn btn-secondary" id="tts-test-btn" data-i18n="btn.test">Test</button>
                 <span class="settings-status" id="tts-status"></span>
               </div>
               <details class="tts-log-details">
-                <summary class="tts-log-summary">TTS Debug Log</summary>
+                <summary class="tts-log-summary" data-i18n="settings.tts.debuglog">TTS Debug Log</summary>
                 <div class="tts-log-panel" id="tts-log-panel"></div>
               </details>
             </div>
@@ -525,7 +505,21 @@
                   enterkeyhint="send"
                 ></textarea>
               </div>
-              <!-- TTS + mic + send buttons -->
+              <!-- Global mute + TTS buttons -->
+              <button class="tts-btn mute-btn" id="mute-btn" aria-label="Toggle mute" title="Sound on — click to mute">
+                <!-- Speaker icon (unmuted) -->
+                <svg class="mute-icon-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+                <!-- Muted icon -->
+                <svg class="mute-icon-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              </button>
               <button class="tts-btn" id="tts-btn" aria-label="Toggle TTS" title="Text-to-Speech (off)">
                 <svg
                   width="18"
@@ -659,6 +653,7 @@
       </div>
     </div>
 
+    <script type="module" src="/js/i18n.js"></script>
     <script type="module" src="/js/app.js"></script>
     <script type="module" src="/js/tts.js"></script>
   </body>

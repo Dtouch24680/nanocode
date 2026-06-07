@@ -421,7 +421,7 @@ function setupChatInput() {
     queueTray.innerHTML =
       `<div class="cq-header">` +
         `<span class="cq-header-label">排队中 (${_pendingQueue.length})</span>` +
-        `<button class="cq-send-now" title="中断当前回合，立即发送所有排队消息">⏵ 立即发送</button>` +
+        `<button class="cq-send-now" title="Interrupt current turn and send all queued messages immediately">Send now</button>` +
       `</div>` +
       _pendingQueue.map((text, i) => {
         const truncated = text.length > 72 ? text.slice(0, 72) + '…' : text

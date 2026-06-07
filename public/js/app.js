@@ -16,8 +16,117 @@ import {
   getSubagentPromptVisible, setSubagentPromptVisible,
   getSubagentActivityVisible, setSubagentActivityVisible,
 } from './claude-block-renderer.js'
+import { initI18n, setLang, t } from './i18n.js'
 
 let workspaceReady = false
+
+// ─── Global mute ──────────────────────────────────────────────────────────────
+
+const MUTED_KEY = 'nanocodeMuted'
+let _globalMuted = false
+
+try { _globalMuted = localStorage.getItem(MUTED_KEY) === 'true' } catch {}
+
+function setGlobalMuted(v) {
+  _globalMuted = v
+  try { localStorage.setItem(MUTED_KEY, String(v)) } catch {}
+  _updateMuteBtn()
+}
+
+function isGlobalMuted() {
+  return _globalMuted
+}
+
+function _updateMuteBtn() {
+  const btn = document.getElementById('mute-btn')
+  if (!btn) return
+  const iconOn = btn.querySelector('.mute-icon-on')
+  const iconOff = btn.querySelector('.mute-icon-off')
+  if (_globalMuted) {
+    btn.classList.add('muted')
+    btn.title = t('mute.on')
+    if (iconOn) iconOn.style.display = 'none'
+    if (iconOff) iconOff.style.display = ''
+  } else {
+    btn.classList.remove('muted')
+    btn.title = t('mute.off')
+    if (iconOn) iconOn.style.display = ''
+    if (iconOff) iconOff.style.display = 'none'
+  }
+}
+
+const _muteBtn = document.getElementById('mute-btn')
+if (_muteBtn) {
+  _muteBtn.addEventListener('click', () => setGlobalMuted(!_globalMuted))
+  _updateMuteBtn()
+}
+
+// ─── Favicon / title red dot ──────────────────────────────────────────────────
+
+let _unreadCount = 0
+let _originalTitle = document.title
+let _faviconCanvas = null
+let _faviconOriginalHref = null
+
+function _getFaviconEl() {
+  return document.querySelector('link[rel~="icon"]')
+}
+
+function _drawFaviconDot() {
+  if (!_faviconCanvas) {
+    _faviconCanvas = document.createElement('canvas')
+    _faviconCanvas.width = 32
+    _faviconCanvas.height = 32
+  }
+  const ctx = _faviconCanvas.getContext('2d')
+  ctx.clearRect(0, 0, 32, 32)
+  // Draw base favicon as a colored square (since SVG favicon can't be drawn via img cors easily)
+  ctx.fillStyle = '#8cc63f'
+  ctx.beginPath()
+  ctx.roundRect(2, 2, 28, 28, 6)
+  ctx.fill()
+  // Red dot
+  ctx.fillStyle = '#e53935'
+  ctx.beginPath()
+  ctx.arc(24, 8, 7, 0, Math.PI * 2)
+  ctx.fill()
+  // Count text
+  ctx.fillStyle = '#fff'
+  ctx.font = 'bold 10px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(_unreadCount > 9 ? '9+' : String(_unreadCount), 24, 8)
+  const favEl = _getFaviconEl()
+  if (favEl) {
+    if (!_faviconOriginalHref) _faviconOriginalHref = favEl.href
+    favEl.href = _faviconCanvas.toDataURL()
+  }
+}
+
+function _clearFaviconDot() {
+  const favEl = _getFaviconEl()
+  if (favEl && _faviconOriginalHref) {
+    favEl.href = _faviconOriginalHref
+  }
+}
+
+function _addUnread() {
+  _unreadCount++
+  document.title = `(${_unreadCount}) ${_originalTitle}`
+  _drawFaviconDot()
+}
+
+function _clearUnread() {
+  _unreadCount = 0
+  document.title = _originalTitle
+  _clearFaviconDot()
+}
+
+// Clear unread on focus / visibility change
+window.addEventListener('focus', _clearUnread)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _clearUnread()
+})
 
 // ─── QA notification WebSocket ────────────────────────────────────────────────
 
@@ -45,16 +154,19 @@ function initNotifyWs() {
         const text = `[QA] ${msg.repo}: ${msg.task}${msg.summary ? ' — ' + msg.summary.slice(0, 60) : ''}`
         showNotifyToast(text)
         playNotifySound('qa')
+        if (document.hidden || !document.hasFocus()) _addUnread()
         console.log('[notify]', text)
       } else if (msg.type === 'done_notify') {
         const text = `[DONE] ${msg.repo}: ${msg.task} (${msg.reviewer})`
         showNotifyToast(text, 8000)
         playNotifySound('done')
+        if (document.hidden || !document.hasFocus()) _addUnread()
         console.log('[notify]', text)
       } else if (msg.type === 'blocked_notify') {
         const text = `[BLOCKED] ${msg.repo}: ${msg.task}${msg.reason ? ' — ' + msg.reason.slice(0, 80) : ''}`
         showNotifyToast(text, 10000)
         playNotifySound('blocked')
+        if (document.hidden || !document.hasFocus()) _addUnread()
         console.log('[notify]', text)
       } else if (msg.type === 'service_status') {
         updateServiceDot(msg.name, msg.status, msg.checkedAt)
@@ -250,6 +362,7 @@ function getNotifySoundPrefs() {
 }
 
 function playNotifySound(eventType) {
+  if (isGlobalMuted()) return
   const prefs = getNotifySoundPrefs()
   if (prefs.enabled === false) return
   const vol = parseFloat(prefs.volume ?? 0.7)
@@ -257,6 +370,8 @@ function playNotifySound(eventType) {
   const fn = _soundFns[key]
   if (fn) try { fn(vol) } catch {}
 }
+
+export { isGlobalMuted }
 
 function loadNotifySoundSettings() {
   const prefs = getNotifySoundPrefs()
@@ -314,11 +429,7 @@ for (const type of ['done', 'blocked', 'qa']) {
   }
 }
 
-// ─── Settings panel (CLI provider + font size + ntfy + renderMode + codexRenderMode) ──
-
-const cliProviderGroup = document.getElementById('cli-provider-group')
-const cliSaveBtn = document.getElementById('cli-save-btn')
-const cliStatusEl = document.getElementById('cli-status')
+// ─── Settings panel (font size + ntfy + renderMode + codexRenderMode) ──
 
 const fontSizeRange = document.getElementById('font-size-range')
 const fontSizeValue = document.getElementById('font-size-value')
@@ -332,9 +443,6 @@ const renderModeStatusEl = document.getElementById('render-mode-status')
 const codexRenderModeGroup = document.getElementById('codex-render-mode-group')
 const codexRenderModeSaveBtn = document.getElementById('codex-render-mode-save-btn')
 const codexRenderModeStatusEl = document.getElementById('codex-render-mode-status')
-
-// N43-R9: Codex Model selector removed — use /model command inside codex instead
-// const codexModelGroup / codexModelSaveBtn / codexModelStatusEl removed
 
 function loadRenderModeSettings(serverSettings) {
   const mode = (serverSettings?.renderMode) || 'block'
@@ -354,12 +462,6 @@ function loadCodexRenderModeSettings(serverSettings) {
 }
 
 function loadSettings(serverSettings) {
-  const radios = cliProviderGroup?.querySelectorAll('input[name="cli-provider"]')
-  if (radios && state.cliProvider) {
-    for (const radio of radios) {
-      radio.checked = radio.value === state.cliProvider
-    }
-  }
   if (fontSizeRange && state.fontSize) {
     fontSizeRange.value = state.fontSize
     if (fontSizeValue) fontSizeValue.textContent = state.fontSize + 'px'
@@ -371,33 +473,11 @@ function loadSettings(serverSettings) {
   loadSubagentVisSettings()
   loadRenderModeSettings(serverSettings)
   loadCodexRenderModeSettings(serverSettings)
-  // loadCodexModelSettings removed — N43-R9
   loadClaudeModelSettings(serverSettings)
+  loadCodexModelSettings(serverSettings)
   loadClaudeEffortSettings(serverSettings)
-  loadPermissionModeSettings(serverSettings)
-  loadClaudeDriverSettings(serverSettings)
-}
-
-if (cliSaveBtn) {
-  cliSaveBtn.addEventListener('click', async () => {
-    const selected = cliProviderGroup?.querySelector('input[name="cli-provider"]:checked')
-    if (!selected) return
-    try {
-      await updateSetting('cli_provider', selected.value)
-      state.cliProvider = selected.value
-      if (cliStatusEl) {
-        cliStatusEl.textContent = 'Saved'
-        cliStatusEl.className = 'settings-status success'
-        setTimeout(() => { cliStatusEl.textContent = '' }, 3000)
-      }
-    } catch (err) {
-      if (cliStatusEl) {
-        cliStatusEl.textContent = err.message
-        cliStatusEl.className = 'settings-status error'
-        setTimeout(() => { cliStatusEl.textContent = '' }, 3000)
-      }
-    }
-  })
+  loadGlobalPermissionModeSettings(serverSettings)
+  loadLangSelect()
 }
 
 // ─── Render mode save ────────────────────────────────────────────────────────
@@ -487,8 +567,20 @@ async function loadNtfySettings() {
     const s = await fetchSettings()
     const urlEl = document.getElementById('ntfy-url')
     const topicEl = document.getElementById('ntfy-topic')
-    if (urlEl) urlEl.value = s.ntfy_url || ''
-    if (topicEl) topicEl.value = s.ntfy_topic || ''
+    // Apply defaults only when empty
+    const ntfyUrl = s.ntfy_url || ''
+    const ntfyTopic = s.ntfy_topic || ''
+    if (urlEl) urlEl.value = ntfyUrl
+    if (topicEl) topicEl.value = ntfyTopic
+    // Set defaults if not yet configured
+    if (!ntfyUrl) {
+      if (urlEl) urlEl.placeholder = 'http://localhost'
+      try { await updateSetting('ntfy_url', 'http://localhost') } catch {}
+    }
+    if (!ntfyTopic) {
+      if (topicEl) topicEl.placeholder = 'zhiningwork'
+      try { await updateSetting('ntfy_topic', 'zhiningwork') } catch {}
+    }
   } catch {}
 }
 
@@ -676,36 +768,8 @@ if (autoResumeSaveBtn) {
   })
 }
 
-// ─── Queue auto-flush on interrupt ───────────────────────────────────────────
-
-const autoFlushQueueSaveBtn = document.getElementById('auto-flush-queue-on-interrupt-save-btn')
-if (autoFlushQueueSaveBtn) {
-  // Load current setting on init
-  fetch('/api/settings')
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      if (!data) return
-      const el = document.getElementById('auto-flush-queue-on-interrupt-enabled')
-      if (el && data.auto_flush_queue_on_interrupt !== undefined) {
-        el.checked = data.auto_flush_queue_on_interrupt !== '0'
-      }
-    })
-    .catch(() => {})
-
-  autoFlushQueueSaveBtn.addEventListener('click', async () => {
-    const el = document.getElementById('auto-flush-queue-on-interrupt-enabled')
-    const enabled = el ? el.checked : true
-    try {
-      await updateSetting('auto_flush_queue_on_interrupt', enabled ? '1' : '0')
-    } catch {}
-    const statusEl = document.getElementById('auto-flush-queue-on-interrupt-status')
-    if (statusEl) {
-      statusEl.textContent = 'Saved'
-      statusEl.className = 'settings-status success'
-      setTimeout(() => { statusEl.textContent = '' }, 2500)
-    }
-  })
-}
+// Queue auto-flush on interrupt: UI removed, always enabled (default behavior).
+// Backend reads auto_flush_queue_on_interrupt setting; not '0' means enabled.
 
 // ─── P1-4: Auth status ───────────────────────────────────────────────────────
 
@@ -720,14 +784,14 @@ async function loadAuthStatus() {
       if (data.email) parts.push(data.email)
       if (data.authMethod) parts.push(`(${data.authMethod})`)
       if (data.orgName) parts.push(`/ ${data.orgName}`)
-      el.textContent = '登录账号：' + (parts.join(' ') || '已登录')
+      el.textContent = (parts.join(' ') || 'Logged in')
       el.style.color = 'var(--text-success, #4caf50)'
     } else {
-      el.textContent = '未登录 — 请在终端运行 claude auth login'
+      el.textContent = 'Not logged in — run: claude auth login'
       el.style.color = 'var(--text-error, #f44336)'
     }
   } catch {
-    el.textContent = '无法获取账号状态'
+    el.textContent = 'Cannot fetch account status'
     el.style.color = 'var(--text-secondary, #aaa)'
   }
 }
@@ -788,23 +852,23 @@ if (claudeEffortSaveBtn) {
   })
 }
 
-// ─── P2-5: Permission mode selector ──────────────────────────────────────────
+// ─── Global Permission mode (drives Claude + Codex) ──────────────────────────
 
-function loadPermissionModeSettings(serverSettings) {
-  const mode = serverSettings?.claude_permission_mode || 'bypass'
-  const radios = document.querySelectorAll('input[name="claude-permission-mode"]')
+function loadGlobalPermissionModeSettings(serverSettings) {
+  const mode = serverSettings?.global_permission || 'full-auto'
+  const radios = document.querySelectorAll('input[name="global-permission-mode"]')
   for (const r of radios) r.checked = r.value === mode
 }
 
-const permissionModeSaveBtn = document.getElementById('claude-permission-mode-save-btn')
-if (permissionModeSaveBtn) {
-  permissionModeSaveBtn.addEventListener('click', async () => {
-    const selected = document.querySelector('input[name="claude-permission-mode"]:checked')
-    const statusEl = document.getElementById('claude-permission-mode-status')
+const globalPermissionModeSaveBtn = document.getElementById('global-permission-mode-save-btn')
+if (globalPermissionModeSaveBtn) {
+  globalPermissionModeSaveBtn.addEventListener('click', async () => {
+    const selected = document.querySelector('input[name="global-permission-mode"]:checked')
+    const statusEl = document.getElementById('global-permission-mode-status')
     try {
-      await updateSetting('claude_permission_mode', selected?.value || 'bypass')
+      await updateSetting('global_permission', selected?.value || 'full-auto')
       if (statusEl) {
-        statusEl.textContent = 'Saved — 新 session 生效'
+        statusEl.textContent = 'Saved — takes effect on next session'
         statusEl.className = 'settings-status success'
         setTimeout(() => { statusEl.textContent = '' }, 2500)
       }
@@ -818,22 +882,22 @@ if (permissionModeSaveBtn) {
   })
 }
 
-// ─── Claude Driver selector ───────────────────────────────────────────────────
+// ─── Codex Model selector ────────────────────────────────────────────────────
 
-function loadClaudeDriverSettings(serverSettings) {
-  const sel = document.getElementById('claude-driver-select')
-  if (sel) sel.value = serverSettings?.claude_driver || 'cli'
+function loadCodexModelSettings(serverSettings) {
+  const sel = document.getElementById('codex-model-select')
+  if (sel) sel.value = serverSettings?.codex_model || ''
 }
 
-const claudeDriverSaveBtn = document.getElementById('claude-driver-save-btn')
-if (claudeDriverSaveBtn) {
-  claudeDriverSaveBtn.addEventListener('click', async () => {
-    const sel = document.getElementById('claude-driver-select')
-    const statusEl = document.getElementById('claude-driver-status')
+const codexModelSaveBtn = document.getElementById('codex-model-save-btn')
+if (codexModelSaveBtn) {
+  codexModelSaveBtn.addEventListener('click', async () => {
+    const sel = document.getElementById('codex-model-select')
+    const statusEl = document.getElementById('codex-model-status')
     try {
-      await updateSetting('claude_driver', sel?.value || 'cli')
+      await updateSetting('codex_model', sel?.value || '')
       if (statusEl) {
-        statusEl.textContent = 'Saved — 新 session 生效'
+        statusEl.textContent = 'Saved'
         statusEl.className = 'settings-status success'
         setTimeout(() => { statusEl.textContent = '' }, 2500)
       }
@@ -910,7 +974,7 @@ function _applyDynamicModelOptions(snapshot) {
   const currentVal = sel.value
 
   // Build model options: always include the blank "default" option
-  const options = [{ value: '', label: '默认（CLI 决定）' }]
+  const options = [{ value: '', label: t('settings.claude.model.default') }]
 
   // If snapshot has a current model, add it as first real option
   if (snapshot.model) {
@@ -1074,9 +1138,33 @@ async function onProjectSwitch(projectId) {
   if (project) navigateTo(projectPath(project, state.projects))
 }
 
+// ─── Language selector ────────────────────────────────────────────────────────
+
+function loadLangSelect() {
+  const sel = document.getElementById('lang-select')
+  if (!sel) return
+  try {
+    const lang = localStorage.getItem('nanocodeLang') || 'en'
+    sel.value = lang
+  } catch {}
+}
+
+const _langSelect = document.getElementById('lang-select')
+if (_langSelect) {
+  _langSelect.addEventListener('change', () => {
+    setLang(_langSelect.value)
+    // Refresh mute button title after lang change
+    _updateMuteBtn()
+  })
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
+  // i18n must run first
+  initI18n()
+  _updateMuteBtn()
+
   initThemeToggle()
   initNotifyWs()
   initAgentDrawer()
