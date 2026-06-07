@@ -132,6 +132,62 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ============================================================
+ * Light mode — explicit [data-theme="light"] block so the
+ * attribute selector fires and all light-specific overrides
+ * below work correctly.  The values mirror :root exactly.
+ * ============================================================ */
+[data-theme="light"] {
+  /* Surfaces — warm sand canvas */
+  --bg: oklch(96% 0.014 80);
+  --bg-secondary: oklch(93% 0.012 80);
+  --bg-tertiary: oklch(90% 0.012 80);
+  --bg-elevated: oklch(97% 0.010 80);
+  --bg-card: oklch(97% 0.010 80);
+  --bg-input: oklch(93% 0.012 80);
+  --bg-hover: rgba(45, 40, 32, 0.04);
+
+  --sidebar-bg: oklch(92% 0.012 80);
+  --sidebar-hover: oklch(89% 0.014 80);
+  --sidebar-active: rgba(45, 191, 211, 0.08);
+
+  /* Text */
+  --text: #2D2824;
+  --text-secondary: #5C5550;
+  --text-tertiary: #7D776F;
+  --text-muted: #A09890;
+
+  /* Borders */
+  --border: rgba(45, 40, 32, 0.08);
+  --border-hover: rgba(45, 40, 32, 0.13);
+  --border-active: rgba(45, 191, 211, 0.35);
+
+  /* Primary */
+  --primary: #0C7E94;
+  --primary-hover: #0F6476;
+  --primary-light: #2DBFD3;
+  --primary-subtle: rgba(12, 126, 148, 0.06);
+  --primary-glow: rgba(45, 191, 211, 0.18);
+
+  /* Status */
+  --success: #3d9a5a;
+  --success-bg: rgba(61, 154, 90, 0.07);
+  --error: #c4433b;
+  --error-bg: rgba(196, 67, 59, 0.07);
+  --warning: #b88a3a;
+  --warning-bg: rgba(184, 138, 58, 0.07);
+  --info: #4a88c4;
+  --info-bg: rgba(74, 136, 196, 0.07);
+
+  /* Floating glass */
+  --floating-bg: rgba(254, 252, 247, 0.6);
+
+  /* Backdrop pattern */
+  --backdrop-warm: oklch(88% 0.04 65 / 0.08);
+  --backdrop-cool: oklch(88% 0.04 200 / 0.06);
+  --backdrop-grid: oklch(80% 0.01 65 / 0.03);
+}
+
+/* ============================================================
  * Dark mode — token overrides only. Layout + components inherit
  * via var(--bg), var(--text), etc., so flipping data-theme on
  * <body> reskins the entire app.
@@ -1988,6 +2044,271 @@ body.workspace-active .landing-overlay { display: none; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* =================================================================
+   Light-mode overrides for components that use dark-only fallback
+   values (--fg, --bg-2, --glass-border, rgba(255,255,255,…), etc.)
+   ================================================================= */
+
+/* Theme toggle icon: in light mode show moon (dark icon), hide sun */
+[data-theme="light"] .theme-icon-dark { display: inline-flex; }
+[data-theme="light"] .theme-icon-light { display: none; }
+
+/* Settings toggle button */
+[data-theme="light"] .settings-toggle-btn {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .settings-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Agent drawer toggle */
+[data-theme="light"] .agent-drawer-toggle {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .agent-drawer-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+[data-theme="light"] .agent-drawer-toggle.active {
+  color: var(--primary);
+}
+
+/* Settings panel backdrop */
+[data-theme="light"] .settings-panel-backdrop {
+  background: rgba(45, 40, 32, 0.30);
+}
+
+/* Settings panel */
+[data-theme="light"] .settings-panel {
+  background: var(--bg-elevated);
+  border-left-color: var(--border);
+}
+[data-theme="light"] .settings-panel-header {
+  background: var(--bg-elevated);
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .settings-panel-title {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .settings-section {
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .settings-section-title {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .settings-group-title {
+  color: var(--primary);
+  border-bottom-color: rgba(12, 126, 148, 0.15);
+}
+[data-theme="light"] .settings-section-toggle:hover {
+  color: var(--primary);
+}
+[data-theme="light"] .settings-section-chevron {
+  color: var(--text-muted);
+}
+[data-theme="light"] .settings-subsection {
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .settings-label-row {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .settings-hint-inline {
+  color: var(--text-muted);
+}
+[data-theme="light"] .settings-desc {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .settings-radio-label {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .settings-radio-hint {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .settings-status {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .settings-range-value {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .settings-label {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .settings-input {
+  background: var(--bg-input);
+  border-color: var(--border);
+  color: var(--text);
+}
+[data-theme="light"] .settings-input:focus {
+  border-color: var(--border-active);
+}
+[data-theme="light"] .toggle-label {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .settings-lang-row {
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .settings-lang-row .settings-label {
+  color: var(--text-tertiary);
+}
+
+/* TTS buttons */
+[data-theme="light"] .tts-btn {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+[data-theme="light"] .tts-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+[data-theme="light"] .tts-replay-btn {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+[data-theme="light"] .tts-replay-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+[data-theme="light"] .tts-status-dot {
+  background: var(--text-muted);
+}
+[data-theme="light"] .tts-log-summary {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .tts-log-panel {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+/* Agent drawer */
+[data-theme="light"] .agent-drawer-backdrop {
+  background: rgba(45, 40, 32, 0.30);
+}
+[data-theme="light"] .agent-drawer {
+  background: var(--bg-elevated);
+  border-left-color: var(--border);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-theme="light"] .agent-drawer-header {
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .agent-drawer-title {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .agent-list-empty {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .agent-item:hover {
+  background: var(--bg-hover);
+}
+[data-theme="light"] .agent-status-dot {
+  background: var(--text-muted);
+}
+[data-theme="light"] .agent-name {
+  color: var(--text);
+}
+[data-theme="light"] .agent-tmux-label {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .agent-type-badge.claude { background: rgba(12, 126, 148, 0.12); color: var(--primary); }
+[data-theme="light"] .agent-type-badge.codex  { background: rgba(74, 136, 196, 0.12); color: #4a88c4; }
+[data-theme="light"] .agent-type-badge.cursor { background: rgba(154, 78, 176, 0.12); color: #9a4eb0; }
+[data-theme="light"] .agent-type-badge.other  { background: var(--bg-tertiary); color: var(--text-tertiary); }
+[data-theme="light"] .agent-add-form {
+  border-top-color: var(--border);
+}
+[data-theme="light"] .agent-discover-section {
+  border-bottom-color: var(--border);
+}
+[data-theme="light"] .agent-discover-title {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .agent-discover-item {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .recent-agent-title {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .recent-agent-item:hover {
+  background: var(--bg-hover);
+}
+[data-theme="light"] .recent-agent-active-dot {
+  background: var(--text-muted);
+}
+[data-theme="light"] .recent-agent-proj {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .recent-agent-summary {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .recent-agent-time {
+  color: var(--text-muted);
+}
+
+/* Service health items */
+[data-theme="light"] .service-dot {
+  background: var(--text-muted);
+}
+[data-theme="light"] .service-name {
+  color: var(--text);
+}
+[data-theme="light"] .service-port {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .services-local-ip {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .svc-btn {
+  color: var(--text-tertiary);
+}
+[data-theme="light"] .svc-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+[data-theme="light"] .services-checked-at {
+  color: var(--text-tertiary);
+}
+
+/* SDK fallback banner: adjust for light mode */
+[data-theme="light"] .cbr-sdk-fallback-banner {
+  background: rgba(184, 138, 58, 0.10);
+  border-left-color: #b88a3a;
+  color: #7a5c1a;
+}
+
+/* Diff colors adapted to light: darker green/red with enough contrast */
+[data-theme="light"] .cbr-diff-added {
+  background: rgba(61, 154, 90, 0.10);
+  color: #27623b;
+}
+[data-theme="light"] .cbr-diff-removed {
+  background: rgba(196, 67, 59, 0.10);
+  color: #922b24;
+}
+[data-theme="light"] .cbr-diff-filepath--new {
+  color: #27623b;
+}
+
+/* Subagent badge: light-safe purple */
+[data-theme="light"] .cbr-subagent-badge {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  border-color: rgba(124, 58, 237, 0.20);
+}
+[data-theme="light"] .cbr-block-subagent-prompt {
+  border-left-color: #7c3aed !important;
+}
+
+/* Mobile @640px agent drawer bottom sheet */
+@media (max-width: 640px) {
+  [data-theme="light"] .agent-drawer {
+    border-top-color: var(--border);
   }
 }
 

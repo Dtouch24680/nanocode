@@ -28,8 +28,8 @@ applyTheme(current)
 function applyTheme(theme) {
   current = theme
   const root = document.documentElement
-  if (theme === 'dark') root.setAttribute('data-theme', 'dark')
-  else root.removeAttribute('data-theme')
+  // Always set the attribute explicitly so [data-theme="light"] CSS rules fire.
+  root.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
 }
 
 export function getTheme() {
