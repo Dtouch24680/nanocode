@@ -3548,6 +3548,8 @@ body.workspace-active .landing-overlay { display: none; }
   border-left-color: var(--accent, #a78bfa) !important;
 }
 
+/* 问题4修复: margin-left 移除 — gap 已在 cbr-tool-header 上处理间距，
+   保留 margin-left 会造成双倍间距 (gap 8px + margin 8px = 16px)。 */
 .cbr-subagent-badge {
   font-size: 0.65rem;
   font-weight: 600;
@@ -3558,7 +3560,8 @@ body.workspace-active .landing-overlay { display: none; }
   border: 1px solid color-mix(in srgb, var(--accent, #a78bfa) 30%, transparent);
   border-radius: var(--radius-sm, 4px);
   padding: 1px 5px;
-  margin-left: var(--s-2, 8px);
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .cbr-subagent-desc {
