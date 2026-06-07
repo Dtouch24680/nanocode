@@ -647,6 +647,10 @@ export class ClaudeBlockRenderer {
     // Thinking state: true when claude is processing a turn
     this._thinking = false
 
+    // Turn timing: timestamp (Date.now()) when the current turn started.
+    // Reset to null when turn ends. Used for turn-complete notification threshold.
+    this._turnStartTime = null
+
     // Replay mode flag: true while _fetchAndReplayHistory is running.
     // Used to suppress per-block rAF scrolls and TTS dispatches during bulk replay.
     this._replayMode = false
@@ -702,6 +706,10 @@ export class ClaudeBlockRenderer {
   _setThinking(val) {
     if (this._thinking === val) return
     this._thinking = val
+    if (val) {
+      // Record when this turn started for elapsed-time notification
+      this._turnStartTime = Date.now()
+    }
     // Broadcast to terminal-view.js so input bar can react
     document.dispatchEvent(new CustomEvent('nanocode:claude-thinking', {
       detail: { tabId: this.tabId, thinking: val },
@@ -1738,7 +1746,16 @@ export class ClaudeBlockRenderer {
       el.dataset.frozen = '1'
       el.classList.remove('cbr-live')
     })
+    // Compute elapsed before clearing thinking state
+    const elapsed = this._turnStartTime != null ? Date.now() - this._turnStartTime : 0
+    this._turnStartTime = null
     this._setThinking(false)
+
+    // Dispatch turn-complete event for the notification system (app.js listens).
+    // Fired for every result, regardless of elapsed — app.js applies the threshold.
+    document.dispatchEvent(new CustomEvent('nanocode:turn-complete', {
+      detail: { tabId: this.tabId, elapsed },
+    }))
 
     if (event.subtype === 'success' || event.subtype === 'error_max_turns') {
       const usage = event.usage

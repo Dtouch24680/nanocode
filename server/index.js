@@ -13,7 +13,7 @@ import { WebSocketServer } from 'ws'
 import { getStore } from './store.js'
 import { createTerminalRoutes } from '../terminal/routes.js'
 import { createFileRoutes } from '../terminal/files.js'
-import { startQaWatcher, setNtfyStore } from './qa-watcher.js'
+import { startQaWatcher, setNtfyStore, pushNtfyTurnComplete } from './qa-watcher.js'
 
 // ── Cache busting version string ─────────────────────────────────────────────
 // Computed once at startup: short git SHA or fallback timestamp.
@@ -132,6 +132,17 @@ app.use(createFileRoutes(store))
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
+})
+
+// ─── Turn-complete ntfy push ──────────────────────────────────────────────────
+// Front-end calls this after detecting elapsed > threshold.
+// Backend does the actual ntfy push so the API key / URL stays server-side.
+
+app.post('/api/notify/turn-complete', (req, res) => {
+  const { elapsed, elapsedSec } = req.body || {}
+  const sec = elapsedSec ?? (elapsed != null ? (elapsed / 1000).toFixed(0) : '?')
+  pushNtfyTurnComplete({ elapsedSec: sec })
+  res.json({ ok: true })
 })
 
 // ─── Settings ─────────────────────────────────────────────────────────────

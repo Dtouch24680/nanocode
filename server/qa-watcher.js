@@ -205,6 +205,22 @@ function handleEvidenceChange(repo, broadcast) {
   }
 }
 
+// ─── Turn-complete ntfy ──────────────────────────────────────────────────────
+
+/**
+ * Push a turn-complete notification to ntfy.
+ * Called by the /api/notify/turn-complete route when the frontend decides
+ * a turn exceeded the user-configured threshold.
+ */
+export async function pushNtfyTurnComplete({ elapsedSec }) {
+  await pushNtfy({
+    title: 'Claude turn complete',
+    message: `Turn finished after ${elapsedSec}s`,
+    priority: 3,
+    tags: ['bell', 'robot'],
+  })
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function startQaWatcher(broadcast) {

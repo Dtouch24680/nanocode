@@ -399,6 +399,24 @@
                 <button type="button" class="btn btn-primary" id="notify-sound-save-btn" data-i18n="btn.save">Save</button>
                 <span class="settings-status" id="notify-sound-status"></span>
               </div>
+              <!-- Turn-complete notification controls -->
+              <div class="settings-field" style="margin-top:8px">
+                <label class="settings-label" data-i18n="settings.notify.turn_threshold_label">Turn complete alert threshold (s)</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="number" id="turn-notify-threshold" class="settings-input" min="1" max="300" value="10" style="width:80px" />
+                  <span class="settings-hint-inline" data-i18n="settings.notify.turn_threshold_hint">Notify when turn exceeds this many seconds</span>
+                </div>
+              </div>
+              <div class="settings-toggle-row" style="margin-top:4px">
+                <label class="toggle-label">
+                  <input type="checkbox" id="turn-notify-ntfy" checked />
+                  <span data-i18n="settings.notify.turn_ntfy_label">Push turn-complete via ntfy</span>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button type="button" class="btn btn-primary" id="turn-notify-save-btn" data-i18n="btn.save">Save</button>
+                <span class="settings-status" id="turn-notify-status"></span>
+              </div>
             </div>
 
             <!-- TTS -->

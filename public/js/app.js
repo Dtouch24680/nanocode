@@ -498,6 +498,7 @@ function loadSettings(serverSettings) {
     if (fontSizeValue) fontSizeValue.textContent = state.fontSize + 'px'
   }
   loadNotifySoundSettings()
+  loadTurnNotifySettings()
   loadNtfySettings()
   loadToolFoldSettings()
   loadAutoResumeSettings()
@@ -674,6 +675,81 @@ if (_ntfyTestBtn) {
     }
   })
 }
+
+// ─── Turn-complete notification ───────────────────────────────────────────────
+// When a claude tab turn finishes after exceeding the threshold, we:
+//   1. Play the 'done' sound (respects global mute)
+//   2. Add an unread badge (favicon red dot)
+//   3. Optionally push ntfy via POST /api/notify/turn-complete
+
+const TURN_NOTIFY_KEY = 'nanocodeTurnNotify'
+
+/** Read persisted turn-notify prefs with safe defaults. */
+export function getTurnNotifyPrefs() {
+  try { return JSON.parse(localStorage.getItem(TURN_NOTIFY_KEY)) || {} } catch { return {} }
+}
+
+/** Threshold in seconds (default 10). */
+export function getTurnNotifyThreshold() {
+  const p = getTurnNotifyPrefs()
+  const v = parseFloat(p.threshold)
+  return (Number.isFinite(v) && v > 0) ? v : 10
+}
+
+/** Whether to push ntfy on turn complete (default true). */
+export function getTurnNotifyNtfy() {
+  const p = getTurnNotifyPrefs()
+  return p.ntfy !== false
+}
+
+function loadTurnNotifySettings() {
+  const p = getTurnNotifyPrefs()
+  const threshEl = document.getElementById('turn-notify-threshold')
+  const ntfyEl = document.getElementById('turn-notify-ntfy')
+  if (threshEl) threshEl.value = p.threshold ?? 10
+  if (ntfyEl) ntfyEl.checked = p.ntfy !== false
+}
+
+const _turnNotifySaveBtn = document.getElementById('turn-notify-save-btn')
+if (_turnNotifySaveBtn) {
+  _turnNotifySaveBtn.addEventListener('click', () => {
+    const threshold = parseFloat(document.getElementById('turn-notify-threshold')?.value ?? 10)
+    const ntfy = document.getElementById('turn-notify-ntfy')?.checked ?? true
+    const prefs = { threshold: Number.isFinite(threshold) && threshold > 0 ? threshold : 10, ntfy }
+    localStorage.setItem(TURN_NOTIFY_KEY, JSON.stringify(prefs))
+    const statusEl = document.getElementById('turn-notify-status')
+    if (statusEl) {
+      statusEl.textContent = 'Saved'
+      statusEl.className = 'settings-status success'
+      setTimeout(() => { statusEl.textContent = '' }, 3000)
+    }
+  })
+}
+
+/** Called by the nanocode:turn-complete CustomEvent dispatched by ClaudeBlockRenderer. */
+function _onTurnComplete(evt) {
+  const { elapsed } = evt.detail || {}
+  const thresholdMs = getTurnNotifyThreshold() * 1000
+  if (typeof elapsed !== 'number' || elapsed < thresholdMs) return
+
+  // 1. Sound (respects global mute + notify-sound enabled flag)
+  playNotifySound('done')
+
+  // 2. Favicon red dot (always — useful when page is in background)
+  _addUnread()
+
+  // 3. ntfy push via backend (if enabled in settings)
+  if (getTurnNotifyNtfy()) {
+    const elapsedSec = (elapsed / 1000).toFixed(0)
+    fetch('/api/notify/turn-complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ elapsed, elapsedSec }),
+    }).catch(() => {})
+  }
+}
+
+document.addEventListener('nanocode:turn-complete', _onTurnComplete)
 
 // ─── Tool fold settings ───────────────────────────────────────────────────────
 
