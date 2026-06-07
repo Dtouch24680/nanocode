@@ -319,3 +319,16 @@ commit 03beb00
 - 操作：persistent: false → true，防止 Node 事件循环退出导致 callback 不触发
 - 结果：✓ echo qa-signal → sleep 5s → [watcher] QA signal: nanocode persistent:true test
 - 产出：commit aefcd8d
+
+## 2026-06-07 [手机端 UI 对齐修复]
+- 任务：修复 5 个手机端 UI 问题（按钮高度/黑条/标签间距/工具块对齐/整体正负形）
+- 操作：只改 public/style.css，不碰后端/block-renderer.js
+- 结果：
+  - 问题1: tts/replay/send 按钮 height 44→38px，与 textarea 一致，垂直居中
+  - 问题2: .claude-queue-tray:empty {display:none} 消除无意义黑条
+  - 问题3: mobile-pane-switch gap 4→8px, padding 8px 12px→6px 8px，左右边缘均衡
+  - 问题4: cbr-tool-header 加 gap:8px；icon-wrap 固定 16px；name line-height:1；subagent-badge 移除 margin-left
+  - 问题5: 整体间距遵循 8px 网格，desktop 无回归
+- 测试：npm test 55/55 pass，3001 200 OK
+- 产出：commit bc197e3, 8431296；push fork zhining/nanocode-selfresume-bugs
+- 截图：/tmp/before_workspace_390.png, /tmp/after_workspace_390.png, /tmp/final_mobile_390.png, /tmp/final_desktop.png
