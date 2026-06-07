@@ -1,5 +1,19 @@
 # Work Log
 
+## 2026-06-07 13:40 [修复桌面端 busy 发消息不入队/滚走]
+- 任务：桌面端 Claude busy 时发消息，队列框不显示、消息直接滚走（期望对齐手机端/CLI：忙时入队列框留着）。分支 zhining/nanocode-selfresume-bugs。
+- 复现（桌面视口 1280x860，Playwright 真模拟键盘/事件链）：
+  - 同会话本地 echo 路径正常（msg1 sendInputWithEcho→thinking=true→msg2 入队，排队中(1) 出现）。
+  - **失败路径 = 刷新/重连后正在 busy 的 turn**：reload 后 chat-input 没有 claude-thinking class（thinkingClass:false），composer 以为 Claude 空闲 → 下一条走"立即发送"分支滚走。
+- 确认默认 driver：claude-session-controller.js:140 getClaudeDriver() 默认 'sdk'。WS probe 抓 SDK 事件流：turn 内 system/init→system/status→stream_event×N→assistant→result/success，result 只在 turn 末尾一次（后端 busy/queue 正常）。
+- 根因（file:line）：public/js/claude-block-renderer.js — _setThinking(true) 只在 sendInputWithEcho()（line 702，本地 echo）触发；**没有任何服务器事件把 thinking 置 true**（grep 全文仅 702 处 true）。凡是本客户端没本地发起的 turn（reload/重连/快 turn/多端）→ isClaudeThinking 恒 false → terminal-view.js:1028 sendInput 走立即发送分支 → 滚走、tray 不显示。
+- 修法（最小对症）：_handleEvent 去重后、switch 前，对 LIVE（非 fromReplay、非 _exited）的 turn-progress 事件调 _setThinking(true)。新增 _isLiveTurnEvent()：assistant/partial_message/stream_event/rate_limit_event + system{init|status} 算 turn 进行中；result/user/其他 system 子类型(queued/info/...) 不算。result 仍→false 触发 flush。fromReplay（jsonl 历史回放）不置 true，避免恢复已完成会话误显示 busy。_setThinking 值不变即 no-op，幂等不刷事件。不碰 586db7d skipFlush。
+- 验证：npm test 2>&1 | tee run-traybug.log → 62 pass 0 fail。新增回归 server/tests/claude-busy-thinking.test.js（7 例，真过 _handleEvent，用 SDK 实抓的事件形状，断言 nanocode:claude-thinking{thinking:true} 派发 + result→false + fromReplay 不置忙 + 幂等）。
+- 3001 实测：安全重启（3002 standby 200→kill 3001 pid→relaunch 3001 200→停 3002，全程至少一端口活）。Playwright reload-mid-turn：修后 thinkingClass:true，msg2 入队（排队中(1)）；修前 thinkingClass:false。
+- 截图：before /tmp/repro-reload-before-clean.log（thinkingClass:false 证据）；after /tmp/repro-after-final.png（排队中(2) tray 可见，composer 清空不滚走）/tmp/repro-reload-after.png。
+- 产出：见下方 commit SHA。
+- 下一步：push 到 fork zhining/nanocode-selfresume-bugs，等主人审核推 main。
+
 ## 2026-06-07 [SDK driver 取代 CLI 成为 block 模式默认驱动]
 - 任务：调查 Claude SDK driver 能否在 block 模式完全取代 CLI driver，有 gap 就修，最终改默认。
 - 逐项对比结论：除权限 gap 外全部对齐（model/effort/resume+continue-fallback/工具事件/interrupt/queue-flush/init-snapshot/slash/subagent/MCP/skills 经 inherited settingSources 全支持/529 fallback）。

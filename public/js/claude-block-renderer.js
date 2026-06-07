@@ -671,6 +671,34 @@ export class ClaudeBlockRenderer {
     return this._thinking
   }
 
+  // Returns true if a live (non-replay) event signals that a turn is actively
+  // running on the backend. Used to derive busy state from the server stream so
+  // the composer queues follow-up messages even when this client did not locally
+  // start the turn (reload/reconnect mid-turn, fast turns, multi-client).
+  //
+  // Turn-progress signals (SDK & CLI):
+  //   - system/init, system/status : SDK emits these at turn start
+  //   - assistant                  : streamed assistant message
+  //   - partial_message            : CLI streaming partials
+  //   - stream_event               : SDK streaming partials (includePartialMessages)
+  //   - rate_limit_event           : arrives mid-turn while the model is working
+  // Explicitly NOT turn-progress: 'result' (ends turn), 'user' (echo), and other
+  // 'system' subtypes (queued/info/resume-trigger/error/hook/stderr/fallback).
+  _isLiveTurnEvent(event) {
+    if (!event || !event.type) return false
+    switch (event.type) {
+      case 'assistant':
+      case 'partial_message':
+      case 'stream_event':
+      case 'rate_limit_event':
+        return true
+      case 'system':
+        return event.subtype === 'init' || event.subtype === 'status'
+      default:
+        return false
+    }
+  }
+
   _setThinking(val) {
     if (this._thinking === val) return
     this._thinking = val
@@ -1292,6 +1320,25 @@ export class ClaudeBlockRenderer {
     // opts.fromReplay=true means the call IS the initial jsonl replay -> skip the dedup check.
     if (!opts.fromReplay && this._replayCache.hasTransportReplay(event)) {
       return
+    }
+
+    // ── Server-driven thinking state (busy detection) ────────────────────────
+    // Previously thinking=true was set ONLY by sendInputWithEcho() (local echo).
+    // That left isClaudeThinking=false whenever a turn was in progress but THIS
+    // client didn't locally start it — page reload/reconnect mid-turn, a fast
+    // turn whose result raced ahead, or a turn started from another client. In
+    // those cases the desktop composer believed Claude was idle, so a follow-up
+    // message took the "send immediately" branch and scrolled away instead of
+    // entering the pending queue / queue tray (mobile + CLI queue correctly).
+    //
+    // Fix: any LIVE (non-replay) turn-progress event means the SDK/CLI turn is
+    // actively running -> mark thinking=true so the composer queues follow-ups.
+    // 'result' is excluded (it ends the turn -> _handleResult sets false). We
+    // skip during jsonl replay (opts.fromReplay) so restoring a COMPLETED
+    // session does not falsely show busy. _setThinking() no-ops when unchanged,
+    // so this is idempotent and never re-fires the event spuriously.
+    if (!opts.fromReplay && !this._exited && this._isLiveTurnEvent(event)) {
+      this._setThinking(true)
     }
 
     switch (event.type) {
