@@ -1,5 +1,32 @@
 # Work Log
 
+## 2026-06-07 [selfresume-bugs 收尾 — 喇叭合并+ntfy通用+interrupt测试+手机UI]
+- 任务2: 删 public/index.html:514 旧 #tts-btn 元素(15行)，清 tts.js ttsBtn引用3处
+- 任务3: index.html:340 placeholder zhiningwork→yourname; app.js 不写死 ntfy_topic 默认值
+- 任务4: 3个interrupt过时测试全修 — 判定依据a33d294+9840310:
+  - claude-interrupt-route: 等"Resuming with"事件(不是"Queue cleared") + 期望≥2 result events + first.subtype='error_during_execution'
+  - claude-sdk-driver: subtype 'error_during_execution' + setImmediate wait + reruns.length=1
+  - interrupt.test: sendRaw('\x03') 不插client-side block，期望 interrupted.length=0
+- 任务5: style.css @media(max-width:480px) .tts-btn/.tts-replay-btn/send-btn/claude-stop-btn → 44px
+- 结果: 44 pass, 0 fail; /api/codex/config={"model":"gpt-5.5"}; grep zhiningwork=0; 按钮44x44px ✓
+- 截图: /tmp/mobile_before.png / /tmp/mobile_after.png
+
+## 2026-06-07 [Settings模型下拉修复 — 删过时硬编码，Claude动态填充，Codex读config.toml]
+- 操作: public/index.html 删除 claude-model-select 所有过时硬编码 option（opus-4-5/sonnet-4-5/haiku-4-5/opus-4/sonnet-4），只保 Default
+- 操作: public/index.html 删除 codex-model-select 所有错误硬编码（o3/o4-mini/gpt-4.1/gpt-4o），只保 Default
+- 操作: public/js/app.js _applyDynamicModelOptions 删除 knownModels 硬编码列表，只保 Default + snapshot.model (current)
+- 操作: terminal/routes.js 新增 GET /api/codex/config，读 ~/.codex/config.toml model字段，返回 {model: "gpt-5.5"}
+- 操作: public/js/app.js 新增 fetchCodexConfig + _applyCodexModelOptions，openSettingsPanel 时动态填充 Codex 下拉
+- 结果: npm test 3 fail（全为既有interrupt相关，无新增）；3001重启后curl验证端点正常
+
+## 2026-06-07 [Settings面板打磨 A-E — i18n/精简/全局Permission/通知红点/静音]
+- 操作A: 新建 public/js/i18n.js，translations={en,zh}，t(key)+setLang()+applyI18n()，data-i18n属性遍历替换；Settings顶部Language下拉，默认en，即时切换
+- 操作B: index.html删CLI Provider块(131-144)、删队列开关块(191-203)、删Claude驱动块(264-276)；app.js对应handler清除；队列逻辑保持默认启用
+- 操作C: 新建全局Permission三档(full-auto/auto-edits/ask)，store key=global_permission；claude-session-controller.js两处permMode改读global_permission，codex TAB_LAUNCHER按档映射flags；恢复codex-model-select UI+JS handler
+- 操作D: app.js新增红点系统(_addUnread/_clearUnread/favicon canvas)，window focus/visibilitychange清除；喇叭改为mute-btn全局静音，tts.js+playNotifySound均检查nanocodeMuted；ntfy loadNtfySettings默认localhost/zhiningwork
+- 操作E: terminal-view.js删"⏵"字符，改为纯文字"Send now"
+- 产出: commit 7850397，npm test fail=3（均既有flaky），3001 health 200 ✓
+
 ## 2026-06-04 [打断交互收口 — CLI风格强提示block + 悬空引用清除]
 - 操作1：删除 terminal-view.js:377 悬空 `_interruptingAt = null`（变量已在上一个commit删除，ReferenceError隐患）
 - 操作2：claude-block-renderer.js 新增公共方法 `showInterruptBlock()`，文案 "[Request interrupted by user]"（从Claude CLI binary strings命令提取的原文）
