@@ -1079,19 +1079,10 @@ export function createExplorer(container, projectId) {
           }
         }
 
-        if (bestProject && bestRelPath !== null) {
-          // Switch to the matching project if different from current
-          if (bestProject.id !== project) {
-            // Emit a project-switch event so the UI can pick it up
-            document.dispatchEvent(new CustomEvent('nanocode:switch-project', {
-              detail: { projectId: bestProject.id },
-              bubbles: true,
-            }))
-            // Give the switch a moment to settle, then navigate
-            await new Promise((r) => setTimeout(r, 200))
-            if (cancelled) return
-          }
-          // Navigate within the tree using the relative path
+        if (bestProject && bestRelPath !== null && bestProject.id === project) {
+          // Same project: navigate within the existing tree (highlight + preview).
+          // If the path belongs to a *different* project, skip the tree nav entirely
+          // so we never dispatch switch-project and never change the user's working context.
           const parts = bestRelPath.split('/').filter(Boolean)
           if (!parts.length) return
           try {
