@@ -370,3 +370,67 @@ export function createStandaloneToolResultBlock({
   bindStandaloneResultFoldCycle(article, cycleToolFold)
   return article
 }
+
+/**
+ * Create a collapsed "skill load" block for user-turn messages that begin with
+ * "Base directory for this skill: <path>".
+ *
+ * The block shows a summary line (skill name + char count) and hides the full
+ * content behind a click-to-expand chevron — same interaction pattern as the
+ * Thinking block.
+ *
+ * @param {string} text  - Full raw text of the skill load message.
+ * @param {{ escHtml: Function }} deps
+ */
+export function createSkillLoadBlock(text, { escHtml }) {
+  // Parse skill name from first line: "Base directory for this skill: /path/to/skills/<name>"
+  const firstLine = text.split('\n')[0] || ''
+  const pathMatch = firstLine.match(/Base directory for this skill:\s*(.+)/)
+  let skillName = ''
+  if (pathMatch) {
+    const parts = pathMatch[1].trim().split('/')
+    skillName = parts[parts.length - 1] || ''
+  }
+  const charCount = text.length
+
+  const article = makeBlock('cbr-block-skill-load')
+  article.dataset.collapsed = '1'
+
+  article.innerHTML =
+    `<div class="cbr-skill-load-header" role="button" tabindex="0" aria-expanded="false">` +
+    `<svg class="cbr-skill-load-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+    `<span class="cbr-skill-load-icon">&#128218;</span>` +
+    `<span class="cbr-skill-load-label">Loaded skill: ${escHtml(skillName || 'unknown')}</span>` +
+    `<span class="cbr-skill-load-count">${charCount.toLocaleString()} chars</span>` +
+    `</div>` +
+    `<div class="cbr-skill-load-body" hidden><pre class="cbr-pre cbr-skill-load-pre">${escHtml(text)}</pre></div>`
+
+  const header = article.querySelector('.cbr-skill-load-header')
+  const body = article.querySelector('.cbr-skill-load-body')
+  const chevron = article.querySelector('.cbr-skill-load-chevron')
+
+  const toggle = () => {
+    const collapsed = article.dataset.collapsed === '1'
+    if (collapsed) {
+      article.dataset.collapsed = '0'
+      body.hidden = false
+      header.setAttribute('aria-expanded', 'true')
+      chevron.style.transform = 'rotate(180deg)'
+    } else {
+      article.dataset.collapsed = '1'
+      body.hidden = true
+      header.setAttribute('aria-expanded', 'false')
+      chevron.style.transform = ''
+    }
+  }
+
+  header.addEventListener('click', toggle)
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggle()
+    }
+  })
+
+  return article
+}

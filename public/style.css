@@ -4146,6 +4146,70 @@ body.workspace-active .landing-overlay { display: none; }
   color: var(--text-secondary);
 }
 
+/* ── Skill-load block (collapsed by default) ─────────────────────── */
+
+.cbr-block-skill-load {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  opacity: 0.75;
+  margin: 2px 0;
+}
+
+.cbr-skill-load-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--s-3);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.cbr-skill-load-header:hover { background: var(--bg-hover, var(--bg-tertiary)); }
+
+.cbr-skill-load-chevron {
+  flex-shrink: 0;
+  transition: transform 160ms var(--ease-standard, ease);
+}
+
+.cbr-skill-load-icon {
+  flex-shrink: 0;
+  font-style: normal;
+}
+
+.cbr-skill-load-label { flex: 1; }
+
+.cbr-skill-load-count {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.cbr-block-skill-load[data-collapsed="1"] .cbr-skill-load-header {
+  border-bottom: none;
+}
+
+.cbr-skill-load-body {
+  padding: var(--s-2) var(--s-3);
+}
+
+.cbr-skill-load-pre {
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Codex Block Renderer (cbx-*) — PTY-aware block renderer for Codex tabs
    ══════════════════════════════════════════════════════════════════ */

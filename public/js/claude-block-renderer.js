@@ -26,6 +26,7 @@
 
 import {
   buildToolResultHtml,
+  createSkillLoadBlock,
   createStandaloneToolResultBlock,
   createSystemBlock,
   createTextBlock,
@@ -1498,8 +1499,16 @@ export class ClaudeBlockRenderer {
     // Normal user event (no parent): render text turns and tool results.
     for (const c of content) {
       if (c.type === 'text' && c.text?.trim()) {
-        // History-replayed user turn (no nonce match above) — show user prompt
-        this._appendUserBlock(c.text)
+        // Skill load injection: user turns whose content begins with the canonical
+        // "Base directory for this skill:" prefix are skill SKILL.md content dumps
+        // injected by the Claude SDK. Fold them to a single collapsible line so
+        // they don't flood the conversation on every reload.
+        if (c.text.startsWith('Base directory for this skill:')) {
+          this._appendSkillLoadBlock(c.text)
+        } else {
+          // History-replayed user turn (no nonce match above) — show user prompt
+          this._appendUserBlock(c.text)
+        }
       } else if (c.type === 'tool_result') {
         // Tool output arrives as tool_result in the user turn following each tool_use.
         // This is the content that was previously invisible ("全是一条线" bug).
@@ -2084,6 +2093,12 @@ export class ClaudeBlockRenderer {
 
   _appendUserBlock(text) {
     const article = createUserBlock(text, { escHtml, attachPathAndUrlHandlers })
+    this._scroll.appendChild(article)
+    this._scrollBottom()
+  }
+
+  _appendSkillLoadBlock(text) {
+    const article = createSkillLoadBlock(text, { escHtml })
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
