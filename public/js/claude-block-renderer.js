@@ -650,6 +650,11 @@ export class ClaudeBlockRenderer {
     // Thinking state: true when claude is processing a turn
     this._thinking = false
 
+    // Subagent phase: true when the main turn is waiting for a subagent (Task tool).
+    // In this phase thinking=true (outer turn still running) but the main Claude model
+    // is idle — the UI should show Send so the user can chat/queue messages.
+    this._inSubagentPhase = false
+
     // Turn timing: timestamp (Date.now()) when the current turn started.
     // Reset to null when turn ends. Used for turn-complete notification threshold.
     this._turnStartTime = null
@@ -720,6 +725,20 @@ export class ClaudeBlockRenderer {
     // Broadcast to terminal-view.js so input bar can react
     document.dispatchEvent(new CustomEvent('nanocode:claude-thinking', {
       detail: { tabId: this.tabId, thinking: val },
+    }))
+    // When turn ends, also clear subagent phase so UI resets cleanly
+    if (!val && this._inSubagentPhase) {
+      this._inSubagentPhase = false
+    }
+  }
+
+  // Broadcast subagent-phase transitions so the input bar can show Send (not Stop)
+  // while the main agent is idle and waiting for a subagent to finish.
+  _setSubagentPhase(active) {
+    if (this._inSubagentPhase === active) return
+    this._inSubagentPhase = active
+    document.dispatchEvent(new CustomEvent('nanocode:claude-subagent-phase', {
+      detail: { tabId: this.tabId, active },
     }))
   }
 
@@ -1354,6 +1373,12 @@ export class ClaudeBlockRenderer {
     // so this is idempotent and never re-fires the event spuriously.
     if (!opts.fromReplay && !this._exited && this._isLiveTurnEvent(event)) {
       this._setThinking(true)
+      // Main-turn event → exit subagent phase (main agent is actively generating again)
+      this._setSubagentPhase(false)
+    } else if (!opts.fromReplay && !this._exited && this._thinking && event.parent_tool_use_id) {
+      // Subagent event while main turn is running → enter subagent phase so the UI
+      // shows Send (not Stop), allowing the user to chat/queue messages while waiting.
+      this._setSubagentPhase(true)
     }
 
     switch (event.type) {

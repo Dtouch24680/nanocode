@@ -691,6 +691,38 @@ function setupChatInput() {
     }
   })
 
+  // Listen for subagent-phase transitions.
+  // When the main Claude turn has handed off to a subagent (Task tool) and is now
+  // idle-waiting, active=true. The outer turn is still in progress (isClaudeThinking
+  // stays true so new messages go to the pending queue), but the main model is NOT
+  // generating — so we show Send instead of Stop, letting the user queue/chat freely.
+  // When active=false the main agent is generating again → Stop/Bg buttons return.
+  document.addEventListener('nanocode:claude-subagent-phase', (e) => {
+    const detail = e.detail || {}
+    const phaseTabId = detail.tabId
+    const activeId = tabManager ? tabManager.activeId : null
+    if (!activeId || phaseTabId !== activeId) return
+    if (!isClaudeTab) return
+    const isActiveBg = activeId && _bgTabIds.has(activeId)
+    if (isActiveBg) return  // bg turns: no UI change needed
+    if (detail.active) {
+      // Subagent phase: main agent idle, subagent running.
+      // Show Send so user can type/queue; keep isClaudeThinking=true so messages queue.
+      chatInput.classList.remove('claude-thinking')
+      stopBtn.hidden = true
+      bgBtn.hidden = true
+      sendBtn.hidden = false
+    } else {
+      // Main agent resumed generating → restore thinking UI
+      if (isClaudeThinking) {
+        chatInput.classList.add('claude-thinking')
+        stopBtn.hidden = false
+        bgBtn.hidden = false
+        sendBtn.hidden = true
+      }
+    }
+  })
+
   // ── Interrupt helper (shared by Stop btn, Esc, Ctrl+C) ─────────────────────
   // Single Esc interrupts the current turn, same as the Claude CLI. Posts
   // /interrupt to the backend (SIGINT). Does NOT call updateThinkingState(false)
