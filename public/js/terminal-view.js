@@ -367,6 +367,63 @@ function setupChatInput() {
   // Insert before send-btn
   sendBtn.parentNode.insertBefore(stopBtn, sendBtn)
 
+  // ── Claude tab "Run in Background" button ─────────────────────────────────
+  // Visible only while Claude is thinking. Releases the UI without interrupting
+  // the server-side turn; the existing turn-complete notification fires when done.
+  const bgBtn = document.createElement('button')
+  bgBtn.type = 'button'
+  bgBtn.id = 'claude-bg-btn'
+  bgBtn.className = 'claude-bg-btn'
+  bgBtn.setAttribute('aria-label', 'Run in background')
+  bgBtn.title = 'Run in background (keep turn running, free the UI)'
+  // Layers icon — two stacked rectangles, suggesting "push to back"
+  bgBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="14" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/></svg>`
+  bgBtn.hidden = true
+  // Insert before stop-btn (so order is: [bg] [stop] [send])
+  stopBtn.parentNode.insertBefore(bgBtn, stopBtn)
+
+  // ── Background turn tracking ──────────────────────────────────────────────
+  // Set of tabIds whose turns are running in the background (UI released).
+  const _bgTabIds = new Set()
+
+  function _getBgTabId() {
+    if (!tabManager) return null
+    return tabManager.activeId || null
+  }
+
+  /** Push active tab to background: release UI without interrupting server. */
+  function doBackground() {
+    const tabId = _getBgTabId()
+    if (!tabId) return
+    _bgTabIds.add(tabId)
+    // Release the UI as if thinking ended, but without a real WS result.
+    // skipFlush=true: queue must NOT flush — turn is still running server-side.
+    chatInput.classList.remove('claude-thinking')
+    stopBtn.hidden = true
+    bgBtn.hidden = true
+    sendBtn.hidden = false
+    isClaudeThinking = false
+    // Update the tab slot badge so user can see which tab has a bg turn.
+    _updateBgBadges()
+  }
+
+  /** Clear bg state for a tab (called when its turn completes). */
+  function _clearBgTab(tabId) {
+    if (!tabId) return
+    _bgTabIds.delete(tabId)
+    _updateBgBadges()
+  }
+
+  /** Refresh the small '·' badge on tab slots that have a background turn. */
+  function _updateBgBadges() {
+    const track = document.getElementById('tab-slot-track')
+    if (!track) return
+    for (const slot of track.children) {
+      const tid = slot.dataset.tabId
+      slot.classList.toggle('has-bg-turn', !!(_bgTabIds.has(tid)))
+    }
+  }
+
 
   // ── Client-side pending queue ─────────────────────────────────────────────
   // Messages typed while Claude is busy are held here (not sent to server yet).
@@ -513,13 +570,16 @@ function setupChatInput() {
 
   function updateThinkingState(thinking, { skipFlush = false } = {}) {
     isClaudeThinking = thinking
-    if (isClaudeTab && thinking) {
+    const activeTabId = tabManager ? tabManager.activeId : null
+    const isActiveBg = activeTabId && _bgTabIds.has(activeTabId)
+    if (isClaudeTab && thinking && !isActiveBg) {
       chatInput.classList.add('claude-thinking')
       // Restore stop button to default icon/state
       stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
       stopBtn.title = 'Stop Claude (interrupt)'
       stopBtn.disabled = false
       stopBtn.hidden = false
+      bgBtn.hidden = false
       sendBtn.hidden = true
     } else {
       chatInput.classList.remove('claude-thinking')
@@ -528,6 +588,7 @@ function setupChatInput() {
       stopBtn.title = 'Stop Claude (interrupt)'
       stopBtn.disabled = false
       stopBtn.hidden = true
+      bgBtn.hidden = true
       sendBtn.hidden = false
       // Auto-flush: when Claude becomes idle, send all pending queued messages
       // as one combined turn (matches CLI "send all at once when idle" behaviour).
@@ -575,6 +636,26 @@ function setupChatInput() {
     // happen when the WS 'result' event arrives confirming Claude is truly idle.
     updateInputBarForTabType({ skipFlush: true })
 
+    // If switching to a claude tab that was sent to background and is still running,
+    // restore the thinking UI (stop + bg buttons) so the user can interact again.
+    if (newTabId && _activeTabType === 'claude' && _bgTabIds.has(newTabId)) {
+      const tabEntry = tabManager ? tabManager.tabs.find((t) => t.id === newTabId) : null
+      const pane = tabEntry?.pane
+      const stillRunning = pane && typeof pane.isThinking === 'function' && pane.isThinking()
+      if (stillRunning) {
+        // Re-enter foreground thinking UI without clearing bg flag yet.
+        // The bg flag will be cleared when the WS result event (thinking=false) arrives.
+        chatInput.classList.add('claude-thinking')
+        stopBtn.hidden = false
+        bgBtn.hidden = false
+        sendBtn.hidden = true
+        isClaudeThinking = true
+      } else {
+        // Turn already completed while in bg — clean up the stale bg flag.
+        _clearBgTab(newTabId)
+      }
+    }
+
     // Start async hydrate AFTER the sync flush-guard above.  _hydrateQueue will
     // only overwrite _pendingQueue when it is still empty (problem-4 hydrate race).
     if (switchedTab && _activeTabType === 'claude' && newProjectId && newTabId) {
@@ -582,14 +663,20 @@ function setupChatInput() {
     }
 
     updateQueueTray()           // then update tray with fresh isClaudeTab
+    _updateBgBadges()         // refresh background-turn badges on tab slots
   })
 
   // Listen for claude/codex thinking state changes
   document.addEventListener('nanocode:claude-thinking', (e) => {
     const detail = e.detail || {}
-    // Only react if this is the active tab
+    const thinkingTabId = detail.tabId
+    // When a bg turn finishes (thinking=false on any tab), clear its bg state.
+    if (!detail.thinking && thinkingTabId) {
+      _clearBgTab(thinkingTabId)
+    }
+    // Only update UI if this is the active tab
     const activeId = tabManager ? tabManager.activeId : null
-    if (!activeId || detail.tabId !== activeId) return
+    if (!activeId || thinkingTabId !== activeId) return
     if (isCodexTab) {
       // N43-R9: codex is an interactive REPL — dim animation only, do NOT
       // disable the send button or the user can't navigate interactive menus
@@ -629,12 +716,18 @@ function setupChatInput() {
     chatInput.classList.remove('claude-thinking')
     stopBtn.disabled = false
     stopBtn.hidden = false
+    bgBtn.hidden = true   // bg button not needed once user chose to interrupt
     sendBtn.hidden = true
   }
 
   // Stop button click: POST interrupt to backend
   stopBtn.addEventListener('click', () => {
     doInterrupt()
+  })
+
+  // Background button click: release UI without interrupting server turn
+  bgBtn.addEventListener('click', () => {
+    doBackground()
   })
 
   // Expose doInterrupt so Esc/Ctrl+C handlers below can call it.
