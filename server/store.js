@@ -1,8 +1,14 @@
 /**
  * JSON file data layer for projects and settings.
+ *
+ * Robustness rules (do not weaken these):
+ *   - save() uses tmp+rename atomic write — never direct overwrite.
+ *   - Corrupt JSON on load is backed up as .bak before falling back to emptyData().
+ *   - These two invariants prevent crash-during-write from truncating the only
+ *     data file, and prevent silent data loss when a corrupted file is encountered.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 
 const TAB_TYPES = new Set(['bash', 'claude', 'codex', 'agent', 'opencode'])
@@ -16,7 +22,16 @@ export function createStore(filePath = ':memory:') {
   let data = emptyData()
 
   if (!inMemory && existsSync(filePath)) {
-    try { data = JSON.parse(readFileSync(filePath, 'utf-8')) } catch { data = emptyData() }
+    try {
+      data = JSON.parse(readFileSync(filePath, 'utf-8'))
+    } catch (err) {
+      // Corrupt file — back it up before falling back to empty state.
+      // This preserves forensic evidence and prevents silent data loss on
+      // every subsequent load (the .bak retains the raw bytes for recovery).
+      try { copyFileSync(filePath, filePath + '.bak') } catch { /* best-effort */ }
+      console.error('[store] corrupt JSON in', filePath, '— backed up to .bak, starting empty:', err?.message)
+      data = emptyData()
+    }
     if (!data.projects) data.projects = []
     if (!data.settings) data.settings = {}
     if (!data.tabs || typeof data.tabs !== 'object') data.tabs = {}
@@ -27,7 +42,17 @@ export function createStore(filePath = ':memory:') {
 
   function save() {
     if (inMemory) return
-    writeFileSync(filePath, JSON.stringify(data, null, 2))
+    // Atomic write: write to .tmp then rename into place.
+    // A crash during writeFileSync leaves the .tmp file (incomplete) and the
+    // original filePath intact — the live data is never truncated mid-write.
+    // This mirrors worker/data-store.js which already does this correctly.
+    const tmp = filePath + '.tmp'
+    try {
+      writeFileSync(tmp, JSON.stringify(data, null, 2))
+      renameSync(tmp, filePath)
+    } catch (err) {
+      console.error('[store] save() failed — data NOT persisted:', err?.message)
+    }
   }
 
   // --- Settings ---

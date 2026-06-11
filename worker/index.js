@@ -41,6 +41,20 @@ import { createFramer, encodeFrame } from '../server/ipc/protocol.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 
+// ── P0: Process-level exception guards (symmetric with server/index.js) ──────
+// A worker crash destroys all active PTY sessions for that user.  An
+// unhandled rejection in any async route (Express 4 does not auto-catch
+// these) or in a background task must not kill the process.
+// Strategy: log + keep alive.  Only SIGTERM/SIGINT trigger a graceful exit.
+process.on('uncaughtException', (err, origin) => {
+  console.error(`[worker CRITICAL] uncaughtException (${origin}):`, err?.message || err)
+  console.error(err?.stack || '')
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[worker CRITICAL] unhandledRejection:', reason?.message || reason)
+  if (reason?.stack) console.error(reason.stack)
+})
+
 const UID = Number(process.env.NANOCODE_TEST_FAKE_UID) || process.getuid()
 const USERNAME = process.env.NANOCODE_TEST_FAKE_USERNAME || process.env.USER || `u${UID}`
 const HOME = process.env.HOME || `/tmp/nanocode-test-${UID}`
