@@ -73,6 +73,15 @@ const app = express()
 app.use(compression())
 app.use(express.json())
 
+// ── P2: asyncWrap — Express 4 does NOT auto-propagate async rejections to the
+// error middleware; each async handler must call next(err) on failure.
+// Wrapping every async route with asyncWrap guarantees that any rejection is
+// forwarded to Express's error pipeline (and ultimately the globalErrorMiddleware
+// below) rather than becoming an unhandledRejection that exits the process.
+//
+// Usage:  app.get('/path', asyncWrap(async (req, res) => { ... }))
+const asyncWrap = fn => (req, res, next) => fn(req, res, next).catch(next)
+
 // ── P4: Cache busting — serve index.html with ?v= version strings injected ──
 // iOS Safari aggressively caches static assets. We serve index.html via a
 // dynamic route so we can inject the asset version string into CSS/JS URLs.
@@ -210,7 +219,7 @@ let _authStatusCache = null
 let _authStatusCacheAt = 0
 const AUTH_CACHE_MS = 60_000  // 60 seconds
 
-app.get('/api/auth/status', async (_req, res) => {
+app.get('/api/auth/status', asyncWrap(async (_req, res) => {
   const now = Date.now()
   if (_authStatusCache && now - _authStatusCacheAt < AUTH_CACHE_MS) {
     return res.json(_authStatusCache)
@@ -236,11 +245,39 @@ app.get('/api/auth/status', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ loggedIn: false, error: err.message })
   }
-})
+}))
 
 // ─── TTS proxy — forwards text to a local GPT-SoVITS v3 service ──────────
 
 const TTS_BASE = process.env.TTS_URL || 'http://127.0.0.1:9880'
+
+// ── P3: TTS circuit breaker ───────────────────────────────────────────────────
+// GPT-SoVITS宕机时每次都要等15s超时再503，严重拖慢队列。
+// Circuit breaker: 连续3次失败 → 30s内快速拒绝(open状态)，节省等待时间。
+// 状态机: closed(正常) → open(快速拒绝30s) → half-open(试探1次) → closed/open
+const TTS_CB = {
+  failures: 0,
+  threshold: 3,          // 连续失败N次后打开
+  cooldownMs: 30_000,    // open状态持续时间
+  openAt: 0,             // 上次打开时间戳 (0=closed)
+  isOpen() {
+    if (this.openAt === 0) return false
+    if (Date.now() - this.openAt > this.cooldownMs) {
+      // cooldown过了 → 进入half-open，允许一次试探
+      this.openAt = 0
+      return false
+    }
+    return true
+  },
+  recordSuccess() { this.failures = 0; this.openAt = 0 },
+  recordFailure() {
+    this.failures++
+    if (this.failures >= this.threshold) {
+      this.openAt = Date.now()
+      console.warn(`[TTS circuit] OPEN — ${this.failures} consecutive failures; fast-rejecting for ${this.cooldownMs / 1000}s`)
+    }
+  },
+}
 
 function getTtsConfig() {
   const s = store.getAllSettings()
@@ -286,6 +323,12 @@ async function handleTts(req, res) {
   // Outer try/catch: guarantee that NO exception can escape this function and
   // become an unhandledRejection.  All error paths return a 5xx JSON response.
   try {
+    // Circuit breaker: fast-reject when GPT-SoVITS is known-down
+    if (TTS_CB.isOpen()) {
+      const retryIn = Math.ceil((TTS_CB.cooldownMs - (Date.now() - TTS_CB.openAt)) / 1000)
+      if (!res.headersSent) res.status(503).json({ error: 'TTS circuit open — service down', retryAfter: retryIn })
+      return
+    }
     const { text } = req.body || {}
     const cfg = getTtsConfig()
     const payload = {
@@ -320,11 +363,13 @@ async function handleTts(req, res) {
           const detail = await ttsRes.text().catch(() => '')
           console.warn(`[TTS] attempt ${attempt}: service returned ${ttsRes.status}`, detail.slice(0, 200))
           if (attempt < maxRetries) continue
+          TTS_CB.recordFailure()
           if (!res.headersSent) {
             return res.status(502).json({ error: `TTS service returned ${ttsRes.status}`, detail: detail.slice(0, 200) })
           }
           return
         }
+        TTS_CB.recordSuccess()
         res.set('Content-Type', ttsRes.headers.get('content-type') || `audio/${cfg.media_type}`)
         const arrayBuf = await ttsRes.arrayBuffer()
         if (!res.headersSent) res.send(Buffer.from(arrayBuf))
@@ -332,6 +377,7 @@ async function handleTts(req, res) {
       } catch (err) {
         console.warn(`[TTS] attempt ${attempt}: ${err.message}`)
         if (attempt < maxRetries) continue
+        TTS_CB.recordFailure()
         if (!res.headersSent) {
           res.status(503).json({ error: 'TTS service unavailable', detail: err.message })
         }
@@ -347,11 +393,16 @@ async function handleTts(req, res) {
 }
 
 // Streaming TTS — proxies chunked audio from GPT-SoVITS GET /tts endpoint
-app.get('/api/tts/stream', async (req, res) => {
+app.get('/api/tts/stream', asyncWrap(async (req, res) => {
   // Outer try/catch: guarantee NO exception escapes to process level.
   try {
     const { text } = req.query
     if (!text) return res.status(400).json({ error: 'text required' })
+    // Circuit breaker fast-reject
+    if (TTS_CB.isOpen()) {
+      const retryIn = Math.ceil((TTS_CB.cooldownMs - (Date.now() - TTS_CB.openAt)) / 1000)
+      return res.status(503).json({ error: 'TTS circuit open — service down', retryAfter: retryIn })
+    }
     const cfg = getTtsConfig()
     const params = new URLSearchParams({
       text,
@@ -407,10 +458,10 @@ app.get('/api/tts/stream', async (req, res) => {
       else if (!res.writableEnded) res.end()
     } catch { /* res already gone */ }
   }
-})
+}))
 
 // Voice reference configuration
-app.post('/api/tts/voice', async (req, res) => {
+app.post('/api/tts/voice', asyncWrap(async (req, res) => {
   const { ref_audio_path, prompt_text, prompt_lang } = req.body || {}
   if (!ref_audio_path) return res.status(400).json({ error: 'ref_audio_path required' })
   try {
@@ -424,16 +475,16 @@ app.post('/api/tts/voice', async (req, res) => {
   } catch (err) {
     res.status(503).json({ error: 'TTS service unavailable', detail: err.message })
   }
-})
+}))
 
-app.get('/api/tts/status', async (_req, res) => {
+app.get('/api/tts/status', asyncWrap(async (_req, res) => {
   try {
     const r = await fetch(`${TTS_BASE}/tts`, { signal: AbortSignal.timeout(2000) })
     res.json({ available: true, config: getTtsConfig() })
   } catch {
     res.json({ available: false, config: getTtsConfig() })
   }
-})
+}))
 
 // ─── Service port health checker ─────────────────────────────────────────────
 
@@ -508,21 +559,16 @@ app.get('/api/services-config', (_req, res) => {
   res.json({ services: watchedServices, localIPs: getLocalIPs() })
 })
 
-app.get('/api/agents', async (_req, res) => {
-  // P1: async handler must be wrapped — an unhandled rejection from checkTmuxWindow
-  // (e.g. tmux not installed, SIGCHLD race) would escape to process level and kill
-  // the server. Caught here and surfaced as a 500 instead.
-  try {
-    const agents = await Promise.all(agentsConfig.map(async a => ({
-      ...a,
-      status: await checkTmuxWindow(a.tmuxWindow),
-    })))
-    res.json(agents)
-  } catch (err) {
-    console.error('[/api/agents] error:', err?.message)
-    res.status(500).json({ error: 'Failed to fetch agents', detail: err?.message })
-  }
-})
+app.get('/api/agents', asyncWrap(async (_req, res) => {
+  // P1: async handler wrapped with asyncWrap — an unhandled rejection from
+  // checkTmuxWindow (e.g. tmux not installed, SIGCHLD race) is forwarded to the
+  // Express error middleware rather than escaping to the process level.
+  const agents = await Promise.all(agentsConfig.map(async a => ({
+    ...a,
+    status: await checkTmuxWindow(a.tmuxWindow),
+  })))
+  res.json(agents)
+}))
 
 app.put('/api/agents', (req, res) => {
   const agents = req.body
@@ -533,7 +579,7 @@ app.put('/api/agents', (req, res) => {
 })
 
 // 【保留·暂隐藏】Discovered = 扫描 tmux 窗口发现外部 agent。当前工作流已全在 nanocode 内，面板入口隐藏以保持清爽；功能代码保留，以后做"监控 subagent"(自动发现并监控 tmux agent)会用到。
-app.get('/api/agents/discover', async (_req, res) => {
+app.get('/api/agents/discover', asyncWrap(async (_req, res) => {
   try {
     const { stdout } = await execFileAsync(
       'tmux', ['list-windows', '-a', '-F', '#{session_name}:#{window_name}\t#{pane_current_command}'],
@@ -551,7 +597,7 @@ app.get('/api/agents/discover', async (_req, res) => {
     })
     res.json(windows)
   } catch { res.json([]) }
-})
+}))
 
 app.put('/api/services-config', (req, res) => {
   const { services } = req.body
@@ -648,6 +694,13 @@ startQaWatcher(broadcastNotify)
 // Run initial check after startup, then every 30s
 setTimeout(() => runServiceChecks(broadcastNotify), 5000)
 setInterval(() => runServiceChecks(broadcastNotify), SERVICE_CHECK_MS)
+
+// P2 兜底 error middleware（必须在所有 route 之后）— 接住 asyncWrap .catch(next) 传出的 rejection，
+// 统一 log + 返回 500，绝不让路由层错误冒泡成 unhandledRejection 把进程 crash。Express 靠 4 个参数识别 error handler。
+app.use((err, req, res, _next) => {
+  console.error('[route error]', req?.method, req?.path, err?.message, err?.stack)
+  if (!res.headersSent) res.status(500).json({ error: err?.message || 'internal error' })
+})
 
 server.listen(PORT, HOST, () => {
   console.log(`Nanocode running on http://${HOST}:${PORT}`)
