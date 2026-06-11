@@ -1,3 +1,4 @@
+import { updateAgentHealth, seedFromServer, setNavigateHandler, refreshChipDots } from './agent-health.js'
 import { state } from './state.js'
 import { fetchProjects, fetchSettings, updateSetting } from './api.js'
 import { initSidebar, renderSidebar } from './sidebar.js'
@@ -203,6 +204,8 @@ function initNotifyWs() {
         updateServiceDot(msg.name, msg.status, msg.checkedAt)
       } else if (msg.type === 'activity') {
         console.log('[activity]', msg.repo, msg.heading)
+      } else if (msg.type === 'agent_health') {
+        updateAgentHealth(msg)
       }
     } catch {}
   }
@@ -1308,6 +1311,8 @@ async function init() {
   initThemeToggle()
   initNotifyWs()
   initAgentDrawer()
+  // Seed agent-health state from server snapshot on startup
+  seedFromServer()
   initSettingsSectionToggles()
   try { state.projects = await fetchProjects() } catch { state.projects = [] }
   initSidebar(onProjectSwitch)

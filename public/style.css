@@ -4811,3 +4811,149 @@ body.workspace-active .landing-overlay { display: none; }
     font-size: 0.8rem;
   }
 }
+
+/* ── Agent health panel ──────────────────────────────────────────────────────── */
+
+.agent-health-panel {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
+}
+
+.agent-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.agent-health-row.ah-ok {
+  background: rgba(0, 180, 120, 0.08);
+  border-color: rgba(0, 180, 120, 0.2);
+  color: var(--text-primary, #e8e8e4);
+}
+
+.agent-health-row.ah-warn {
+  background: rgba(200, 140, 30, 0.10);
+  border-color: rgba(200, 140, 30, 0.30);
+  color: var(--text-primary, #e8e8e4);
+}
+
+.agent-health-row.ah-err {
+  background: rgba(220, 60, 60, 0.10);
+  border-color: rgba(220, 60, 60, 0.30);
+  color: var(--text-primary, #e8e8e4);
+}
+
+.agent-health-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.agent-health-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Colored dot */
+.agent-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.agent-health-dot.ah-ok    { background: #00c87a; }
+.agent-health-dot.ah-warn  { background: #d4a017; }
+.agent-health-dot.ah-err   { background: #e04040; box-shadow: 0 0 4px rgba(224,64,64,0.5); }
+
+.agent-health-name {
+  font-weight: 600;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.agent-health-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-health-badge.ah-ok   { background: rgba(0,200,122,0.15); color: #00c87a; }
+.agent-health-badge.ah-warn { background: rgba(212,160,23,0.15); color: #d4a017; }
+.agent-health-badge.ah-err  { background: rgba(224,64,64,0.15);  color: #e04040; }
+
+.agent-health-dur {
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.agent-health-lastline {
+  font-size: 11px;
+  opacity: 0.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.agent-health-cta {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+}
+.agent-health-cta.ah-ok   { border-color: rgba(0,200,122,0.35); color: #00c87a; }
+.agent-health-cta.ah-warn { border-color: rgba(212,160,23,0.35); color: #d4a017; }
+.agent-health-cta.ah-err  { border-color: rgba(224,64,64,0.35);  color: #e04040; }
+.agent-health-cta:hover   { opacity: 0.8; }
+
+.agent-health-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.4;
+  padding: 2px 4px;
+  color: inherit;
+}
+.agent-health-close:hover { opacity: 0.8; }
+
+/* Tab slot health dot */
+.tab-health-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 3px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.tab-health-dot.ah-warn { background: #d4a017; }
+.tab-health-dot.ah-err  { background: #e04040; box-shadow: 0 0 3px rgba(224,64,64,0.6); }

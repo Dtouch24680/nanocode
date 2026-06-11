@@ -14,6 +14,7 @@ import { getStore } from './store.js'
 import { createTerminalRoutes } from '../terminal/routes.js'
 import { createFileRoutes } from '../terminal/files.js'
 import { startQaWatcher, setNtfyStore, pushNtfyTurnComplete } from './qa-watcher.js'
+import { createAgentHealthMonitor } from '../terminal/agent-health-monitor.js'
 
 // ── P0: Process-level exception guards ───────────────────────────────────────
 // TTS failures (fetch timeout, connection refused, bad response, stream errors)
@@ -136,7 +137,7 @@ const {
   router: terminalRouter,
   handleTerminalWs,
   handleTabsWs,
-  setNotifyBroadcaster,
+  setAgentHealthMonitor,
 } = createTerminalRoutes(store)
 
 // ─── Token auth middleware ─────────────────────────────────────────────────
@@ -599,6 +600,32 @@ app.get('/api/agents/discover', asyncWrap(async (_req, res) => {
   } catch { res.json([]) }
 }))
 
+// ─── Agent health monitor ─────────────────────────────────────────────────────
+// Tracks idle/stuck/approval/rate-limited/crashed state for active claude and
+// codex sessions. Events are fed via sessionController hooks in routes.js.
+// Results are broadcast over /ws/notify (type=agent_health) and exposed via
+// GET /api/agents/health for initial front-end seeding.
+
+const agentHealthMonitor = createAgentHealthMonitor({ store })
+
+// Wire the monitor's notifier to the global broadcastNotify.
+// broadcastNotify is defined below when the WS server is set up; we use a
+// closure so the reference resolves at call time (after broadcastNotify is
+// declared).
+agentHealthMonitor.setNotifier((payload) => {
+  try { broadcastNotify(payload) } catch {}
+})
+
+// Register the monitor with the session controller so claude/codex events flow
+// into it automatically. setAgentHealthMonitor is exported from routes.js.
+if (typeof setAgentHealthMonitor === 'function') {
+  setAgentHealthMonitor(agentHealthMonitor)
+}
+
+app.get('/api/agents/health', asyncWrap(async (_req, res) => {
+  res.json(agentHealthMonitor.listSnapshot())
+}))
+
 app.put('/api/services-config', (req, res) => {
   const { services } = req.body
   if (!Array.isArray(services)) return res.status(400).json({ error: 'services must be array' })
@@ -688,7 +715,6 @@ function broadcastNotify(msg) {
   }
 }
 
-setNotifyBroadcaster?.(broadcastNotify)
 startQaWatcher(broadcastNotify)
 
 // Run initial check after startup, then every 30s

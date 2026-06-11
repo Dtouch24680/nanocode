@@ -119,12 +119,34 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return "'" + s.replace(/'/g, "'\\''") + "'"
   }
 
+  // ── Agent health monitor hook ────────────────────────────────────────────────
+  let _agentHealthMonitor = null
+
+  function setAgentHealthMonitor(monitor) {
+    _agentHealthMonitor = monitor || null
+  }
+
   function claudeBroadcast(cs, event) {
     cs.history.push(event)
     if (cs.history.length > 500) cs.history.shift()
     const msg = JSON.stringify({ type: 'claude-event', event })
     for (const client of cs.clients) {
       if (client.readyState === 1) try { client.send(msg) } catch {}
+    }
+    // Feed event into health monitor if registered
+    if (_agentHealthMonitor && cs.sessionKey) {
+      try {
+        const [projectId, , tabId] = cs.sessionKey.split(':')
+        _agentHealthMonitor.recordClaudeEvent({
+          sessionKey: cs.sessionKey,
+          projectId,
+          tabId,
+          tabType: 'claude',
+          provider: 'claude',
+          source: 'claude-sdk',
+          sessionId: cs.claudeSessionId,
+        }, event)
+      } catch {}
     }
   }
 
@@ -163,6 +185,21 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     const msg = JSON.stringify({ type: 'codex-event', event })
     for (const client of cs.clients) {
       if (client.readyState === 1) try { client.send(msg) } catch {}
+    }
+    // Feed event into health monitor if registered
+    if (_agentHealthMonitor && cs.sessionKey) {
+      try {
+        const [projectId, , tabId] = cs.sessionKey.split(':')
+        _agentHealthMonitor.recordCodexEvent({
+          sessionKey: cs.sessionKey,
+          projectId,
+          tabId,
+          tabType: 'codex',
+          provider: 'codex',
+          source: 'codex-sdk',
+          threadId: cs.codexThreadId,
+        }, event)
+      } catch {}
     }
   }
 
@@ -673,6 +710,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       // between history fetch and WS attach). This is the basis for the continue-fallback chain.
       const resolvedExplicit = explicitSessionId && !_activeSessionOverride
       cs = {
+        sessionKey,
         claudeSessionId,
         clients: new Set(),
         history: [],
@@ -774,6 +812,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     if (!cs) {
       const tab = store.getTab ? store.getTab(projectId, tabId) : null
       cs = {
+        sessionKey,
         codexThreadId: tab?.codexThreadId || null,
         clients: new Set(),
         scrollback: '',
@@ -1006,6 +1045,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     handleReset,
     handleTerminalWs,
     primeReplayHistory,
+    setAgentHealthMonitor,
     setClaudeSessionId,
   }
 }

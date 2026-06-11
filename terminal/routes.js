@@ -685,5 +685,10 @@ export function createTerminalRoutes(store) {
     sessionController.handleReset(req, res)
   })
 
-  return { router, handleTerminalWs: sessionController.handleTerminalWs, handleTabsWs }
+  return {
+    router,
+    handleTerminalWs: sessionController.handleTerminalWs,
+    handleTabsWs,
+    setAgentHealthMonitor: sessionController.setAgentHealthMonitor,
+  }
 }
