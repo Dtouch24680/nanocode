@@ -1078,45 +1078,25 @@ async function fetchInitSnapshot(forceRefresh = false) {
 }
 
 function _applyDynamicModelOptions(snapshot) {
-  const sel = document.getElementById('claude-model-select')
-  if (!sel || !snapshot) return
+  const inp = document.getElementById('claude-model-select')
+  if (!inp || !snapshot) return
 
-  const currentVal = sel.value
-
-  // Build model options: always include the blank "default" option.
-  // No hardcoded model names — only the live model reported by the CLI.
-  const options = [{ value: '', label: t('settings.claude.model.default') }]
-
-  // If snapshot has a current model, add it as the only explicit option
-  if (snapshot.model) {
-    options.push({ value: snapshot.model, label: `${snapshot.model} (current)` })
+  // If user hasn't typed anything yet, pre-fill with the CLI-reported model
+  // so they can see what's active without having to look elsewhere.
+  // Don't overwrite a value the user already typed in.
+  if (!inp.value && snapshot.model) {
+    inp.value = snapshot.model
   }
 
-  // Rebuild select options
-  sel.innerHTML = ''
-  for (const opt of options) {
-    const el = document.createElement('option')
-    el.value = opt.value
-    el.textContent = opt.label
-    sel.appendChild(el)
-  }
-
-  // Restore selection
-  if (currentVal) {
-    sel.value = currentVal
-    // If the value doesn't match (model no longer in list), reset to default
-    if (sel.value !== currentVal) sel.value = ''
-  }
-
-  // Add hint below select showing current active model
-  const hint = sel.parentElement?.querySelector('.settings-current-model-hint')
+  // Add/update hint below input showing current active CLI model
+  const hint = inp.parentElement?.querySelector('.settings-current-model-hint')
   if (snapshot.model) {
     if (!hint) {
       const h = document.createElement('div')
       h.className = 'settings-current-model-hint settings-hint-inline'
       h.style.cssText = 'margin-top:4px;font-size:10px;'
       h.textContent = `当前 CLI 默认: ${snapshot.model}`
-      sel.parentElement?.appendChild(h)
+      inp.parentElement?.appendChild(h)
     } else {
       hint.textContent = `当前 CLI 默认: ${snapshot.model}`
     }

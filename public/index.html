@@ -188,9 +188,7 @@
             <div class="settings-subsection">
               <div class="settings-label-row"><span data-i18n="settings.claude.model.label">Claude Model</span> <span class="settings-hint-inline" data-i18n="settings.claude.model.hint">Empty = CLI default</span></div>
               <div class="settings-field">
-                <select id="claude-model-select" class="settings-input">
-                  <option value="" data-i18n="settings.claude.model.default">Default (CLI decides)</option>
-                </select>
+                <input type="text" id="claude-model-select" class="settings-input" placeholder="e.g. claude-fable-5 (empty = CLI default)">
               </div>
               <div class="settings-actions">
                 <button type="button" class="btn btn-primary" id="claude-model-save-btn" data-i18n="btn.save">Save</button>

@@ -745,6 +745,33 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         // claude --print (non-interactive) blocks /resume with "isn't available
         // in this environment". Intercept here and route to nanocode's own
         // session-resume mechanism instead.
+        // ── /model interception ──────────────────────────────────────────────
+        // claude --print (non-interactive) ignores /model. Intercept here and
+        // update the claude_model setting directly so the next turn picks it up.
+        if (msg.text.trim().startsWith('/model')) {
+          const parts = msg.text.trim().split(/\s+/)
+          const doneEvent = { type: 'result', subtype: 'success' }
+          try { ws.send(JSON.stringify({ type: 'claude-event', event: doneEvent })) } catch {}
+          if (parts.length >= 2) {
+            const newModel = parts[1]
+            store.setSetting('claude_model', newModel)
+            const infoEvent = {
+              type: 'system',
+              subtype: 'info',
+              text: `Model switched to ${newModel}. Takes effect on next message.`,
+            }
+            try { ws.send(JSON.stringify({ type: 'claude-event', event: infoEvent })) } catch {}
+          } else {
+            const currentModel = store.getSetting('claude_model') || '(CLI default)'
+            const infoEvent = {
+              type: 'system',
+              subtype: 'info',
+              text: `Current model: ${currentModel}\nUsage: /model <model-name>  (e.g. /model claude-fable-5)`,
+            }
+            try { ws.send(JSON.stringify({ type: 'claude-event', event: infoEvent })) } catch {}
+          }
+          return
+        }
         if (msg.text.trim() === '/resume') {
           // Always send a result event first so the client exits thinking state
           // (sendInputWithEcho set thinking=true; without result the UI stays
