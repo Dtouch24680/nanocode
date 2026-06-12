@@ -53,7 +53,7 @@ try {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 9475
 const HOST = process.env.HOST || '0.0.0.0'
 
 // System mode: this process becomes the router. Workers are spawned
@@ -494,7 +494,7 @@ const DEFAULT_SERVICES = [
   { name: 'mblend',      host: '10.18.8.55', port: 5050 },
   { name: 'dccpipeline', host: '10.18.8.55', port: 8765 },
   { name: 'regression',  host: '10.18.8.55', port: 8000 },
-  { name: 'nanocode',    host: 'localhost',  port: 3001 },
+  { name: 'nanocode',    host: 'localhost',  port: 9475 },
   { name: 'TTS',         host: 'localhost',  port: 9880 },
 ]
 

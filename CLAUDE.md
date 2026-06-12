@@ -11,9 +11,11 @@ npm test
 
 ## 热更新部署
 
-1. `PORT=3002 node server/index.js &` → 确认 200
-2. `kill $(lsof -t -i:3001)` → `PORT=3001 node server/index.js &`
-3. 确认 3001 正常后停 3002。**始终保证至少一个端口可用。**
+默认端口 **9475**（常驻；`server/index.js` 的 `PORT` 默认值已设为 9475）。
+
+1. `PORT=9476 node server/index.js &` → 确认 200
+2. `kill $(lsof -t -i:9475)` → `node server/index.js &`（默认即 9475）
+3. 确认 9475 正常后停 9476。**始终保证至少一个端口可用。**
 
 ## Git 远程
 
