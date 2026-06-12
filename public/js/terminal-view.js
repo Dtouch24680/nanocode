@@ -1141,9 +1141,213 @@ function setupChatInput() {
     })
   }
 
+  // ── Feature 2: /model interactive picker ─────────────────────────────────
+  // When the user types /model (with no args, or bare /model), intercept client-
+  // side and show a two-step inline picker: Step 1 = model, Step 2 = effort.
+  // Applies only to claude tabs. If the user typed /model <name> directly, we
+  // still pass it through to the backend interception for backward compat.
+
+  // Available Claude models for the picker (canonical list; kept short and real).
+  const _MODEL_PICKER_LIST = [
+    { id: 'claude-fable-5',          label: 'Claude Fable 5',          hint: 'Latest · recommended' },
+    { id: 'claude-opus-4-5',         label: 'Claude Opus 4.5',         hint: 'Powerful · complex tasks' },
+    { id: 'claude-sonnet-4-5',       label: 'Claude Sonnet 4.5',       hint: 'Balanced' },
+    { id: 'claude-haiku-4-5',        label: 'Claude Haiku 4.5',        hint: 'Fast · lightweight' },
+    { id: 'claude-opus-4',           label: 'Claude Opus 4',           hint: 'Advanced reasoning' },
+    { id: 'claude-sonnet-4',         label: 'Claude Sonnet 4',         hint: 'Reliable workhorse' },
+    { id: '',                        label: '(CLI default)',            hint: 'Use whatever claude CLI defaults to' },
+  ]
+
+  const _EFFORT_PICKER_LIST = [
+    { id: 'xhigh', label: 'xhigh', hint: 'Max thinking budget · slowest · most thorough' },
+    { id: 'high',  label: 'high',  hint: 'Extended reasoning · thorough' },
+    { id: 'medium',label: 'medium',hint: 'Balanced speed vs depth' },
+    { id: 'low',   label: 'low',   hint: 'Fast · minimal thinking' },
+    { id: '',      label: '(none / CLI default)', hint: 'No --effort flag passed to claude' },
+  ]
+
+  let _modelPickerEl = null
+
+  function dismissModelPicker() {
+    if (_modelPickerEl) {
+      _modelPickerEl.remove()
+      _modelPickerEl = null
+    }
+  }
+
+  function _getPickerScroll() {
+    const container = activePane?.container || activePane?._scroll?.parentElement
+    return container?.querySelector('.cbr-scroll') || activePane?._scroll || null
+  }
+
+  function _appendToScroll(el) {
+    const scroll = _getPickerScroll()
+    if (!scroll) return false
+    scroll.appendChild(el)
+    scroll.scrollTop = scroll.scrollHeight
+    return true
+  }
+
+  async function showModelPicker() {
+    dismissModelPicker()
+
+    // Fetch current settings from server to pre-highlight active model/effort.
+    // Gracefully degrade to empty string if the fetch fails (no pre-highlight).
+    let curModel = ''
+    let curEffort = ''
+    try {
+      const res = await fetch('/api/settings')
+      if (res.ok) {
+        const s = await res.json()
+        curModel = s.claude_model || ''
+        curEffort = s.claude_effort || ''
+      }
+    } catch (_) { /* ignore — picker still works, just no pre-highlight */ }
+
+    const picker = document.createElement('div')
+    picker.className = 'cbr-model-picker'
+    _modelPickerEl = picker
+
+    // Build step 1: model selection
+    function buildModelStep() {
+      picker.innerHTML = ''
+      const header = document.createElement('div')
+      header.className = 'cbr-model-picker-header'
+      header.textContent = 'Select model (step 1 of 2)'
+      picker.appendChild(header)
+
+      const grid = document.createElement('div')
+      grid.className = 'cbr-model-picker-grid'
+
+      for (const m of _MODEL_PICKER_LIST) {
+        const btn = document.createElement('button')
+        btn.className = 'cbr-model-picker-btn' + (m.id === curModel ? ' cbr-model-picker-active' : '')
+        btn.innerHTML = `<span class="cbr-model-picker-name">${escapeHtml(m.label)}</span>` +
+                        `<span class="cbr-model-picker-hint">${escapeHtml(m.hint)}</span>`
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          buildEffortStep(m)
+        })
+        grid.appendChild(btn)
+      }
+
+      picker.appendChild(grid)
+
+      const cancelRow = document.createElement('div')
+      cancelRow.className = 'cbr-model-picker-cancel-row'
+      const cancelBtn = document.createElement('button')
+      cancelBtn.className = 'cbr-queue-btn cbr-queue-cancel'
+      cancelBtn.textContent = 'Cancel'
+      cancelBtn.addEventListener('mousedown', (e) => { e.preventDefault(); dismissModelPicker(); chatInput.focus() })
+      cancelRow.appendChild(cancelBtn)
+      picker.appendChild(cancelRow)
+
+      const scroll = _getPickerScroll()
+      if (scroll) scroll.scrollTop = scroll.scrollHeight
+    }
+
+    function buildEffortStep(chosenModel) {
+      picker.innerHTML = ''
+      const header = document.createElement('div')
+      header.className = 'cbr-model-picker-header'
+      header.innerHTML = `Select reasoning effort for <strong>${escapeHtml(chosenModel.label)}</strong> (step 2 of 2)`
+      picker.appendChild(header)
+
+      const grid = document.createElement('div')
+      grid.className = 'cbr-model-picker-grid'
+
+      for (const ef of _EFFORT_PICKER_LIST) {
+        const btn = document.createElement('button')
+        btn.className = 'cbr-model-picker-btn' + (ef.id === curEffort ? ' cbr-model-picker-active' : '')
+        btn.innerHTML = `<span class="cbr-model-picker-name">${escapeHtml(ef.label)}</span>` +
+                        `<span class="cbr-model-picker-hint">${escapeHtml(ef.hint)}</span>`
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          applyModelAndEffort(chosenModel, ef)
+        })
+        grid.appendChild(btn)
+      }
+
+      picker.appendChild(grid)
+
+      const cancelRow = document.createElement('div')
+      cancelRow.className = 'cbr-model-picker-cancel-row'
+      const backBtn = document.createElement('button')
+      backBtn.className = 'cbr-queue-btn'
+      backBtn.textContent = '← Back'
+      backBtn.addEventListener('mousedown', (e) => { e.preventDefault(); buildModelStep() })
+      const cancelBtn = document.createElement('button')
+      cancelBtn.className = 'cbr-queue-btn cbr-queue-cancel'
+      cancelBtn.textContent = 'Cancel'
+      cancelBtn.addEventListener('mousedown', (e) => { e.preventDefault(); dismissModelPicker(); chatInput.focus() })
+      cancelRow.appendChild(backBtn)
+      cancelRow.appendChild(cancelBtn)
+      picker.appendChild(cancelRow)
+
+      const scroll = _getPickerScroll()
+      if (scroll) scroll.scrollTop = scroll.scrollHeight
+    }
+
+    async function applyModelAndEffort(chosenModel, chosenEffort) {
+      dismissModelPicker()
+      try {
+        // Update both settings via REST API (same path app.js uses for the settings panel)
+        await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'claude_model', value: chosenModel.id }),
+        })
+        await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'claude_effort', value: chosenEffort.id }),
+        })
+        // Update local serverSettings cache so the picker reflects new values immediately
+        if (typeof serverSettings !== 'undefined') {
+          serverSettings.claude_model = chosenModel.id
+          serverSettings.claude_effort = chosenEffort.id
+        }
+        // Show confirmation as a system info message rendered inline
+        const confirmEl = document.createElement('div')
+        confirmEl.className = 'cbr-model-picker-confirm'
+        const modelLabel = chosenModel.label || '(CLI default)'
+        const effortLabel = chosenEffort.id ? ` · effort: ${chosenEffort.label}` : ''
+        confirmEl.textContent = `Model set to ${modelLabel}${effortLabel}. Takes effect on next message.`
+        _appendToScroll(confirmEl)
+        setTimeout(() => confirmEl.remove(), 5000)
+      } catch (err) {
+        console.error('[model-picker] failed to save settings:', err)
+        const errEl = document.createElement('div')
+        errEl.className = 'cbr-model-picker-confirm cbr-model-picker-error'
+        errEl.textContent = `Failed to save model: ${err.message}`
+        _appendToScroll(errEl)
+        setTimeout(() => errEl.remove(), 5000)
+      }
+      chatInput.focus()
+    }
+
+    buildModelStep()
+
+    if (!_appendToScroll(picker)) {
+      // No CBR scroll available (plain terminal tab) — fall back to clearing input
+      _modelPickerEl = null
+    }
+  }
+
   function sendInput() {
     const text = chatInput.value
     if (!text) return
+
+    // /model with no args (or bare /model) on a claude tab → show inline picker
+    if (isClaudeTab && text.trim().match(/^\/model\s*$/)) {
+      chatInput.value = ''
+      autoResize()
+      hideSuggestions()
+      hideSlashCommands()
+      chatInput.focus()
+      showModelPicker()
+      return
+    }
 
     // When Claude is busy: silently add to client-side pending queue.
     // No per-message banner — matches CLI behaviour of auto-queuing with a
