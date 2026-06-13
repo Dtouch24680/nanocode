@@ -150,10 +150,47 @@ export function createClaudeSdkDriver({
           text.includes('not found')
         ) && (useResumeOnFirstTurn || !isFirstTurn)
 
-        // If we have a CLI fallback, broadcast sdk_error_fallback and retry this turn via CLI.
-        // For resume-miss: if sessionFallback=continue, the CLI will use --continue.
-        // For other errors: CLI retries the same args (existing behaviour).
-        if (typeof runCliFallback === 'function') {
+        // Detect SDK-wrapped API error results: the SDK internally throws when the
+        // underlying claude subprocess returns an error result (e.g. model_not_found,
+        // rate_limit, server_error). These are NOT SDK infrastructure crashes — the
+        // result event was already (or is about to be) broadcast to the client, and
+        // re-running the same turn via CLI would produce the exact same API error.
+        // We suppress the CLI fallback for these cases to avoid the ugly "SDK error →
+        // 已自动切回 CLI 这一 turn" banner, and instead let the result surface cleanly
+        // as a normal assistant error message (same as the CLI path does).
+        //
+        // Pattern: "Claude Code returned an error result: <reason>"
+        const isSdkWrappedResultError = text.startsWith('Claude Code returned an error result:')
+
+        // isSdkWrappedResultError suppresses CLI fallback only for non-resume-miss errors.
+        // Resume-miss ("No conversation found") still goes through CLI --continue fallback
+        // because the CLI can recover the session via --continue.
+        if (isSdkWrappedResultError && !isResumeMiss) {
+          // The SDK threw because the turn produced an error result (e.g. model_not_found,
+          // rate_limit, overloaded). The CLI would hit the same API error, so there's no
+          // benefit to falling back. Suppress the CLI fallback and let the result surface
+          // cleanly as a normal assistant error message.
+          console.warn(`[sdk:result-error] ${sessionKey}: SDK wrapped error result (${text.slice(0, 120)}), suppressing CLI fallback`)
+          if (!sawResult) {
+            // Extract the reason after "Claude Code returned an error result: "
+            const reason = text.slice('Claude Code returned an error result: '.length).trim()
+            claudeBroadcast(cs, {
+              type: 'result',
+              subtype: 'error_during_execution',
+              is_error: true,
+              duration_ms: 0,
+              duration_api_ms: 0,
+              num_turns: cs.turnCount,
+              total_cost_usd: 0,
+              result: reason || text,
+              session_id: lastSessionId,
+              errors: [reason || text],
+            })
+            sawResult = true
+          }
+          // No CLI fallback — let the finally block clean up normally.
+        } else if (typeof runCliFallback === 'function') {
+          // For resume-miss and real SDK errors: fall back to CLI path.
           if (isResumeMiss && sessionFallback !== 'strict') {
             console.warn(`[sdk:resume-miss] ${sessionKey}: SDK resume failed (${text.slice(0, 80)}), falling back to CLI --continue`)
             cs.explicitSessionId = false  // clear so CLI fallback uses --continue path

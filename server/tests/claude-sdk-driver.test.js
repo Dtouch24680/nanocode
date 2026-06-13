@@ -294,4 +294,88 @@ describe('claude sdk driver', () => {
     assert.equal(opts.permissionMode, 'acceptEdits')
     assert.equal(opts.allowDangerouslySkipPermissions, false)
   })
+
+  // ── SDK-wrapped result error suppression (model_not_found / rate_limit etc.) ──
+  // When the SDK throws "Claude Code returned an error result: <reason>" (non-resume-miss),
+  // the driver must NOT fall back to CLI. The result event was already broadcast, so the
+  // client sees the error cleanly without the "SDK error → 已自动切回 CLI" banner.
+  it('suppresses CLI fallback for SDK-wrapped api error results (e.g. model_not_found)', async () => {
+    const broadcasted = []
+    const fallbacks = []
+    const store = { getSetting() { return null } }
+
+    // Simulate the SDK broadcasting the error result event THEN throwing the wrapped error.
+    let throwFn
+    const queryImpl = () => {
+      async function* run() {
+        yield { type: 'result', subtype: 'success', is_error: true, session_id: 's',
+          result: "There's an issue with the selected model (claude-fable-5). It may not exist or you may not have access to it." }
+        // After emitting the result, throw like the SDK does internally.
+        // We use a deferred approach: the generator throws synchronously after yielding.
+        throw new Error("Claude Code returned an error result: There's an issue with the selected model (claude-fable-5). It may not exist or you may not have access to it.")
+      }
+      const it = run()
+      it.interrupt = async () => {}
+      it.close = async () => {}
+      return it
+    }
+
+    const driver = createClaudeSdkDriver({
+      store,
+      claudeBroadcast: (_cs, event) => { broadcasted.push(event) },
+      rerunTurn: () => {},
+      runCliFallback: (...args) => { fallbacks.push(args) },
+      queryImpl,
+    })
+    const cs = {
+      claudeSessionId: 's', busy: false, turnCount: 0,
+      queue: [], history: [], clients: new Set(),
+    }
+    await driver.runSdkTurn(cs, 'hi', 'p:claude:t', '/tmp')
+
+    // No CLI fallback triggered
+    assert.equal(fallbacks.length, 0, 'CLI fallback must NOT be triggered for SDK-wrapped result errors')
+    // No sdk_error_fallback system event in the broadcast
+    const sdkFallbackEvents = broadcasted.filter((e) => e.subtype === 'sdk_error_fallback')
+    assert.equal(sdkFallbackEvents.length, 0, 'sdk_error_fallback system event must NOT be broadcast')
+    // The result event WAS broadcast (sawResult=true before throw)
+    const resultEvents = broadcasted.filter((e) => e.type === 'result')
+    assert.equal(resultEvents.length >= 1, true, 'result event must be broadcast')
+    // cs is cleaned up properly
+    assert.equal(cs.busy, false)
+  })
+
+  it('still falls back to CLI for resume-miss errors even when SDK wraps them as result errors', async () => {
+    const broadcasted = []
+    const fallbacks = []
+    const store = { getSetting() { return null } }
+
+    const queryImpl = () => {
+      async function* run() {
+        throw new Error('Claude Code returned an error result: No conversation found with session ID: abc123')
+      }
+      const it = run()
+      it.interrupt = async () => {}
+      it.close = async () => {}
+      return it
+    }
+
+    const driver = createClaudeSdkDriver({
+      store,
+      claudeBroadcast: (_cs, event) => { broadcasted.push(event) },
+      rerunTurn: () => {},
+      runCliFallback: (...args) => { fallbacks.push(args) },
+      queryImpl,
+    })
+    const cs = {
+      claudeSessionId: 'abc123', busy: false, turnCount: 1,
+      explicitSessionId: true, queue: [], history: [], clients: new Set(),
+    }
+    await driver.runSdkTurn(cs, 'hi', 'p:claude:t', '/tmp')
+    // Let setImmediate fire (the CLI fallback is dispatched via setImmediate)
+    await new Promise((resolve) => setImmediate(resolve))
+
+    // Resume-miss → CLI fallback IS triggered
+    assert.equal(fallbacks.length, 1, 'CLI fallback must be triggered for resume-miss errors')
+  })
 })
