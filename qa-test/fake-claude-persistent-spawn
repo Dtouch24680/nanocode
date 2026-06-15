@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+import { appendFileSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+
+const pidFile = process.env.NANOCODE_FAKE_CLAUDE_PID_FILE
+const sessionId = process.env.NANOCODE_FAKE_CLAUDE_SESSION_ID || 'fake-persistent-spawn-session'
+
+function record(event, extra = {}) {
+  if (!pidFile) return
+  appendFileSync(pidFile, JSON.stringify({
+    event,
+    pid: process.pid,
+    ppid: process.ppid,
+    ts: Date.now(),
+    ...extra,
+  }) + '\n')
+}
+
+const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+  stdio: 'ignore',
+})
+child.unref()
+
+if (pidFile) {
+  writeFileSync(pidFile, JSON.stringify({
+    event: 'started',
+    pid: process.pid,
+    ppid: process.ppid,
+    childPid: child.pid,
+    ts: Date.now(),
+  }) + '\n')
+}
+
+const terminate = (signal) => {
+  record('signal', { signal, childPid: child.pid })
+  try { child.kill(signal) } catch {}
+  process.exit(signal === 'SIGTERM' ? 143 : 130)
+}
+
+process.on('SIGTERM', () => terminate('SIGTERM'))
+process.on('SIGINT', () => terminate('SIGINT'))
+
+console.log(JSON.stringify({
+  type: 'system',
+  subtype: 'init',
+  session_id: sessionId,
+  tools: [],
+}))
+
+let responded = false
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => {
+  record('stdin-data', { bytes: Buffer.byteLength(chunk), childPid: child.pid })
+  if (responded) return
+  responded = true
+  console.log(JSON.stringify({
+    type: 'assistant',
+    session_id: sessionId,
+    message: { role: 'assistant', content: [{ type: 'text', text: 'fake persistent spawn running' }] },
+  }))
+  console.log(JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    session_id: sessionId,
+    result: 'fake persistent spawn running',
+  }))
+})
+process.stdin.on('end', () => {
+  record('stdin-end', { childPid: child.pid })
+})
+
+setInterval(() => {
+  record('heartbeat', { childPid: child.pid })
+}, 5000).unref()
+
+setInterval(() => {}, 1000)

@@ -1,7 +1,101 @@
+import {
+  buildAskUserQuestionResult,
+  normalizeAskUserQuestionPayload,
+} from './ask-user-question.js'
+
 function makeBlock(extraClasses = '') {
   const article = document.createElement('article')
   article.className = `cbr-block ${extraClasses}`.trim()
   return article
+}
+
+export function createAskUserQuestionBlock({ dialogId, payload, onSubmit }) {
+  const article = makeBlock('cbr-block-ask-user-question')
+  if (dialogId) article.dataset.dialogId = dialogId
+
+  const form = document.createElement('form')
+  form.className = 'cbr-ask-form'
+  const questionViews = []
+
+  const questions = normalizeAskUserQuestionPayload(payload)
+  for (let index = 0; index < questions.length; index++) {
+    const question = questions[index]
+    const section = document.createElement('section')
+    section.className = 'cbr-ask-question'
+
+    const title = document.createElement('div')
+    title.className = 'cbr-ask-title'
+    title.textContent = question.header || question.question
+    section.appendChild(title)
+
+    const prompt = document.createElement('p')
+    prompt.className = 'cbr-ask-prompt'
+    prompt.textContent = question.question
+    section.appendChild(prompt)
+
+    const inputs = []
+    for (const option of question.options) {
+      const label = document.createElement('label')
+      label.className = 'cbr-ask-option'
+
+      const input = document.createElement('input')
+      input.className = 'cbr-ask-option-checkbox'
+      input.type = question.multiSelect ? 'checkbox' : 'radio'
+      input.name = `ask-${dialogId || 'dialog'}-${index}`
+      input.value = option.label
+      inputs.push(input)
+      label.appendChild(input)
+
+      const text = document.createElement('span')
+      text.className = 'cbr-ask-option-label'
+      text.textContent = option.description ? `${option.label} - ${option.description}` : option.label
+      label.appendChild(text)
+      section.appendChild(label)
+    }
+
+    const otherInput = document.createElement('input')
+    otherInput.className = 'cbr-ask-other-input'
+    otherInput.type = 'text'
+    otherInput.placeholder = 'Other'
+    section.appendChild(otherInput)
+
+    questionViews.push({ inputs, otherInput })
+    form.appendChild(section)
+  }
+
+  const error = document.createElement('div')
+  error.className = 'cbr-ask-error'
+  error.hidden = true
+  form.appendChild(error)
+
+  const submit = document.createElement('button')
+  submit.className = 'cbr-ask-submit'
+  submit.type = 'submit'
+  submit.textContent = 'Submit'
+  form.appendChild(submit)
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    error.hidden = true
+    error.textContent = ''
+    try {
+      const responses = questionViews.map(({ inputs, otherInput }) => ({
+        selectedLabels: inputs.filter((input) => input.checked).map((input) => input.value),
+        otherText: otherInput.value || '',
+      }))
+      const result = buildAskUserQuestionResult(payload, responses)
+      submit.disabled = true
+      const ok = await onSubmit?.(result)
+      if (ok === false) submit.disabled = false
+    } catch (err) {
+      submit.disabled = false
+      error.hidden = false
+      error.textContent = err?.message || String(err)
+    }
+  })
+
+  article.appendChild(form)
+  return { article, form }
 }
 
 /**

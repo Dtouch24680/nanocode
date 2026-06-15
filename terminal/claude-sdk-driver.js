@@ -1,4 +1,10 @@
 import { query as defaultQuery } from '@anthropic-ai/claude-agent-sdk'
+import { createPersistentSpawnHook } from './claude-persistent-spawn.js'
+
+// One persistent-spawn hook shared across all streaming sessions.
+// createPersistentSpawnHook() registers its process.once('exit') guard at
+// module load time, so we create it once here.
+const _persistentSpawnHook = createPersistentSpawnHook({ logPrefix: '[sdk:persistent-spawn]' })
 
 // Resolve the SDK permissionMode from nanocode settings.
 //
@@ -120,6 +126,11 @@ function makeSDKUserMessage(text) {
     message: { role: 'user', content: [{ type: 'text', text }] },
     parent_tool_use_id: null,
   }
+}
+
+function getClaudeCodeExecutableOverride() {
+  const value = process.env.NANOCODE_CLAUDE_CODE_EXECUTABLE
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
 // A StreamingSession wraps one long-lived query() call.
@@ -266,6 +277,7 @@ export function createClaudeSdkDriver({
     const sessionOptions = useResumeOnFirstTurn
       ? { resume: cs.claudeSessionId }
       : { sessionId: cs.claudeSessionId }
+    const executableOverride = getClaudeCodeExecutableOverride()
 
     let sawResult = false
     let sawInit = false
@@ -282,6 +294,7 @@ export function createClaudeSdkDriver({
           forwardSubagentText: true,
           model: claudeModel || undefined,
           effort: claudeEffort || undefined,
+          ...(executableOverride ? { pathToClaudeCodeExecutable: executableOverride } : {}),
           permissionMode: sdkPermissionMode,
           allowDangerouslySkipPermissions: sdkPermissionMode === 'bypassPermissions',
           stderr: (text) => {
@@ -417,12 +430,14 @@ export function createClaudeSdkDriver({
     const sessionOptions = useResumeOnFirstTurn
       ? { resume: cs.claudeSessionId }
       : { sessionId: cs.claudeSessionId }
+    const executableOverride = getClaudeCodeExecutableOverride()
     return {
       cwd,
       includePartialMessages: true,
       forwardSubagentText: true,
       model: claudeModel || undefined,
       effort: claudeEffort || undefined,
+      ...(executableOverride ? { pathToClaudeCodeExecutable: executableOverride } : {}),
       permissionMode: sdkPermissionMode,
       allowDangerouslySkipPermissions: sdkPermissionMode === 'bypassPermissions',
       stderr: (text) => {
@@ -430,6 +445,17 @@ export function createClaudeSdkDriver({
         if (!trimmed) return
         claudeBroadcast(cs, { type: 'system', subtype: 'stderr', text: trimmed })
       },
+      // ── Persistent spawn hook ──────────────────────────────────────────────
+      // Spawns the claude binary as a detached process (own process group /
+      // session) so it survives nanocode hot-deploy / SIGKILL.  Sub-agents
+      // spawned by the claude binary are children of the claude process, not
+      // of nanocode, so they automatically benefit from this isolation.
+      //
+      // The hook also intercepts kill('SIGTERM') calls that come from the SDK's
+      // V2 exit handler (which fires on nanocode process 'exit') and turns them
+      // into no-ops, preventing the cascade: nanocode dies → V2 → SIGTERM →
+      // claude dies → sub-agents die.
+      spawnClaudeCodeProcess: _persistentSpawnHook,
       ...sessionOptions,
     }
   }

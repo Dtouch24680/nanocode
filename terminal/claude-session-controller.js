@@ -723,6 +723,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         currentProc: null,
         tabLabel: tab?.label || '',
         queue: [],
+        pendingUserDialogs: new Map(),
         _replayUserTextCounts: seed?.userTextCounts || new Map(),
       }
       replaySeeds.delete(sessionKey)
@@ -740,6 +741,31 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     const onMsg = (raw) => {
       let msg
       try { msg = JSON.parse(raw) } catch { return }
+      if (msg.type === 'claude-dialog-response' && typeof msg.dialogId === 'string') {
+        const dialog = cs.pendingUserDialogs?.get(msg.dialogId)
+        if (!dialog) return
+        const response = {
+          behavior: msg.behavior || 'completed',
+          result: msg.result || null,
+        }
+        let accepted = false
+        try {
+          accepted = dialog.finish(response) !== false
+        } catch (err) {
+          console.warn(`[claude:dialog] failed to resolve dialog ${msg.dialogId}: ${err?.message}`)
+          return
+        }
+        if (accepted) {
+          cs.pendingUserDialogs.delete(msg.dialogId)
+          claudeBroadcast(cs, {
+            type: 'system',
+            subtype: 'ask_user_question_answered',
+            dialog_id: msg.dialogId,
+            result: msg.result || null,
+          })
+        }
+        return
+      }
       if (msg.type === 'claude-input' && typeof msg.text === 'string' && msg.text.trim()) {
         // ── /resume interception ─────────────────────────────────────────────
         // claude --print (non-interactive) blocks /resume with "isn't available
