@@ -137,7 +137,10 @@ class VT100Screen {
         }
         // CSI: ESC [
         if (rest[1] === '[') {
-          const m = rest.match(/^\x1b\[([0-9;?]*)([A-Za-z@`])/)
+          // Allow optional intermediate bytes (0x20-0x2f) before the final byte,
+          // e.g. DECSCUSR cursor-shape `ESC [ Ps SP q`. Without this, the space
+          // breaks the match and the residual "6 q" leaks as literal text.
+          const m = rest.match(/^\x1b\[([0-9;?]*)[ -\/]*([@-~])/)
           if (!m) { i += 2; continue }
           const params = m[1]
           const cmd    = m[2]
@@ -278,14 +281,61 @@ function escHtml(s) {
     .replace(/"/g, '&quot;')
 }
 
-// ── URL auto-link ─────────────────────────────────────────────────────────────
+// ── URL / path auto-link ──────────────────────────────────────────────────────
 const URL_RE = /https?:\/\/[^\s"'<>[\]()]+[^\s"'<>[\]().,;:!?]/g
+// Local file paths: /storage|/home absolute, ~/ home-relative, or repo-relative
+// (foo/bar.ext). Mirrors the claude-block-renderer detector.
+const PATH_RE = /(?:(?:\/(?:storage|home)\/[^\s,;:!?()\[\]"'<>]+)|(?:~\/[^\s,;:!?()\[\]"'<>]+)|(?<![:/])(?:[a-zA-Z][a-zA-Z0-9_.-]*(?:\/[a-zA-Z0-9_.+-]+)+\.[a-zA-Z]{2,10})(?=\s|$|[,;:!?()\[\]"'<>]))/g
 
-function linkifyText(text) {
-  const safe = escHtml(text)
-  return safe.replace(URL_RE, (url) => {
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="cbx-url">${url}</a>`
-  })
+/**
+ * Append `text` into `el`, turning bare URLs into <a target=_blank> and local
+ * file paths into clickable .cbr-path-link spans (data-path). Clicks on the
+ * latter are handled by a single delegated listener on the scroll container.
+ */
+function appendLinkified(el, text) {
+  if (!text) {
+    el.appendChild(document.createTextNode(text || ''))
+    return
+  }
+  const matches = []
+  let m
+  URL_RE.lastIndex = 0
+  while ((m = URL_RE.exec(text)) !== null) {
+    matches.push({ type: 'url', start: m.index, end: m.index + m[0].length, value: m[0] })
+  }
+  PATH_RE.lastIndex = 0
+  while ((m = PATH_RE.exec(text)) !== null) {
+    if (m[0].length > 300) continue
+    matches.push({ type: 'path', start: m.index, end: m.index + m[0].length, value: m[0] })
+  }
+  if (!matches.length) {
+    el.appendChild(document.createTextNode(text))
+    return
+  }
+  matches.sort((a, b) => a.start - b.start)
+  let pos = 0
+  for (const match of matches) {
+    if (match.start < pos) continue // overlap — skip
+    if (match.start > pos) el.appendChild(document.createTextNode(text.slice(pos, match.start)))
+    if (match.type === 'url') {
+      const a = document.createElement('a')
+      a.href = match.value
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      a.className = 'cbx-url'
+      a.textContent = match.value
+      el.appendChild(a)
+    } else {
+      const span = document.createElement('span')
+      span.className = 'cbr-path-link'
+      span.dataset.path = match.value
+      span.title = 'Open in explorer: ' + match.value
+      span.textContent = match.value
+      el.appendChild(span)
+    }
+    pos = match.end
+  }
+  if (pos < text.length) el.appendChild(document.createTextNode(text.slice(pos)))
 }
 
 // ── Pattern detection ─────────────────────────────────────────────────────────
@@ -293,6 +343,27 @@ function linkifyText(text) {
 
 // "Working 2m 15s" / "Working..." spinner lines
 const STATUS_BANNER_RE = /^(?:Working|Thinking|Analyzing|Planning|Running|Executing|Reviewing)[\s.…]*/i
+
+// Leading spinner/bullet decoration codex prints before the status verb,
+// e.g. "• Working (12s • esc to interrupt)" or braille spinner glyphs.
+// Stripped before matching STATUS_BANNER_RE so bulleted spinner lines collapse
+// into the in-place banner instead of stacking as plain text.
+const SPINNER_PREFIX_RE = /^[\s•·●○◦◐◑◒◓⠁-⣿*>+-]+/
+
+// The codex spinner footer always carries this hint — a reliable signal that a
+// line is the live "Working (Ns • esc to interrupt)" status, regardless of the
+// leading glyph or how the redraw was chunked.
+const STATUS_SPINNER_RE = /esc to interrupt/i
+
+// Bare elapsed-seconds remnant left behind when codex repositions the cursor to
+// rewrite just the timer ("           12", "30s"). Pure whitespace + a number
+// (+ optional 's'). Dropped only while the spinner banner is live, so genuine
+// numeric output is never suppressed.
+const ELAPSED_FRAGMENT_RE = /^\s*\d{1,4}\s*s?\s*$/
+
+// Partial status-verb fragment from a chunked spinner redraw ("• Worki").
+// Matched only while the spinner banner is live.
+const STATUS_VERB_PREFIX_RE = /^(?:work|think|analyz|plan|run|execut|review)/i
 
 // Bash command line patterns.
 //
@@ -371,6 +442,17 @@ export class CodexBlockRenderer {
     this._scroll = document.createElement('div')
     this._scroll.className = 'cbx-scroll'
     container.appendChild(this._scroll)
+
+    // Delegated click for path links (URLs are native <a> and need no handler).
+    this._scroll.addEventListener('click', (e) => {
+      const span = e.target.closest('.cbr-path-link')
+      if (!span || !this._scroll.contains(span)) return
+      e.stopPropagation()
+      document.dispatchEvent(new CustomEvent('nanocode:open-in-explorer', {
+        detail: { path: span.dataset.path },
+        bubbles: true,
+      }))
+    })
 
     // Scroll-to-bottom button
     this._scrollBtn = document.createElement('button')
@@ -896,7 +978,7 @@ export class CodexBlockRenderer {
     for (const line of lines) {
       const lineEl = document.createElement('div')
       lineEl.className = 'cbx-sync-line'
-      lineEl.textContent = line  // safe — no HTML injection
+      appendLinkified(lineEl, line)  // safe — builds text/anchor/span DOM nodes
       bodyEl.appendChild(lineEl)
     }
 
@@ -922,7 +1004,7 @@ export class CodexBlockRenderer {
     for (const line of lines) {
       const lineEl = document.createElement('div')
       lineEl.className = 'cbx-sync-line'
-      lineEl.textContent = line
+      appendLinkified(lineEl, line)
       bodyEl.appendChild(lineEl)
     }
   }
@@ -1170,10 +1252,23 @@ export class CodexBlockRenderer {
       return
     }
 
-    // Status banner (Working / Thinking) — update in-place
-    if (STATUS_BANNER_RE.test(line)) {
-      this._updateStatusBanner(line.trim())
+    // Status banner (Working / Thinking) — update in-place.
+    // Strip any leading spinner glyph first ("• Working (12s • esc to interrupt)")
+    // and also treat the "esc to interrupt" footer as a spinner line, so codex's
+    // live status collapses into ONE in-place banner instead of stacking a new
+    // line on every redraw frame.
+    const deco = line.replace(SPINNER_PREFIX_RE, '')
+    if (STATUS_SPINNER_RE.test(line) || STATUS_BANNER_RE.test(deco)) {
+      this._updateStatusBanner(deco.trim() || 'Working')
       this._setThinking(true)
+      return
+    }
+
+    // While the spinner banner is live, codex keeps repositioning the cursor to
+    // rewrite the elapsed timer and re-emits status-verb fragments. With cursor
+    // moves stripped these would cascade as junk lines — drop them.
+    if (this._statusBannerEl &&
+        (ELAPSED_FRAGMENT_RE.test(line) || STATUS_VERB_PREFIX_RE.test(deco))) {
       return
     }
 

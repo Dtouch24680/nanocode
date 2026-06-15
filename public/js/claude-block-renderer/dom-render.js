@@ -382,6 +382,55 @@ export function createStandaloneToolResultBlock({
  * @param {string} text  - Full raw text of the skill load message.
  * @param {{ escHtml: Function }} deps
  */
+/**
+ * Build a collapsed block for the post-/compact continuation summary.
+ *
+ * After `/compact`, the SDK resumes the session by injecting a user turn whose
+ * text begins with "This session is being continued from a previous
+ * conversation…". It is conversation plumbing, not something the user typed —
+ * rendering it verbatim floods the view with the whole summary on every reload.
+ * Fold it to a single click-to-expand line, mirroring the skill-load block.
+ *
+ * @param {string} text  - Full raw text of the continuation summary message.
+ * @param {{ escHtml: Function }} deps
+ */
+export function createCompactSummaryBlock(text, { escHtml }) {
+  const charCount = text.length
+  const article = makeBlock('cbr-block-skill-load')
+  article.dataset.collapsed = '1'
+
+  article.innerHTML =
+    `<div class="cbr-skill-load-header" role="button" tabindex="0" aria-expanded="false">` +
+    `<svg class="cbr-skill-load-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+    `<span class="cbr-skill-load-icon">&#128221;</span>` +
+    `<span class="cbr-skill-load-label">Context compacted — conversation summary</span>` +
+    `<span class="cbr-skill-load-count">${charCount.toLocaleString()} chars</span>` +
+    `</div>` +
+    `<div class="cbr-skill-load-body" hidden><pre class="cbr-pre cbr-skill-load-pre">${escHtml(text)}</pre></div>`
+
+  const header = article.querySelector('.cbr-skill-load-header')
+  const body = article.querySelector('.cbr-skill-load-body')
+  const chevron = article.querySelector('.cbr-skill-load-chevron')
+
+  const toggle = () => {
+    const collapsed = article.dataset.collapsed === '1'
+    article.dataset.collapsed = collapsed ? '0' : '1'
+    body.hidden = !collapsed
+    header.setAttribute('aria-expanded', collapsed ? 'true' : 'false')
+    chevron.style.transform = collapsed ? 'rotate(180deg)' : ''
+  }
+
+  header.addEventListener('click', toggle)
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggle()
+    }
+  })
+
+  return article
+}
+
 export function createSkillLoadBlock(text, { escHtml }) {
   // Parse skill name from first line: "Base directory for this skill: /path/to/skills/<name>"
   const firstLine = text.split('\n')[0] || ''

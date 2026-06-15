@@ -6,7 +6,7 @@ export const state = {
   cliProvider: 'claude',
   fontSize: 14,
   renderMode: 'block',
-  codexRenderMode: 'terminal',
+  codexRenderMode: 'block',
 }
 
 // Expose state globally so tab-manager.js (which imports state separately)

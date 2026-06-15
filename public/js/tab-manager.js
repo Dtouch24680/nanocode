@@ -367,12 +367,13 @@ export class TabManager {
 
     // Claude tabs use a DOM block renderer by default (rich text, mobile-friendly).
     // If the global renderMode setting is 'terminal', use raw PTY instead.
-    // Codex tabs: separate codexRenderMode setting, defaults to 'terminal' (xterm raw).
-    // Set codexRenderMode to 'block' in Settings to opt into CodexBlockRenderer (experimental).
+    // Codex tabs: separate codexRenderMode setting, defaults to 'block' (CodexBlockRenderer
+    // over the structured SDK JSON path). Set codexRenderMode to 'terminal' in Settings to
+    // fall back to the legacy raw-PTY xterm view.
     const renderMode = (() => { try { return window.__nanocodeState?.renderMode || 'block' } catch { return 'block' } })()
-    const codexRenderMode = (() => { try { return window.__nanocodeState?.codexRenderMode || 'terminal' } catch { return 'terminal' } })()
+    const codexRenderMode = (() => { try { return window.__nanocodeState?.codexRenderMode || 'block' } catch { return 'block' } })()
     const useClaudeRenderer = type === 'claude' && renderMode !== 'terminal'
-    const useCodexRenderer = type === 'codex' && codexRenderMode === 'block'
+    const useCodexRenderer = type === 'codex' && codexRenderMode !== 'terminal'
     let pane
     if (useClaudeRenderer) {
       pane = new ClaudeBlockRenderer(paneEl, paneOpts)
@@ -518,6 +519,27 @@ export class TabManager {
       })
       menu.appendChild(item)
     }
+
+    // Divider + "resume an existing conversation" entry (takeover flow).
+    // Lists every claude session jsonl in this project's cwd — including ones
+    // started outside nanocode (e.g. a `claude` running in a tmux window in the
+    // same dir) — and resumes the picked one into the normal block UI.
+    const divider = document.createElement('div')
+    divider.className = 'tab-new-menu-divider'
+    menu.appendChild(divider)
+    const resumeItem = document.createElement('button')
+    resumeItem.type = 'button'
+    resumeItem.className = 'tab-new-menu-item'
+    resumeItem.innerHTML =
+      `<span class="tab-new-menu-icon">${TYPE_ICON_SVG.claude}</span>` +
+      `<span class="tab-new-menu-label">进入已有会话…</span>` +
+      `<span class="tab-new-menu-hint">resume</span>`
+    resumeItem.addEventListener('click', () => {
+      this._closeNewTabMenu()
+      this._showResumePicker(anchor)
+    })
+    menu.appendChild(resumeItem)
+
     document.body.appendChild(menu)
     const rect = anchor.getBoundingClientRect()
     menu.style.position = 'fixed'
@@ -541,6 +563,67 @@ export class TabManager {
       this._menuEl.remove()
       this._menuEl = null
     }
+  }
+
+  /**
+   * Show a picker of existing claude sessions in this project's cwd and resume
+   * the chosen one. Reuses the 'nanocode:resume-session' event, which already
+   * activates the owning tab (if any) or creates a new claude tab pre-loaded
+   * with the sessionId — driving the standard history replay + --resume path.
+   */
+  async _showResumePicker(anchor) {
+    this._closeNewTabMenu()
+    const menu = document.createElement('div')
+    menu.className = 'tab-new-menu tab-resume-menu'
+    menu.innerHTML = `<div class="tab-resume-loading">载入会话…</div>`
+    document.body.appendChild(menu)
+    const rect = anchor.getBoundingClientRect()
+    menu.style.position = 'fixed'
+    menu.style.top = (rect.bottom + 6) + 'px'
+    menu.style.left = rect.left + 'px'
+    this._menuEl = menu
+
+    let sessions = []
+    try {
+      sessions = await fetch(`/api/projects/${this.projectId}/claude-sessions`).then(r => r.json())
+    } catch {
+      menu.innerHTML = `<div class="tab-resume-loading">载入失败</div>`
+      return
+    }
+    if (this._menuEl !== menu) return  // dismissed while loading
+    menu.innerHTML = ''
+    if (!Array.isArray(sessions) || !sessions.length) {
+      menu.innerHTML = `<div class="tab-resume-loading">无已有会话</div>`
+    }
+    for (const s of sessions) {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.className = 'tab-new-menu-item tab-resume-item'
+      const dot = s.active ? '<span class="tab-resume-dot active"></span>'
+        : (s.hasTab ? '<span class="tab-resume-dot open"></span>' : '<span class="tab-resume-dot"></span>')
+      const summary = (s.summary || '(无摘要)').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
+      item.innerHTML =
+        `${dot}` +
+        `<span class="tab-new-menu-label tab-resume-summary">${summary}</span>` +
+        `<span class="tab-new-menu-hint">${s.hasTab ? '已开 · ' : ''}${s.relTime}</span>`
+      item.title = s.sessionId
+      item.addEventListener('click', () => {
+        this._closeNewTabMenu()
+        document.dispatchEvent(new CustomEvent('nanocode:resume-session', {
+          detail: { projectId: this.projectId, sessionId: s.sessionId },
+        }))
+      })
+      menu.appendChild(item)
+    }
+    setTimeout(() => {
+      const close = (e) => {
+        if (!menu.contains(e.target)) {
+          this._closeNewTabMenu()
+          document.removeEventListener('click', close, true)
+        }
+      }
+      document.addEventListener('click', close, true)
+    }, 0)
   }
 }
 

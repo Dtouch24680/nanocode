@@ -167,7 +167,9 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
   }
 
   function getCodexDriver() {
-    return store.getSetting('codex_driver') === 'sdk' ? 'sdk' : 'pty'
+    // Default to the structured SDK driver; only fall back to the legacy PTY
+    // screen-scraping path when explicitly opted out via codex_driver='pty'.
+    return store.getSetting('codex_driver') === 'pty' ? 'pty' : 'sdk'
   }
 
   let dispatchClaudeTurn = null

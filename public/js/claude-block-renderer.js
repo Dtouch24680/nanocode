@@ -27,6 +27,7 @@
 import {
   buildToolResultHtml,
   createSkillLoadBlock,
+  createCompactSummaryBlock,
   createStandaloneToolResultBlock,
   createSystemBlock,
   createTextBlock,
@@ -1505,6 +1506,10 @@ export class ClaudeBlockRenderer {
         // they don't flood the conversation on every reload.
         if (c.text.startsWith('Base directory for this skill:')) {
           this._appendSkillLoadBlock(c.text)
+        } else if (c.text.startsWith('This session is being continued from a previous conversation')) {
+          // Post-/compact continuation summary injected by the SDK — fold it
+          // instead of dumping the whole summary as a user message.
+          this._appendCompactSummaryBlock(c.text)
         } else {
           // History-replayed user turn (no nonce match above) — show user prompt
           this._appendUserBlock(c.text)
@@ -2099,6 +2104,12 @@ export class ClaudeBlockRenderer {
 
   _appendSkillLoadBlock(text) {
     const article = createSkillLoadBlock(text, { escHtml })
+    this._scroll.appendChild(article)
+    this._scrollBottom()
+  }
+
+  _appendCompactSummaryBlock(text) {
+    const article = createCompactSummaryBlock(text, { escHtml })
     this._scroll.appendChild(article)
     this._scrollBottom()
   }

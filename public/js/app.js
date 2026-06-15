@@ -484,8 +484,8 @@ function loadRenderModeSettings(serverSettings) {
 }
 
 function loadCodexRenderModeSettings(serverSettings) {
-  // Default to 'terminal' — xterm raw is the stable default for codex
-  const mode = (serverSettings?.codexRenderMode) || 'terminal'
+  // Default to 'block' — CodexBlockRenderer over the structured SDK JSON path
+  const mode = (serverSettings?.codexRenderMode) || 'block'
   const radios = codexRenderModeGroup?.querySelectorAll('input[name="codex-render-mode"]')
   if (radios) {
     for (const radio of radios) radio.checked = radio.value === mode
@@ -1317,7 +1317,7 @@ async function init() {
     if (settings.cli_provider) state.cliProvider = settings.cli_provider
     if (settings.font_size) state.fontSize = settings.font_size
     if (settings.renderMode) state.renderMode = settings.renderMode
-    // codexRenderMode defaults to 'terminal' — only override if explicitly set
+    // codexRenderMode defaults to 'block' — only override if explicitly set
     if (settings.codexRenderMode) state.codexRenderMode = settings.codexRenderMode
   } catch {}
 
