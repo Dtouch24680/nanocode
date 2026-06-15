@@ -87,12 +87,14 @@ const asyncWrap = fn => (req, res, next) => fn(req, res, next).catch(next)
 // dynamic route so we can inject the asset version string into CSS/JS URLs.
 // All other public files use Cache-Control: no-store to prevent stale caches.
 const _indexHtmlPath = path.join(root, 'public', 'index.html')
-let _indexHtmlTemplate = ''
-try { _indexHtmlTemplate = readFileSync(_indexHtmlPath, 'utf8') } catch {}
 
 function getVersionedIndexHtml() {
+  // Re-read from disk on every request so HTML edits are hot (no restart).
+  // The file is tiny and `/` is served no-store, so the extra read is cheap.
+  let html = ''
+  try { html = readFileSync(_indexHtmlPath, 'utf8') } catch {}
   // Inject ?v=<sha> into style.css and app.js / tts.js references
-  return _indexHtmlTemplate
+  return html
     .replace(/(href="\/style\.css)(")/g, `$1?v=${ASSET_VERSION}$2`)
     .replace(/(src="\/js\/([^"?]+\.js))(")/g, `$1?v=${ASSET_VERSION}$3`)
 }

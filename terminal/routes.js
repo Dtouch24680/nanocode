@@ -2,13 +2,13 @@
 
 import { Router } from 'express'
 import { execFile, spawn } from 'node:child_process'
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { resolve, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
 import * as sessions from './sessions.js'
 import { createClaudeHistoryService } from './claude-history.js'
 import { createClaudeSessionController } from './claude-session-controller.js'
-import { createRecentAgentsService } from './recent-agents.js'
+import { createRecentAgentsService, extractSummary, relTimeFromMtime } from './recent-agents.js'
 
 /**
  * Create terminal routes backed by the given store.
@@ -168,6 +168,61 @@ export function createTerminalRoutes(store) {
     const project = store.getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'project not found' })
     res.json({ tabId: historyService.findMostRecentClaudeTab(project) })
+  })
+
+  /**
+   * GET /api/projects/:id/claude-sessions
+   *
+   * List ALL claude session jsonl files living in this project's cwd
+   * (~/.claude/projects/<encoded-cwd>/*.jsonl), regardless of whether nanocode
+   * created a tab for them. This is what makes "takeover" of an external
+   * conversation — e.g. a `claude` running in a tmux window in the same dir —
+   * possible: that session writes its jsonl into the same project dir, so it
+   * shows up here and can be resumed by sessionId.
+   *
+   * Each entry: { sessionId, summary, mtime, relTime, active, hasTab, tabId }
+   *   hasTab/tabId — whether a nanocode claude tab already owns this session
+   *   active       — mtime within the last 5 minutes (likely a live conversation)
+   * Sorted by mtime descending.
+   */
+  router.get('/api/projects/:id/claude-sessions', (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+
+    const projectDir = historyService.cwdToClaudeProjectDir(project.cwd)
+    if (!existsSync(projectDir)) return res.json([])
+
+    // Map existing tabs by sessionId so the UI can mark already-open sessions.
+    const tabBySession = new Map()
+    for (const tab of store.listTabs(req.params.id)) {
+      if (tab.type === 'claude' && tab.claudeSessionId) tabBySession.set(tab.claudeSessionId, tab.id)
+    }
+
+    const now = Date.now()
+    const ACTIVE_WINDOW_MS = 5 * 60 * 1000
+    let files
+    try { files = readdirSync(projectDir) } catch { return res.json([]) }
+
+    const entries = []
+    for (const f of files) {
+      if (!f.endsWith('.jsonl')) continue
+      const fullPath = join(projectDir, f)
+      let mtimeMs
+      try { mtimeMs = statSync(fullPath).mtimeMs } catch { continue }
+      const sessionId = f.replace(/\.jsonl$/, '')
+      entries.push({
+        sessionId,
+        summary: extractSummary(fullPath),
+        mtime: new Date(mtimeMs).toISOString(),
+        relTime: relTimeFromMtime(mtimeMs, now),
+        active: now - mtimeMs <= ACTIVE_WINDOW_MS,
+        hasTab: tabBySession.has(sessionId),
+        tabId: tabBySession.get(sessionId) || null,
+        _mtimeMs: mtimeMs,
+      })
+    }
+    entries.sort((a, b) => b._mtimeMs - a._mtimeMs)
+    res.json(entries.map(({ _mtimeMs, ...rest }) => rest))
   })
 
   router.post('/api/projects/:id/tabs', (req, res) => {
