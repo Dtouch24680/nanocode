@@ -1,6 +1,6 @@
 /**
- * GLB viewer — minimal three.js setup for previewing .glb files in
- * the file explorer.
+ * 3D model viewer — minimal three.js setup for previewing model files in
+ * the file explorer. Supports GLB/GLTF, OBJ, STL and FBX.
  *
  * Render modes:
  *   material   — full PBR with textures + base colors (the default)
@@ -10,38 +10,50 @@
  *
  * three.js is imported lazily so the ~600 KB bundle isn't paid for on
  * page load. The bare specifiers `three` and `three/addons/...`
- * resolve through the import map in index.html to /vendor/three/.
+ * resolve through the import map in index.html to /vendor/three/. Each
+ * format's loader is imported on demand so opening a GLB never pulls in
+ * the (large) FBX loader and vice-versa.
  *
  * Usage:
  *   const viewer = await createGlbViewer(containerEl)
- *   await viewer.load(url)
+ *   await viewer.load(url, 'stl')
  *   viewer.setMode('clay')
  *   viewer.dispose()
  */
 
-let threePromise = null
-function loadThree() {
-  if (!threePromise) {
-    threePromise = Promise.all([
+// Core three + controls + environment — loaded once, shared across formats.
+let corePromise = null
+function loadCore() {
+  if (!corePromise) {
+    corePromise = Promise.all([
       import('three'),
-      import('three/addons/loaders/GLTFLoader.js'),
       import('three/addons/controls/OrbitControls.js'),
       import('three/addons/environments/RoomEnvironment.js'),
-    ]).then(([THREE, gltf, orbit, room]) => ({
+    ]).then(([THREE, orbit, room]) => ({
       THREE,
-      GLTFLoader: gltf.GLTFLoader,
       OrbitControls: orbit.OrbitControls,
       RoomEnvironment: room.RoomEnvironment,
     }))
   }
-  return threePromise
+  return corePromise
 }
+
+// Per-format loader, imported lazily the first time that format is opened.
+const LOADER_IMPORTS = {
+  glb: () => import('three/addons/loaders/GLTFLoader.js').then((m) => m.GLTFLoader),
+  gltf: () => import('three/addons/loaders/GLTFLoader.js').then((m) => m.GLTFLoader),
+  obj: () => import('three/addons/loaders/OBJLoader.js').then((m) => m.OBJLoader),
+  stl: () => import('three/addons/loaders/STLLoader.js').then((m) => m.STLLoader),
+  fbx: () => import('three/addons/loaders/FBXLoader.js').then((m) => m.FBXLoader),
+}
+
+export const MODEL_VIEWER_EXTS = Object.keys(LOADER_IMPORTS)
 
 const CLAY_COLOR = 0x9e9690
 const WIRE_COLOR = 0xdddddd
 
 export async function createGlbViewer(container) {
-  const { THREE, GLTFLoader, OrbitControls, RoomEnvironment } = await loadThree()
+  const { THREE, OrbitControls, RoomEnvironment } = await loadCore()
 
   // --- Scene / camera / renderer ---------------------------------
 
@@ -172,21 +184,50 @@ export async function createGlbViewer(container) {
 
   // --- Load ------------------------------------------------------
 
-  async function load(url) {
-    clearModel()
-    const loader = new GLTFLoader()
-    const gltf = await new Promise((resolve, reject) => {
+  // A sensible default surface for formats that carry no material
+  // (STL always; OBJ when shipped without an .mtl).
+  function defaultMaterial() {
+    return new THREE.MeshStandardMaterial({
+      color: 0xb7b2ab, roughness: 0.75, metalness: 0.0,
+    })
+  }
+
+  /** Parse the raw bytes/scene for `ext` into an Object3D root. */
+  async function loadRoot(url, ext) {
+    const importLoader = LOADER_IMPORTS[ext]
+    if (!importLoader) throw new Error(`Unsupported 3D format: ${ext}`)
+    const LoaderCtor = await importLoader()
+    const loader = new LoaderCtor()
+    const result = await new Promise((resolve, reject) => {
       loader.load(url, resolve, undefined, reject)
     })
-    modelRoot = gltf.scene
+
+    if (ext === 'glb' || ext === 'gltf') return result.scene
+    if (ext === 'stl') {
+      // STLLoader yields a bare BufferGeometry — wrap it in a mesh.
+      result.computeVertexNormals()
+      const group = new THREE.Group()
+      group.add(new THREE.Mesh(result, defaultMaterial()))
+      return group
+    }
+    // OBJ / FBX yield a Group of meshes; ensure each mesh has a material.
+    result.traverse((obj) => {
+      if (obj.isMesh && !obj.material) obj.material = defaultMaterial()
+    })
+    return result
+  }
+
+  async function load(url, ext = 'glb') {
+    clearModel()
+    modelRoot = await loadRoot(url, String(ext).toLowerCase())
     // Cache each mesh's per-mode material once on load; switching
     // afterwards is just a pointer swap.
     modelRoot.traverse((obj) => {
       if (!obj.isMesh) return
       const original = obj.material
-      // GLTFLoader sometimes hands you an array (multi-material mesh).
-      // Treat that case as opaque single-material for our purposes —
-      // we just keep its first material as the "original".
+      // Loaders sometimes hand you an array (multi-material mesh). Treat
+      // that as opaque single-material for our purposes — keep its first
+      // material as the "original".
       const m = Array.isArray(original) ? original[0] : original
       matVariants.set(obj, {
         original: m,

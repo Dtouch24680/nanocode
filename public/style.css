@@ -1219,6 +1219,59 @@ body.workspace-active .back-to-menu { display: inline-flex; }
 }
 .touch-btn:active { background: var(--primary-subtle); }
 
+/* 终端方向键簇:窄的左右键 + 中间一对扁上下键(翻终端历史) */
+.dpad {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.dpad-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
+}
+.dpad-half {
+  flex: 1 1 0;          /* 上下键平分整列高度,跟随行高自动伸缩 */
+  height: auto;
+  min-height: 0;
+  min-width: 30px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+}
+.dpad-side {
+  min-width: 24px;
+  padding: 0;
+}
+
+/* 终端模式专用控制键行(替代输入框/喇叭/压缩/发送);仅触屏 + 终端 tab 显示 */
+.term-keys {
+  display: none;
+  flex: 1;
+  gap: 4px;
+  align-items: stretch;
+  min-width: 0;
+}
+.term-key {
+  flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  /* 终端模式:藏掉聊天专用控件,亮出终端控制键行 */
+  .chat-input-bar.terminal-mode .input-wrap,
+  .chat-input-bar.terminal-mode .mute-btn,
+  .chat-input-bar.terminal-mode .compact-ctx-btn,
+  .chat-input-bar.terminal-mode .send-btn,
+  .chat-input-bar.terminal-mode .claude-stop-btn,
+  .chat-input-bar.terminal-mode .claude-bg-btn { display: none; }
+  .chat-input-bar.terminal-mode .term-keys { display: flex; }
+}
+
 /* Active-tab carousel: all of the user's tabs render side-by-side in a
    single track inside a fixed-width viewport. The track translates so
    the active tab is always centered; switching tabs animates the
@@ -1337,7 +1390,35 @@ body.workspace-active .back-to-menu { display: inline-flex; }
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 11px;
+  flex-shrink: 0;
 }
+.tab-new-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+.tab-resume-menu { max-width: 360px; }
+.tab-resume-loading {
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.tab-resume-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.tab-resume-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+  opacity: 0.35;
+}
+.tab-resume-dot.open { background: var(--text-tertiary); opacity: 0.7; }
+.tab-resume-dot.active { background: #3fb950; opacity: 1; }
 
 .input-row {
   display: flex;
@@ -2459,6 +2540,20 @@ body.workspace-active .landing-overlay { display: none; }
     white-space: nowrap;
     overflow: hidden;
   }
+  /* 方向键簇整体占一个等宽槽,内部按钮不参与 flex:1 等宽 */
+  .dpad { flex: 1; }
+  .dpad-side {
+    flex: 0 0 auto;
+    height: auto;
+    font-size: 11px;
+  }
+  .dpad-half {
+    flex: 1 1 0;        /* 上下键各占半行,自动填满整行高度(含横屏) */
+    height: auto;
+    min-height: 0;
+    font-size: 11px;
+  }
+  .dpad-side { flex: 1; }
 
   /* 输入框移动端：确保 placeholder 不换行 */
   .chat-textarea {
@@ -2470,6 +2565,35 @@ body.workspace-active .landing-overlay { display: none; }
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+/* ── 横屏手机/平板：宽度 > 480px 不触发上面的 max-width 规则,
+   这里用 coarse-pointer + landscape 让 touch-toolbar 同样等宽填满整行 ── */
+@media (pointer: coarse) and (orientation: landscape) {
+  .touch-toolbar {
+    gap: 4px;
+  }
+  .touch-btn {
+    flex: 1;
+    height: 36px;
+    padding: 0;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .dpad { flex: 1; }
+  .dpad-side {
+    flex: 1;
+    height: auto;
+    font-size: 11px;
+  }
+  .dpad-half {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+    font-size: 11px;
   }
 }
 
@@ -4810,4 +4934,29 @@ body.workspace-active .landing-overlay { display: none; }
     padding: var(--s-1) var(--s-2);
     font-size: 0.8rem;
   }
+}
+
+/* Transient toast — lightweight feedback (e.g. a link that won't open). */
+.nano-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%) translateY(12px);
+  max-width: min(90vw, 480px);
+  padding: 10px 16px;
+  background: rgba(20, 20, 22, 0.94);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  word-break: break-all;
+}
+.nano-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }

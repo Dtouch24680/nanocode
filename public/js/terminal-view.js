@@ -8,6 +8,7 @@
 import { initSplitPane } from './terminal-pane.js'
 import { TabManager, TYPE_ICON_SVG } from './tab-manager.js'
 import { createExplorer } from './explorer.js'
+import { attachPinchZoom, stepCssZoom } from './pinch-zoom.js'
 
 const mobileQuery = window.matchMedia('(max-width: 768px)')
 const isMobile = () => mobileQuery.matches
@@ -54,6 +55,7 @@ export async function initTerminalView(projectId) {
     setupChatInput()
     setupKeyboardShortcuts()
     setupMobile()
+    setupPinchZoom()
   } else {
     if (tabManager) tabManager.switchProject(projectId)
     if (explorer) explorer.switchProject(projectId)
@@ -99,7 +101,16 @@ function setupExplorer(projectId) {
   document.addEventListener('nanocode:open-in-explorer', (e) => {
     const path = e.detail?.path
     if (!path || !explorer) return
-    explorer.openPath(path).catch(() => {})
+    // On mobile the explorer is a hidden pane — reveal it so the result is
+    // visible. Do this up front so the user sees the file load (or its error).
+    if (isMobile()) setMobilePane('right')
+    Promise.resolve(explorer.openPath(path))
+      .then((res) => {
+        if (res && res.ok === false) {
+          showToast(`无法打开:${path}${res.error ? `(${res.error})` : ''}`)
+        }
+      })
+      .catch((err) => showToast(`无法打开:${path}${err?.message ? `(${err.message})` : ''}`))
   })
 
   // Cross-project switch requested by openPath (method C, step 1)
@@ -108,6 +119,36 @@ function setupExplorer(projectId) {
     if (!projectId) return
     switchTerminalProject(projectId)
   })
+}
+
+/**
+ * Two-finger pinch to zoom. Applies to all three content surfaces:
+ *  - xterm panes (bash / raw-mode agents) → font-size step + re-fit (crisp)
+ *  - block-renderer chat (Claude / Codex) → CSS zoom on its scroll area
+ *  - Explorer file preview → CSS zoom on the preview pane
+ */
+function setupPinchZoom() {
+  const stack = document.getElementById('terminal-stack')
+  if (stack) {
+    attachPinchZoom(stack, (delta) => {
+      if (!activePane) return
+      if (typeof activePane.adjustFontSize === 'function') {
+        activePane.adjustFontSize(delta) // xterm: 1pt per step
+      } else {
+        // Block renderer: zoom its scroll container.
+        const el = activePane._scroll || stack.querySelector('.cbr-scroll')
+        stepCssZoom(el, delta)
+      }
+    })
+  }
+
+  const explorerRoot = document.getElementById('explorer-root')
+  if (explorerRoot) {
+    attachPinchZoom(explorerRoot, (delta) => {
+      const el = explorerRoot.querySelector('.explorer-preview')
+      stepCssZoom(el, delta)
+    })
+  }
 }
 
 function setupTabs(projectId) {
@@ -564,6 +605,9 @@ function setupChatInput() {
     } else {
       chatInput.placeholder = 'Type a command...'
     }
+    // Terminal mode (bash 等非聊天 tab)：触屏下隐藏输入框/喇叭/压缩/发送,改用终端控制键。
+    const bar = document.getElementById('chat-input-bar')
+    if (bar) bar.classList.toggle('terminal-mode', !isClaudeTab && !isCodexTab)
     // Stop btn only visible when claude is thinking
     updateThinkingState(isClaudeThinking && isClaudeTab, { skipFlush })
   }
@@ -1143,7 +1187,14 @@ function setupChatInput() {
 
   function sendInput() {
     const text = chatInput.value
-    if (!text) return
+    if (!text) {
+      // Empty Enter on an interactive (codex/bash) tab → send a bare carriage
+      // return to the PTY so confirmation prompts ("press Enter to confirm",
+      // y/N dialogs, menu selections) can be accepted. Claude tabs have no
+      // PTY-level prompt, so an empty Enter stays a no-op there.
+      if (!isClaudeTab && activePane) activePane.sendRaw('\r')
+      return
+    }
 
     // When Claude is busy: silently add to client-side pending queue.
     // No per-message banner — matches CLI behaviour of auto-queuing with a
@@ -1363,8 +1414,10 @@ function setupChatInput() {
     }, 150)
   })
 
-  // Touch toolbar
-  const touchToolbar = document.getElementById('touch-toolbar')
+  // Touch toolbar. Bind on #chat-input-bar (not #touch-toolbar) so the terminal
+  // control keys living in .input-row are covered too. The handler filters by
+  // .touch-btn, so send/mute/compact (non-.touch-btn) are unaffected.
+  const touchToolbar = document.getElementById('chat-input-bar')
   if (touchToolbar) {
     touchToolbar.addEventListener('click', (e) => {
       const btn = e.target.closest('.touch-btn')
@@ -1385,7 +1438,9 @@ function setupChatInput() {
         case 'ctrl-l':
           activePane.sendRaw('\x0c'); break
         case 'arrow-up': {
-          // Same as keyboard ↑: pop pending queue first if applicable
+          // 终端 tab：翻终端历史。聊天 tab：翻输入框历史。
+          if (!isClaudeTab && !isCodexTab) { activePane.sendRaw('\x1b[A'); break }
+          // pop pending queue first if applicable
           if (isClaudeTab && _pendingQueue.length > 0 && chatInput.value === '') {
             chatInput.value = _pendingQueue.pop()
             _schedulePersist()
@@ -1397,11 +1452,14 @@ function setupChatInput() {
           if (historyIdx === -1) {
             historyDraft = chatInput.value
             historyIdx = history.length - 1
-          } else if (historyIdx > 0) historyIdx--
+          } else if (historyIdx > 0) {
+            historyIdx--
+          }
           chatInput.value = history[historyIdx]
           autoResize(); hideSuggestions(); break
         }
         case 'arrow-down': {
+          if (!isClaudeTab && !isCodexTab) { activePane.sendRaw('\x1b[B'); break }
           if (historyIdx === -1) break
           if (historyIdx < history.length - 1) {
             historyIdx++; chatInput.value = history[historyIdx]
@@ -1410,6 +1468,25 @@ function setupChatInput() {
           }
           autoResize(); hideSuggestions(); break
         }
+        case 'arrow-left': {
+          // 终端 tab：移动终端光标。聊天 tab：移动输入框光标。
+          if (!isClaudeTab && !isCodexTab) { activePane.sendRaw('\x1b[D'); break }
+          const p = Math.max(0, (chatInput.selectionStart || 0) - 1)
+          chatInput.focus(); chatInput.setSelectionRange(p, p); break
+        }
+        case 'arrow-right': {
+          if (!isClaudeTab && !isCodexTab) { activePane.sendRaw('\x1b[C'); break }
+          const p = Math.min(chatInput.value.length, (chatInput.selectionStart || 0) + 1)
+          chatInput.focus(); chatInput.setSelectionRange(p, p); break
+        }
+        // 终端模式专用控制键(只在终端 tab 显示)
+        case 't-undo':   activePane.sendRaw('\x1f'); break  // Ctrl+_ 撤回
+        case 't-home':   activePane.sendRaw('\x01'); break  // Ctrl+A 行首
+        case 't-end':    activePane.sendRaw('\x05'); break  // Ctrl+E 行尾
+        case 't-ctrl-u': activePane.sendRaw('\x15'); break  // Ctrl+U 删到行首
+        case 't-ctrl-d': activePane.sendRaw('\x04'); break  // Ctrl+D EOF
+        case 't-search': activePane.sendRaw('\x12'); break  // Ctrl+R 搜索历史
+        case 't-pipe':   activePane.sendRaw('|');    break  // 管道符
         case 'tab':
           activePane.sendRaw('\t'); break
         case 'escape':
@@ -1468,18 +1545,40 @@ function setupKeyboardShortcuts() {
   })
 }
 
+// Switch the mobile single-pane view between 'left' (session) and 'right'
+// (explorer). Module-scoped so path-link clicks can reveal the explorer.
+function setMobilePane(pane) {
+  const switchEl = document.getElementById('mobile-pane-switch')
+  document.body.classList.toggle('mobile-pane-left', pane === 'left')
+  document.body.classList.toggle('mobile-pane-right', pane === 'right')
+  if (switchEl) {
+    switchEl.querySelectorAll('.mobile-pane-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.pane === pane)
+    })
+  }
+  if (pane === 'left') fitTerminals()
+}
+
+// Transient toast for lightweight feedback (e.g. a link that won't open).
+let _toastTimer = null
+function showToast(message) {
+  let el = document.getElementById('nano-toast')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'nano-toast'
+    el.className = 'nano-toast'
+    document.body.appendChild(el)
+  }
+  el.textContent = message
+  el.classList.add('show')
+  clearTimeout(_toastTimer)
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3200)
+}
+
 function setupMobile() {
   // Mobile pane switcher — buttons toggle between left (terminal) and right (explorer).
   const switchEl = document.getElementById('mobile-pane-switch')
   if (switchEl) {
-    function setMobilePane(pane) {
-      document.body.classList.toggle('mobile-pane-left', pane === 'left')
-      document.body.classList.toggle('mobile-pane-right', pane === 'right')
-      switchEl.querySelectorAll('.mobile-pane-btn').forEach((b) => {
-        b.classList.toggle('active', b.dataset.pane === pane)
-      })
-      if (pane === 'left') fitTerminals()
-    }
     switchEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.mobile-pane-btn')
       if (!btn) return

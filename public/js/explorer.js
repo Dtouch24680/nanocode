@@ -48,7 +48,7 @@ function saveExplorerState(projectId, state) {
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'])
 const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdx'])
 const HTML_EXTS = new Set(['html', 'htm'])
-const GLB_EXTS = new Set(['glb'])
+const MODEL_EXTS = new Set(['glb', 'gltf', 'obj', 'stl', 'fbx'])
 
 // Map common code file extensions to highlight.js language ids
 const HLJS_LANG_MAP = {
@@ -361,27 +361,30 @@ export function createExplorer(container, projectId) {
     const ext = extOf(filePath)
     if (IMAGE_EXTS.has(ext)) {
       renderPreview() // image renders without content fetch
-      return
+      return { ok: true }
     }
-    if (GLB_EXTS.has(ext)) {
-      renderPreview() // GLB renders via three.js using the raw URL
-      return
+    if (MODEL_EXTS.has(ext)) {
+      renderPreview() // 3D model renders via three.js using the raw URL
+      return { ok: true }
     }
 
     try {
       const data = await apiContent(filePath)
-      if (cancelled || selectedPath !== filePath) return
+      if (cancelled || selectedPath !== filePath) return { ok: true }
       if (data.error) {
         fileError = data.error
         fileContent = null
-      } else {
-        fileContent = data.content || ''
-        selectedSize = data.size ?? selectedSize
+        renderPreview()
+        return { ok: false, error: data.error }
       }
+      fileContent = data.content || ''
+      selectedSize = data.size ?? selectedSize
       renderPreview()
+      return { ok: true }
     } catch (err) {
       fileError = err.message
       renderPreview()
+      return { ok: false, error: err.message }
     }
   }
 
@@ -625,12 +628,12 @@ export function createExplorer(container, projectId) {
     const ext = extOf(selectedPath)
     const isImage = IMAGE_EXTS.has(ext)
     const isHtml = HTML_EXTS.has(ext)
-    const isGlb = GLB_EXTS.has(ext)
-    const isText = !isImage && !isGlb && fileContent !== null && fileError !== 'binary' && fileError !== 'too large'
+    const isModel = MODEL_EXTS.has(ext)
+    const isText = !isImage && !isModel && fileContent !== null && fileError !== 'binary' && fileError !== 'too large'
 
-    // GLB toolbar: four exclusive render-mode buttons. Selecting one
+    // 3D model toolbar: four exclusive render-mode buttons. Selecting one
     // swaps every mesh's material on the live viewer.
-    if (isGlb) {
+    if (isModel) {
       const modes = [
         { id: 'material',  label: 'Material'  },
         { id: 'color',     label: 'Color'     },
@@ -762,7 +765,7 @@ export function createExplorer(container, projectId) {
       return
     }
 
-    if (isGlb) {
+    if (isModel) {
       const wrap = document.createElement('div')
       wrap.className = 'preview-glb-wrap'
       content.appendChild(wrap)
@@ -788,7 +791,7 @@ export function createExplorer(container, projectId) {
             return
           }
           loading.remove()
-          await glbViewer.load(url)
+          await glbViewer.load(url, ext)
           if (token !== glbViewerToken) return
           glbViewer.setMode(glbMode)
         } catch (err) {
@@ -1048,7 +1051,7 @@ export function createExplorer(container, projectId) {
      * Relative paths: navigate the existing tree as before.
      */
     async openPath(rawPath) {
-      if (remote || cancelled) return
+      if (remote || cancelled) return { ok: false, error: 'explorer unavailable' }
       let filePath = rawPath
 
       // Expand ~/ to absolute home path
@@ -1100,8 +1103,7 @@ export function createExplorer(container, projectId) {
             const match = siblings.find((e) => e.path === bestRelPath || e.name === parts[parts.length - 1])
             if (match) {
               renderTree()
-              await selectFile(match.path, match.size || 0, { force: true })
-              return
+              return await selectFile(match.path, match.size || 0, { force: true })
             }
           } catch {}
         }
@@ -1110,14 +1112,15 @@ export function createExplorer(container, projectId) {
         // The file is loaded as if selectedPath were the absolute path.
         // Tree won't highlight it (it's outside cwd) but preview will work.
         try {
-          await selectFile(filePath, 0, { force: true })
-        } catch {}
-        return
+          return await selectFile(filePath, 0, { force: true })
+        } catch (err) {
+          return { ok: false, error: err.message }
+        }
       }
 
       // ── Relative path: navigate the tree ─────────────────────────────────
       const parts = filePath.split('/').filter(Boolean)
-      if (!parts.length) return
+      if (!parts.length) return { ok: false, error: 'empty path' }
 
       try {
         let current = ''
@@ -1134,15 +1137,16 @@ export function createExplorer(container, projectId) {
         const match = siblings.find((e) => e.path === filePath || e.name === parts[parts.length - 1])
         if (match) {
           renderTree()
-          await selectFile(match.path, match.size || 0, { force: true })
-          return
+          return await selectFile(match.path, match.size || 0, { force: true })
         }
       } catch {}
 
       // Last resort: pass as-is
       try {
-        await selectFile(filePath, 0, { force: true })
-      } catch {}
+        return await selectFile(filePath, 0, { force: true })
+      } catch (err) {
+        return { ok: false, error: err.message }
+      }
     },
     async switchProject(newProjectId) {
       persist()

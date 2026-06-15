@@ -377,6 +377,19 @@ export class TerminalPane {
   }
 
   /**
+   * Adjust terminal font size by `delta` points (pinch-zoom). Clamped to a
+   * sane range; re-fits so cols/rows and the PTY size stay consistent.
+   * @param {number} delta
+   */
+  adjustFontSize(delta) {
+    const cur = this.term.options.fontSize || 14
+    const next = Math.max(8, Math.min(32, cur + delta))
+    if (next === cur) return
+    this.term.options.fontSize = next
+    this._fit()
+  }
+
+  /**
    * Switch to another project; reconnects to that project's session (with history).
    * @param {string} projectId
    * @param {string} [tabId] — new tab ID (defaults to existing tabId)

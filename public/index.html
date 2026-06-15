@@ -479,7 +479,7 @@
           </div>
 
           <div class="mobile-pane-switch" id="mobile-pane-switch">
-            <button type="button" class="mobile-pane-btn active" data-pane="left">Terminal</button>
+            <button type="button" class="mobile-pane-btn active" data-pane="left">Session</button>
             <button type="button" class="mobile-pane-btn" data-pane="right">Explorer</button>
           </div>
 
@@ -487,8 +487,14 @@
             <div class="touch-toolbar" id="touch-toolbar">
               <button class="touch-btn" data-action="ctrl-c">Ctrl+C</button>
               <button class="touch-btn" data-action="ctrl-l">Clear</button>
-              <button class="touch-btn" data-action="arrow-up">&uarr;</button>
-              <button class="touch-btn" data-action="arrow-down">&darr;</button>
+              <div class="dpad" title="方向键：聊天=移动输入框光标/翻输入历史；终端=移动终端光标/翻终端历史">
+                <button class="touch-btn dpad-side" data-action="arrow-left" title="左">&larr;</button>
+                <div class="dpad-col">
+                  <button class="touch-btn dpad-half" data-action="arrow-up" title="上">&uarr;</button>
+                  <button class="touch-btn dpad-half" data-action="arrow-down" title="下">&darr;</button>
+                </div>
+                <button class="touch-btn dpad-side" data-action="arrow-right" title="右">&rarr;</button>
+              </div>
               <button class="touch-btn" data-action="tab">Tab</button>
               <button class="touch-btn" data-action="escape">Esc</button>
             </div>
@@ -513,6 +519,16 @@
                   autocapitalize="off"
                   enterkeyhint="send"
                 ></textarea>
+              </div>
+              <!-- 终端模式专用控制键 (仅触屏 + 终端 tab 显示，替代输入框/喇叭/压缩/发送) -->
+              <div class="term-keys" id="term-keys" title="终端控制键">
+                <button class="touch-btn term-key" data-action="t-undo" title="撤回 (Ctrl+_)">Undo</button>
+                <button class="touch-btn term-key" data-action="t-home" title="行首 (Ctrl+A)">Home</button>
+                <button class="touch-btn term-key" data-action="t-end" title="行尾 (Ctrl+E)">End</button>
+                <button class="touch-btn term-key" data-action="t-ctrl-u" title="删到行首 (Ctrl+U)">Ctrl+U</button>
+                <button class="touch-btn term-key" data-action="t-ctrl-d" title="EOF (Ctrl+D)">Ctrl+D</button>
+                <button class="touch-btn term-key" data-action="t-search" title="搜索历史 (Ctrl+R)">Search</button>
+                <button class="touch-btn term-key" data-action="t-pipe" title="管道符">|</button>
               </div>
               <!-- Global mute + TTS buttons -->
               <button class="tts-btn mute-btn" id="mute-btn" aria-label="Toggle mute" title="Sound on — click to mute">
