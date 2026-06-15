@@ -155,7 +155,10 @@ describe('claude resume cache route', () => {
     await withProcessEnv({ HOME: homeDir }, async () => {
       const store = createStore(':memory:')
       const project = store.createProject('Resume Project', projectCwd)
-      const tab = store.createTab(project.id, { type: 'claude', label: 'claude resume' })
+      // Strict isolation: a tab loads only its own session, never the newest jsonl
+      // in the cwd. So pin the tab to newerSessionId explicitly (CASE A) — the
+      // route no longer auto-adopts the directory's newest file.
+      const tab = store.createTab(project.id, { type: 'claude', label: 'claude resume', claudeSessionId: newerSessionId })
       const { router, handleTerminalWs } = createTerminalRoutes(store)
 
       const historyRes = await invokeRoute(
