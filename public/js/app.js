@@ -141,15 +141,21 @@ function _clearFaviconDot() {
   }
 }
 
+function _baseTitle() {
+  // The project-aware title is owned by sidebar.updateAppTitle(); strip any
+  // existing unread prefix so counts don't stack.
+  return (document.title || _originalTitle).replace(/^\(\d+\)\s*/, '')
+}
+
 function _addUnread() {
   _unreadCount++
-  document.title = `(${_unreadCount}) ${_originalTitle}`
+  document.title = `(${_unreadCount}) ${_baseTitle()}`
   _drawFaviconDot()
 }
 
 function _clearUnread() {
   _unreadCount = 0
-  document.title = _originalTitle
+  document.title = _baseTitle()
   _clearFaviconDot()
 }
 

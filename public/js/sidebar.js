@@ -132,10 +132,19 @@ export function initSidebar(onProjectSwitch) {
  */
 let _searchQuery = ''
 
+export function updateAppTitle() {
+  const active = state.projects.find((p) => p.id === state.activeProjectId)
+  const name = active?.name || 'Nanocode'
+  const h1 = document.querySelector('.app-title')
+  if (h1) h1.textContent = name
+  document.title = active ? `${name} · Nanocode` : 'Nanocode'
+}
+
 export function renderSidebar() {
   const container = document.getElementById('sidebar-projects')
   if (!container) return
 
+  updateAppTitle()
   container.textContent = ''
 
   // Search input (shown when 4+ projects)
