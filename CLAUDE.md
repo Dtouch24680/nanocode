@@ -17,9 +17,9 @@ npm test
 
 ## Git 远程
 
-- `origin` — victoriacity/nanocode（只读）
-- `fork` — ZhiNningJiao/nanocode（push 到这里）
-- PR: `gh pr create --repo ZhiNningJiao/nanocode`
+- `origin` — victoriacity/nanocode（上游，只读）
+- `zhi` — ZhiNningJiao/nanocode（本地代码所基于的 fork，只读）
+- `myfork` — Dtouch24680/nanocode（push 到这里）
 
 ## 无人值守
 
