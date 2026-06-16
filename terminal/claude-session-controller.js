@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync, readdirSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { platform } from 'node:os'
 import { join } from 'node:path'
 import * as sessions from './sessions.js'
 import { buildReplaySeed, buildUserReplayId } from './claude-history.js'
+import { loadCodexThreadEvents } from './codex-history.js'
 import { createClaudeSdkDriver } from './claude-sdk-driver.js'
 import { createCodexSdkDriver } from './codex-sdk-driver.js'
 
@@ -157,9 +158,48 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     }
   }
 
-  function codexBroadcastEvent(cs, event) {
+  // ── Codex event-history disk persistence ───────────────────────────────────
+  // Codex sessions render from a structured event stream (cs.eventHistory). We
+  // persist that stream to disk so it survives a browser refresh AND a server
+  // restart — matching the durability claude gets from its jsonl history.
+  const codexHistoryDir = process.env.NANOCODE_CODEX_HISTORY_DIR
+    || (home ? join(home, '.nanocode', 'codex-history') : null)
+
+  function codexHistoryPath(projectId, tabId) {
+    if (!codexHistoryDir) return null
+    return join(codexHistoryDir, `${projectId}__${tabId}.json`)
+  }
+
+  function loadCodexHistory(path) {
+    if (!path || !existsSync(path)) return []
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8'))
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
+  }
+
+  function persistCodexHistory(cs) {
+    if (!cs._persistPath) return
+    try {
+      if (codexHistoryDir && !existsSync(codexHistoryDir)) mkdirSync(codexHistoryDir, { recursive: true })
+      writeFileSync(cs._persistPath, JSON.stringify(cs.eventHistory))
+    } catch {}
+  }
+
+  function schedulePersistCodex(cs) {
+    if (!cs._persistPath) return
+    if (cs._persistTimer) return
+    cs._persistTimer = setTimeout(() => {
+      cs._persistTimer = null
+      persistCodexHistory(cs)
+    }, 400)
+  }
+
+  function codexBroadcastEvent(cs, event, { historyOnly = false } = {}) {
     cs.eventHistory.push(event)
     if (cs.eventHistory.length > 500) cs.eventHistory.shift()
+    schedulePersistCodex(cs)
+    if (historyOnly) return
     const msg = JSON.stringify({ type: 'codex-event', event })
     for (const client of cs.clients) {
       if (client.readyState === 1) try { client.send(msg) } catch {}
@@ -775,17 +815,26 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
     if (!cs) {
       const tab = store.getTab ? store.getTab(projectId, tabId) : null
+      const persistPath = codexHistoryPath(projectId, tabId)
+      const threadId = tab?.codexThreadId || null
+      // Prefer codex's own durable rollout jsonl (authoritative, survives server
+      // restarts and recovers sessions created before in-app persistence existed).
+      // Fall back to our own event-history snapshot for threads not yet started.
+      let eventHistory = threadId ? loadCodexThreadEvents(home, threadId) : []
+      if (!eventHistory.length) eventHistory = loadCodexHistory(persistPath)
       cs = {
-        codexThreadId: tab?.codexThreadId || null,
+        codexThreadId: threadId,
         clients: new Set(),
         scrollback: '',
-        eventHistory: [],
+        eventHistory,
         busy: false,
         turnCount: 0,
         cwd: project.cwd,
         currentProc: null,
         queue: [],
         inputBuffer: '',
+        _persistPath: persistPath,
+        _persistTimer: null,
       }
       codexSessions.set(sessionKey, cs)
     }
@@ -804,7 +853,9 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     const flushCodexInput = (buffer) => {
       const text = buffer.trim()
       if (!text) return
-      appendCodexScrollback(cs, `› ${text}\n`)
+      // The prompt is persisted to scrollback by runCodexTurn (historyOnly) at
+      // the moment it actually runs — persisting here too would double-record it
+      // (and double-render on reconnect). So just dispatch.
       dispatchCodexTurn(cs, text, sessionKey, project.cwd)
     }
 
@@ -825,7 +876,13 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         }
         if (data === '\x0c') {
           cs.scrollback = ''
-          codexBroadcast(cs, '\x1b[2J\x1b[H')
+          cs.eventHistory = []
+          persistCodexHistory(cs)
+          // Live-only clear signal (not persisted into the now-empty history).
+          const clearMsg = JSON.stringify({ type: 'codex-event', event: { type: 'clear' } })
+          for (const client of cs.clients) {
+            if (client.readyState === 1) try { client.send(clearMsg) } catch {}
+          }
           return
         }
 

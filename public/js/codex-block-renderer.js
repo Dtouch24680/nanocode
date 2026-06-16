@@ -250,7 +250,7 @@ class VT100Screen {
   }
 }
 
-// ── ANSI strip ────────────────────────────────────────────────────────────────
+// ── ANSI / rich text rendering ────────────────────────────────────────────────
 // Standard CSI sequences: ESC [ ... final-byte
 const ANSI_CSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g
 // OSC sequences: ESC ] ... (BEL or ST)
@@ -272,6 +272,169 @@ function stripAnsi(s) {
     .replace(BARE_CTRL_RE, '')  // stray control chars (BEL, BS, SO, SI, etc.)
 }
 
+const ANSI_FG = {
+  30: 'black', 31: 'red', 32: 'green', 33: 'yellow', 34: 'blue', 35: 'magenta', 36: 'cyan', 37: 'white',
+  90: 'bright-black', 91: 'bright-red', 92: 'bright-green', 93: 'bright-yellow', 94: 'bright-blue', 95: 'bright-magenta', 96: 'bright-cyan', 97: 'bright-white',
+}
+const ANSI_BG = {
+  40: 'black', 41: 'red', 42: 'green', 43: 'yellow', 44: 'blue', 45: 'magenta', 46: 'cyan', 47: 'white',
+  100: 'bright-black', 101: 'bright-red', 102: 'bright-green', 103: 'bright-yellow', 104: 'bright-blue', 105: 'bright-magenta', 106: 'bright-cyan', 107: 'bright-white',
+}
+const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'mailto:', 'vscode:', 'cursor:', 'windsurf:', 'jetbrains:'])
+
+function defaultAnsiState() {
+  return {
+    bold: false,
+    dim: false,
+    italic: false,
+    underline: false,
+    strike: false,
+    inverse: false,
+    fg: null,
+    bg: null,
+    href: null,
+  }
+}
+
+function cloneAnsiState(s) {
+  return { ...s, fg: s.fg ? { ...s.fg } : null, bg: s.bg ? { ...s.bg } : null }
+}
+
+function clampColor(n) {
+  n = Number(n)
+  return Number.isFinite(n) ? Math.max(0, Math.min(255, n)) : 0
+}
+
+function ansi256ToRgb(n) {
+  n = clampColor(n)
+  if (n < 16) {
+    const base = [
+      [0, 0, 0], [205, 49, 49], [13, 188, 121], [229, 229, 16],
+      [36, 114, 200], [188, 63, 188], [17, 168, 205], [229, 229, 229],
+      [102, 102, 102], [241, 76, 76], [35, 209, 139], [245, 245, 67],
+      [59, 142, 234], [214, 112, 214], [41, 184, 219], [255, 255, 255],
+    ]
+    return base[n]
+  }
+  if (n >= 232) {
+    const v = 8 + (n - 232) * 10
+    return [v, v, v]
+  }
+  const idx = n - 16
+  const steps = [0, 95, 135, 175, 215, 255]
+  return [steps[Math.floor(idx / 36)], steps[Math.floor(idx / 6) % 6], steps[idx % 6]]
+}
+
+function applySgr(params, state) {
+  if (!params.length) params = [0]
+  for (let i = 0; i < params.length; i++) {
+    const p = params[i] === '' ? 0 : Number(params[i])
+    if (!Number.isFinite(p)) continue
+    if (p === 0) {
+      const href = state.href
+      Object.assign(state, defaultAnsiState(), { href })
+    } else if (p === 1) state.bold = true
+    else if (p === 2) state.dim = true
+    else if (p === 3) state.italic = true
+    else if (p === 4) state.underline = true
+    else if (p === 7) state.inverse = true
+    else if (p === 9) state.strike = true
+    else if (p === 22) { state.bold = false; state.dim = false }
+    else if (p === 23) state.italic = false
+    else if (p === 24) state.underline = false
+    else if (p === 27) state.inverse = false
+    else if (p === 29) state.strike = false
+    else if (p === 39) state.fg = null
+    else if (p === 49) state.bg = null
+    else if (ANSI_FG[p]) state.fg = { kind: 'named', value: ANSI_FG[p] }
+    else if (ANSI_BG[p]) state.bg = { kind: 'named', value: ANSI_BG[p] }
+    else if (p === 38 || p === 48) {
+      const target = p === 38 ? 'fg' : 'bg'
+      const mode = Number(params[i + 1])
+      if (mode === 5 && params[i + 2] != null) {
+        state[target] = { kind: 'rgb', value: ansi256ToRgb(Number(params[i + 2])) }
+        i += 2
+      } else if (mode === 2 && params[i + 4] != null) {
+        state[target] = {
+          kind: 'rgb',
+          value: [clampColor(params[i + 2]), clampColor(params[i + 3]), clampColor(params[i + 4])],
+        }
+        i += 4
+      }
+    }
+  }
+}
+
+function parseOsc8(payload, state) {
+  // OSC 8 ; params ; URI  (empty URI closes the active hyperlink)
+  if (!payload.startsWith('8;')) return false
+  const semi = payload.indexOf(';', 2)
+  if (semi < 0) return false
+  state.href = payload.slice(semi + 1) || null
+  return true
+}
+
+function parseAnsiRuns(raw) {
+  const runs = []
+  const state = defaultAnsiState()
+  let buf = ''
+  let bufState = cloneAnsiState(state)
+
+  const flush = () => {
+    if (!buf) return
+    runs.push({ text: buf, state: cloneAnsiState(bufState) })
+    buf = ''
+  }
+  const syncState = () => { bufState = cloneAnsiState(state) }
+
+  let i = 0
+  while (i < raw.length) {
+    const ch = raw[i]
+    if (ch !== '\x1b') {
+      const code = ch.charCodeAt(0)
+      if (ch === '\n' || ch === '\t' || code >= 0x20) buf += ch
+      i++
+      continue
+    }
+
+    const rest = raw.slice(i)
+    if (rest.startsWith('\x1b]')) {
+      const bel = rest.indexOf('\x07', 2)
+      const st = rest.indexOf('\x1b\\', 2)
+      const end = bel < 0 ? st : st < 0 ? bel : Math.min(bel, st)
+      if (end < 0) break
+      const payload = rest.slice(2, end)
+      flush()
+      parseOsc8(payload, state)
+      syncState()
+      i += end + (end === st ? 2 : 1)
+      continue
+    }
+
+    if (rest.startsWith('\x1b[')) {
+      const m = rest.match(/^\x1b\[([0-9;:]*)[ -/]*([@-~])/)
+      if (m) {
+        flush()
+        if (m[2] === 'm') applySgr(m[1].split(/[;:]/), state)
+        syncState()
+        i += m[0].length
+        continue
+      }
+    }
+
+    if (/^\x1b[P\^_]/.test(rest)) {
+      const st = rest.indexOf('\x1b\\', 2)
+      i += st < 0 ? rest.length : st + 2
+      continue
+    }
+
+    // Unknown 2-char escape sequence.
+    i += 2
+  }
+  flush()
+  return runs
+}
+
 // ── HTML escape ───────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s)
@@ -282,10 +445,105 @@ function escHtml(s) {
 }
 
 // ── URL / path auto-link ──────────────────────────────────────────────────────
-const URL_RE = /https?:\/\/[^\s"'<>[\]()]+[^\s"'<>[\]().,;:!?]/g
-// Local file paths: /storage|/home absolute, ~/ home-relative, or repo-relative
-// (foo/bar.ext). Mirrors the claude-block-renderer detector.
-const PATH_RE = /(?:(?:\/(?:storage|home)\/[^\s,;:!?()\[\]"'<>]+)|(?:~\/[^\s,;:!?()\[\]"'<>]+)|(?<![:/])(?:[a-zA-Z][a-zA-Z0-9_.-]*(?:\/[a-zA-Z0-9_.+-]+)+\.[a-zA-Z]{2,10})(?=\s|$|[,;:!?()\[\]"'<>]))/g
+const URL_RE = /(?:https?:\/\/|file:\/\/|(?:vscode|cursor|windsurf|jetbrains):\/\/|mailto:)[^\s"'<>[\]()]+[^\s"'<>[\]().,;:!?]/gi
+const MD_LINK_RE = /\[([^\]\n]{1,180})\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g
+// Local file paths: absolute Unix paths, ~/ home-relative, or repo-relative
+// paths such as foo/bar.ext. Optional :line/:column suffixes stay clickable.
+const PATH_RE = /(?:(?:\/[a-zA-Z0-9_.+@-]+(?:\/[^\s,;!?()[\]"'<>]+)+)|(?:~\/[^\s,;!?()[\]"'<>]+)|(?<![:/])(?:(?:\.{1,2}\/)?[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.+-]+)+(?:\.[a-zA-Z0-9_+-]{1,12})?))(?:[:#]\d+(?::\d+)?)?(?=\s|$|[,;!?()[\]"'<>])/g
+
+function trimTrailingLinkPunctuation(value) {
+  let v = String(value)
+  while (/[.,;!?]$/.test(v)) v = v.slice(0, -1)
+  return v
+}
+
+function splitPathLocation(value) {
+  const raw = trimTrailingLinkPunctuation(value)
+  const m = raw.match(/^(.*?)(?::(\d+)(?::(\d+))?|#(\d+))$/)
+  if (!m) return { path: raw, line: null, column: null }
+  return { path: m[1], line: m[2] || m[4] || null, column: m[3] || null }
+}
+
+function fileUrlToPath(href) {
+  try {
+    const u = new URL(href)
+    if (u.protocol !== 'file:') return null
+    if (u.hostname && u.hostname !== 'localhost') return `//${u.hostname}${decodeURIComponent(u.pathname)}`
+    return decodeURIComponent(u.pathname)
+  } catch {
+    return null
+  }
+}
+
+function isSafeHref(href) {
+  try {
+    const u = new URL(href, location.href)
+    return SAFE_LINK_PROTOCOLS.has(u.protocol)
+  } catch {
+    return false
+  }
+}
+
+function applyAnsiStyle(el, state) {
+  if (!state) return el
+  const classes = []
+  if (state.bold) classes.push('cbx-ansi-bold')
+  if (state.dim) classes.push('cbx-ansi-dim')
+  if (state.italic) classes.push('cbx-ansi-italic')
+  if (state.underline) classes.push('cbx-ansi-underline')
+  if (state.strike) classes.push('cbx-ansi-strike')
+  if (state.inverse) classes.push('cbx-ansi-inverse')
+  if (state.fg?.kind === 'named') classes.push(`cbx-ansi-fg-${state.fg.value}`)
+  if (state.bg?.kind === 'named') classes.push(`cbx-ansi-bg-${state.bg.value}`)
+  if (classes.length) el.classList.add(...classes)
+  if (state.fg?.kind === 'rgb') el.style.color = `rgb(${state.fg.value.join(', ')})`
+  if (state.bg?.kind === 'rgb') el.style.backgroundColor = `rgb(${state.bg.value.join(', ')})`
+  return el
+}
+
+function appendStyledText(parent, text, state) {
+  if (!text) return
+  const needsSpan = state && (
+    state.bold || state.dim || state.italic || state.underline || state.strike ||
+    state.inverse || state.fg || state.bg
+  )
+  if (!needsSpan) {
+    parent.appendChild(document.createTextNode(text))
+    return
+  }
+  const span = applyAnsiStyle(document.createElement('span'), state)
+  span.textContent = text
+  parent.appendChild(span)
+}
+
+function createPathLink(label, pathValue, state) {
+  const { path, line, column } = splitPathLocation(pathValue)
+  const span = applyAnsiStyle(document.createElement('span'), state)
+  span.classList.add('cbr-path-link', 'cbx-local-link')
+  span.dataset.path = path
+  if (line) span.dataset.line = line
+  if (column) span.dataset.column = column
+  span.title = 'Open in explorer: ' + path + (line ? `:${line}` : '')
+  span.textContent = label
+  return span
+}
+
+function createHrefLink(label, href, state) {
+  const filePath = /^file:/i.test(href) ? fileUrlToPath(href) : null
+  if (filePath) return createPathLink(label, filePath, state)
+  if (!isSafeHref(href)) {
+    const span = applyAnsiStyle(document.createElement('span'), state)
+    span.textContent = label
+    return span
+  }
+  const a = applyAnsiStyle(document.createElement('a'), state)
+  a.href = href
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  a.classList.add('cbx-url')
+  a.textContent = label
+  return a
+}
 
 /**
  * Append `text` into `el`, turning bare URLs into <a target=_blank> and local
@@ -293,49 +551,176 @@ const PATH_RE = /(?:(?:\/(?:storage|home)\/[^\s,;:!?()\[\]"'<>]+)|(?:~\/[^\s,;:!
  * latter are handled by a single delegated listener on the scroll container.
  */
 function appendLinkified(el, text) {
+  appendRichText(el, text, { ansi: false })
+}
+
+function appendRunWithLinks(el, text, state) {
   if (!text) {
     el.appendChild(document.createTextNode(text || ''))
     return
   }
   const matches = []
   let m
+  MD_LINK_RE.lastIndex = 0
+  while ((m = MD_LINK_RE.exec(text)) !== null) {
+    matches.push({ type: 'mdlink', start: m.index, end: m.index + m[0].length, label: m[1], value: trimTrailingLinkPunctuation(m[2]) })
+  }
   URL_RE.lastIndex = 0
   while ((m = URL_RE.exec(text)) !== null) {
-    matches.push({ type: 'url', start: m.index, end: m.index + m[0].length, value: m[0] })
+    const value = trimTrailingLinkPunctuation(m[0])
+    matches.push({ type: 'url', start: m.index, end: m.index + value.length, value })
   }
   PATH_RE.lastIndex = 0
   while ((m = PATH_RE.exec(text)) !== null) {
     if (m[0].length > 300) continue
-    matches.push({ type: 'path', start: m.index, end: m.index + m[0].length, value: m[0] })
+    const value = trimTrailingLinkPunctuation(m[0])
+    matches.push({ type: 'path', start: m.index, end: m.index + value.length, value })
   }
   if (!matches.length) {
-    el.appendChild(document.createTextNode(text))
+    appendStyledText(el, text, state)
     return
   }
   matches.sort((a, b) => a.start - b.start)
   let pos = 0
   for (const match of matches) {
     if (match.start < pos) continue // overlap — skip
-    if (match.start > pos) el.appendChild(document.createTextNode(text.slice(pos, match.start)))
-    if (match.type === 'url') {
-      const a = document.createElement('a')
-      a.href = match.value
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      a.className = 'cbx-url'
-      a.textContent = match.value
-      el.appendChild(a)
-    } else {
-      const span = document.createElement('span')
-      span.className = 'cbr-path-link'
-      span.dataset.path = match.value
-      span.title = 'Open in explorer: ' + match.value
-      span.textContent = match.value
-      el.appendChild(span)
-    }
+    if (match.start > pos) appendStyledText(el, text.slice(pos, match.start), state)
+    if (match.type === 'url') el.appendChild(createHrefLink(match.value, match.value, state))
+    else if (match.type === 'mdlink') {
+      if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(match.value) || /^[a-z][a-z0-9+.-]*:/i.test(match.value)) {
+        el.appendChild(createHrefLink(match.label, match.value, state))
+      } else {
+        el.appendChild(createPathLink(match.label, match.value, state))
+      }
+    } else el.appendChild(createPathLink(match.value, match.value, state))
     pos = match.end
   }
-  if (pos < text.length) el.appendChild(document.createTextNode(text.slice(pos)))
+  if (pos < text.length) appendStyledText(el, text.slice(pos), state)
+}
+
+function appendRichText(el, rawText, { ansi = true } = {}) {
+  const text = rawText == null ? '' : String(rawText)
+  const runs = ansi ? parseAnsiRuns(text) : [{ text, state: defaultAnsiState() }]
+  for (const run of runs) {
+    if (run.state.href) {
+      el.appendChild(createHrefLink(run.text, run.state.href, run.state))
+    } else {
+      appendRunWithLinks(el, run.text, run.state)
+    }
+  }
+}
+
+function classifyRichLine(rawLine) {
+  const line = stripAnsi(rawLine).replace(/\r/g, '')
+  if (/^@@/.test(line)) return 'cbx-diff-hunk'
+  if (/^(?:diff --git|index |rename from |rename to |new file mode |deleted file mode )/.test(line)) return 'cbx-diff-meta'
+  if (/^\+\+\+/.test(line) || /^---/.test(line)) return 'cbx-diff-file'
+  if (/^\+/.test(line)) return 'cbx-diff-add'
+  if (/^-/.test(line)) return 'cbx-diff-del'
+  return ''
+}
+
+function renderRichLines(el, text) {
+  el.innerHTML = ''
+  const lines = String(text || '').split('\n')
+  for (const line of lines) {
+    const row = document.createElement('div')
+    row.className = 'cbx-rich-line'
+    const diffCls = classifyRichLine(line)
+    if (diffCls) row.classList.add(diffCls)
+    appendRichText(row, line)
+    el.appendChild(row)
+  }
+}
+
+function highlightCode(code, lang) {
+  try {
+    if (window.hljs && lang) {
+      return window.hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+    }
+    if (window.hljs) return window.hljs.highlightAuto(code).value
+  } catch {}
+  return escHtml(code)
+}
+
+function renderCodexRichMarkdown(el, text) {
+  el.innerHTML = ''
+  const lines = String(text || '').split('\n')
+  let inFence = false
+  let fenceLang = ''
+  let codeLines = []
+
+  const flushCode = () => {
+    const wrap = document.createElement('div')
+    wrap.className = 'cbx-code-wrap'
+    const code = codeLines.join('\n')
+    wrap.innerHTML =
+      `<div class="cbx-code-header">${fenceLang ? `<span>${escHtml(fenceLang)}</span>` : ''}</div>` +
+      `<pre class="cbx-code-pre"><code class="hljs">${highlightCode(code, fenceLang)}</code></pre>`
+    el.appendChild(wrap)
+    codeLines = []
+  }
+
+  for (const line of lines) {
+    const fence = line.match(/^```([a-zA-Z0-9_.+-]*)\s*$/)
+    if (fence) {
+      if (inFence) {
+        flushCode()
+        inFence = false
+        fenceLang = ''
+      } else {
+        inFence = true
+        fenceLang = fence[1] || ''
+        codeLines = []
+      }
+      continue
+    }
+    if (inFence) {
+      codeLines.push(line)
+      continue
+    }
+
+    if (!line.trim()) {
+      el.appendChild(document.createElement('br'))
+      continue
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/)
+    if (heading) {
+      const h = document.createElement('div')
+      h.className = `cbx-md-heading cbx-md-h${heading[1].length}`
+      appendRichText(h, heading[2])
+      el.appendChild(h)
+      continue
+    }
+
+    const list = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/)
+    if (list) {
+      const row = document.createElement('div')
+      row.className = 'cbx-md-list-row'
+      const bullet = document.createElement('span')
+      bullet.className = 'cbx-md-bullet'
+      bullet.textContent = list[2]
+      const body = document.createElement('span')
+      appendRichText(body, list[3])
+      row.style.paddingLeft = `${Math.min(24, list[1].length * 8)}px`
+      row.append(bullet, body)
+      el.appendChild(row)
+      continue
+    }
+
+    const quote = line.match(/^>\s?(.*)$/)
+    const row = document.createElement('div')
+    row.className = quote ? 'cbx-md-line cbx-md-quote' : 'cbx-md-line'
+    const diffCls = classifyRichLine(quote ? quote[1] : line)
+    if (diffCls) row.classList.add(diffCls)
+    appendRichText(row, quote ? quote[1] : line)
+    el.appendChild(row)
+  }
+
+  if (inFence) {
+    flushCode()
+  }
 }
 
 // ── Pattern detection ─────────────────────────────────────────────────────────
@@ -616,8 +1001,11 @@ export class CodexBlockRenderer {
         this._connectingEl = null
       }
 
-      if (msg.type === 'history') {
-        // Replay historical PTY data
+      if (msg.type === 'codex-event') {
+        // SDK driver path: render from structured events (live + replay).
+        if (msg.event) this._handleCodexEvent(msg.event)
+      } else if (msg.type === 'history') {
+        // Replay historical PTY data (legacy PTY driver only)
         if (msg.data) this._handlePtyData(msg.data, true)
       } else if (msg.type === 'output') {
         this._handlePtyData(msg.data, false)
@@ -690,10 +1078,9 @@ export class CodexBlockRenderer {
     // N42: History replay — skip TUI rendering entirely.
     // Raw PTY bytes stored in scrollback contain ESC[?1049h/l and ESC[?2026h/l.
     // Re-running the state machine on replay creates phantom spinner/result blocks.
-    // Instead, just strip ANSI and process the text lines as-is.
+    // Instead, process the saved text lines directly while preserving ANSI SGR.
     if (fromHistory) {
-      const cleaned = stripAnsi(data)
-      this._ptybuf += cleaned
+      this._ptybuf += data
       const lines = this._ptybuf.split('\n')
       this._ptybuf = lines.pop() ?? ''
       for (const line of lines) this._processLine(line.replace(/\r/g, ''))
@@ -733,9 +1120,8 @@ export class CodexBlockRenderer {
       return
     }
 
-    // Normal path: strip ANSI codes, split lines
-    const cleaned = stripAnsi(data)
-    this._ptybuf += cleaned
+    // Normal path: preserve ANSI SGR for rich rendering, split at line boundaries.
+    this._ptybuf += data
     const lines = this._ptybuf.split('\n')
     this._ptybuf = lines.pop() ?? ''
     for (const line of lines) {
@@ -766,8 +1152,7 @@ export class CodexBlockRenderer {
             this._syncScreen.write(rest)
             this._updateSyncSpinner()
           } else {
-            const cleaned = stripAnsi(rest)
-            this._ptybuf += cleaned
+            this._ptybuf += rest
             const lines = this._ptybuf.split('\n')
             this._ptybuf = lines.pop() ?? ''
             for (const line of lines) this._processLine(line.replace(/\r/g, ''))
@@ -780,8 +1165,7 @@ export class CodexBlockRenderer {
         // Process text before the enter sequence (normal mode)
         const before = data.slice(pos, nextEnter)
         if (before) {
-          const cleaned = stripAnsi(before)
-          this._ptybuf += cleaned
+          this._ptybuf += before
           const lines = this._ptybuf.split('\n')
           this._ptybuf = lines.pop() ?? ''
           for (const line of lines) this._processLine(line.replace(/\r/g, ''))
@@ -978,6 +1362,8 @@ export class CodexBlockRenderer {
     for (const line of lines) {
       const lineEl = document.createElement('div')
       lineEl.className = 'cbx-sync-line'
+      const diffCls = classifyRichLine(line)
+      if (diffCls) lineEl.classList.add(diffCls)
       appendLinkified(lineEl, line)  // safe — builds text/anchor/span DOM nodes
       bodyEl.appendChild(lineEl)
     }
@@ -1004,6 +1390,8 @@ export class CodexBlockRenderer {
     for (const line of lines) {
       const lineEl = document.createElement('div')
       lineEl.className = 'cbx-sync-line'
+      const diffCls = classifyRichLine(line)
+      if (diffCls) lineEl.classList.add(diffCls)
       appendLinkified(lineEl, line)
       bodyEl.appendChild(lineEl)
     }
@@ -1045,8 +1433,7 @@ export class CodexBlockRenderer {
             this._altScreen.write(rest)
             this._updateAltSpinner()
           } else {
-            const cleaned = stripAnsi(rest)
-            this._ptybuf += cleaned
+            this._ptybuf += rest
             const lines = this._ptybuf.split('\n')
             this._ptybuf = lines.pop() ?? ''
             for (const line of lines) this._processLine(line.replace(/\r/g, ''))
@@ -1059,8 +1446,7 @@ export class CodexBlockRenderer {
         // Process normal data before the enter sequence
         const before = data.slice(pos, nextEnter)
         if (before) {
-          const cleaned = stripAnsi(before)
-          this._ptybuf += cleaned
+          this._ptybuf += before
           const lines = this._ptybuf.split('\n')
           this._ptybuf = lines.pop() ?? ''
           for (const line of lines) this._processLine(line.replace(/\r/g, ''))
@@ -1188,11 +1574,10 @@ export class CodexBlockRenderer {
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
-      `<pre class="cbx-altscreen-body"></pre>` +
+      `<div class="cbx-altscreen-body"></div>` +
       `</div>`
 
-    // Set text content safely (no HTML injection)
-    article.querySelector('.cbx-altscreen-body').textContent = text
+    renderRichLines(article.querySelector('.cbx-altscreen-body'), text)
 
     // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
@@ -1203,12 +1588,13 @@ export class CodexBlockRenderer {
     this._scrollBottom()
   }
 
-  _processLine(line) {
+  _processLine(rawLine) {
+    const line = stripAnsi(rawLine).replace(/\r/g, '')
     if (!line.trim()) {
       // Blank line: may indicate block boundary
       if (this._currentBashBlock) {
         // Add blank line to current bash output
-        this._appendToBashOutput('\n')
+        this._appendToBashOutput('')
       }
       return
     }
@@ -1322,12 +1708,12 @@ export class CodexBlockRenderer {
         if (m) this._accumulateSessionInfo(m[1].trim(), m[2].trim())
         return
       }
-      this._appendToBashOutput(line)
+      this._appendToBashOutput(rawLine)
       return
     }
 
     // General text — show as response text
-    this._appendTextLine(line)
+    this._appendTextLine(rawLine)
   }
 
   // ── Block builders ────────────────────────────────────────────────────────────
@@ -1343,20 +1729,20 @@ export class CodexBlockRenderer {
     const foldLevel = getFoldLevel()
     article.setAttribute('data-fold', foldLevel)
 
-    const cmdHtml = `<code class="cbx-bash-cmd">${escHtml(cmd)}</code>`
-
     article.innerHTML =
       `<div class="cbx-bash-card">` +
       `<div class="cbx-bash-header">` +
       `<span class="cbx-bash-icon">$</span>` +
-      `<span class="cbx-bash-cmd-text">${cmdHtml}</span>` +
+      `<span class="cbx-bash-cmd-text"><code class="cbx-bash-cmd"></code></span>` +
       `<span class="cbx-bash-status cbx-bash-running">running…</span>` +
       `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
       `</button>` +
       `</div>` +
-      `<pre class="cbx-bash-output cbx-bash-body"></pre>` +
+      `<div class="cbx-bash-output cbx-bash-body"></div>` +
       `</div>`
+
+    appendRichText(article.querySelector('.cbx-bash-cmd'), cmd, { ansi: false })
 
     // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-bash-header')
@@ -1392,7 +1778,7 @@ export class CodexBlockRenderer {
     } else {
       display = text
     }
-    this._currentBashBlock.outputEl.textContent = display
+    renderRichLines(this._currentBashBlock.outputEl, display)
     this._scrollBottom()
   }
 
@@ -1418,6 +1804,180 @@ export class CodexBlockRenderer {
 
     this._currentBashBlock = null
     this._setThinking(false)
+  }
+
+  // ── Structured codex-event rendering (SDK driver) ──────────────────────────────
+  //
+  // The SDK driver broadcasts typed events ({type:'item.started'|'item.completed'|
+  // 'turn.completed'|...}) instead of flattened text. We render each item type as a
+  // dedicated block, reusing the same builders as the legacy text path. This gives
+  // proper structure (command cards, patch badges, message/reasoning blocks) and lets
+  // us cap noisy output (e.g. command stdout) instead of dumping whole files.
+  _handleCodexEvent(event) {
+    if (!event || !event.type) return
+    const t = event.type
+
+    if (t === 'clear') {
+      this._scroll.innerHTML = ''
+      this._currentBashBlock = null
+      this._statusBannerEl = null
+      this._setThinking(false)
+      return
+    }
+    if (t === 'turn.started') {
+      this._setThinking(true)
+      return
+    }
+    if (t === 'thread.started') return
+
+    if (t === 'user_prompt') {
+      // Synthetic, replay-only event so the user's prompt survives refresh.
+      this._finalizeCurrentBlock()
+      this._appendUserBlock(event.text || '')
+      return
+    }
+    if (t === 'notice') {
+      this._addSystemBlock(event.text || '')
+      return
+    }
+
+    if (t === 'item.started') {
+      const item = event.item
+      if (item?.type === 'command_execution' && item.command) {
+        this._finalizeCurrentBlock()
+        this._startBashBlock(item.command)
+      } else if (item?.type === 'file_change') {
+        this._renderFileChange(item)
+      }
+      return
+    }
+
+    if (t === 'item.completed') {
+      const item = event.item
+      if (!item) return
+      if (item.type === 'command_execution') {
+        this._completeCommand(item)
+      } else if (item.type === 'file_change') {
+        this._renderFileChange(item)
+      } else if (item.type === 'agent_message') {
+        this._finalizeCurrentBlock()
+        this._setThinking(false)
+        this._addAgentMessageBlock(item.text || '')
+      } else if (item.type === 'reasoning') {
+        this._addReasoningBlock(item.text || '')
+      } else if (item.type === 'web_search') {
+        this._addSystemBlock(`🔎 web search: ${item.query || ''}`)
+      } else if (item.type === 'mcp_tool_call') {
+        const label = `${item.server || 'mcp'}/${item.tool || 'tool'}`
+        this._addSystemBlock(`🔧 ${label}${item.status === 'failed' ? ' (failed)' : ''}`)
+      } else if (item.type === 'todo_list') {
+        this._renderTodoList(item)
+      } else if (item.type === 'error') {
+        this._addSystemBlock(`[Error: ${item.message || 'unknown'}]`)
+      }
+      return
+    }
+
+    if (t === 'turn.completed') {
+      this._finalizeCurrentBlock()
+      this._setThinking(false)
+      this._addTurnSeparator()
+      return
+    }
+    if (t === 'turn.failed') {
+      this._finalizeCurrentBlock()
+      this._setThinking(false)
+      this._addSystemBlock(`[Error: ${event.error?.message || 'Codex turn failed'}]`)
+      this._addTurnSeparator()
+      return
+    }
+    if (t === 'error') {
+      this._finalizeCurrentBlock()
+      this._setThinking(false)
+      this._addSystemBlock(`[Error: ${event.message || 'Codex stream error'}]`)
+      this._addTurnSeparator()
+    }
+  }
+
+  _completeCommand(item) {
+    // The command may complete without a preceding item.started (e.g. on replay
+    // when the started event was trimmed) — start a block on demand.
+    if (!this._currentBashBlock || this._currentBashBlock.cmd !== item.command) {
+      this._finalizeCurrentBlock()
+      this._startBashBlock(item.command || '')
+    }
+    const output = item.aggregated_output || ''
+    if (output) {
+      for (const line of output.split('\n')) this._appendToBashOutput(line)
+    }
+    const code = item.exit_code
+    this._finalizeBashBlockWithExit(code == null ? '✓ exit 0' : `exit ${code}`)
+  }
+
+  _renderFileChange(item) {
+    // Render once, on completion only (item.started for file_change carries no extra info).
+    if (item.status == null && item.changes == null) return
+    if (item._nanocodeRendered) return
+    for (const change of item.changes || []) {
+      this._addPatchBlock(change.kind || 'update', change.path || '', item.status)
+    }
+    item._nanocodeRendered = true
+  }
+
+  _renderTodoList(item) {
+    const items = item.items || []
+    if (!items.length) return
+    const article = this._makeBlock('cbx-block-todo')
+    const ul = document.createElement('ul')
+    ul.className = 'cbx-todo-list'
+    for (const todo of items) {
+      const li = document.createElement('li')
+      if (todo.completed) li.className = 'cbx-todo-done'
+      li.appendChild(document.createTextNode(todo.completed ? '☑ ' : '☐ '))
+      appendRichText(li, todo.text || '', { ansi: false })
+      ul.appendChild(li)
+    }
+    article.appendChild(ul)
+    this._scroll.appendChild(article)
+    this._scrollBottom()
+  }
+
+  _addAgentMessageBlock(text) {
+    const article = this._makeBlock('cbx-block-text cbx-block-message')
+    article._cbxTextRaw = text
+    const body = document.createElement('div')
+    body.className = 'cbx-text-pre cbx-rich-text'
+    renderCodexRichMarkdown(body, text)
+    article.appendChild(body)
+    this._scroll.appendChild(article)
+    this._scrollBottom()
+  }
+
+  _addReasoningBlock(text) {
+    if (!text || !text.trim()) return
+    const article = this._makeBlock('cbx-block-reasoning')
+    article.setAttribute('data-fold', 'header')
+    article.innerHTML =
+      `<div class="cbx-reasoning-header">` +
+      `<span class="cbx-reasoning-icon">💭</span>` +
+      `<span class="cbx-reasoning-label">thinking</span>` +
+      `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
+      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+      `</button></div>` +
+      `<div class="cbx-reasoning-body cbx-text-pre"></div>`
+    renderRichLines(article.querySelector('.cbx-reasoning-body'), text)
+    const header = article.querySelector('.cbx-reasoning-header')
+    _attachFoldToggle(header, article)
+    this._scroll.appendChild(article)
+    this._scrollBottom()
+  }
+
+  _addTurnSeparator() {
+    const last = this._scroll.lastElementChild
+    if (last && last.classList.contains('cbx-turn-sep')) return
+    const sep = this._makeBlock('cbx-turn-sep')
+    this._scroll.appendChild(sep)
+    this._scrollBottom()
   }
 
   _finalizeCurrentBlock() {
@@ -1457,20 +2017,35 @@ export class CodexBlockRenderer {
     this._scrollBottom()
   }
 
-  _addPatchBlock(line) {
-    const article = this._makeBlock('cbx-block-patch')
-    article.setAttribute('data-fold', getFoldLevel())
+  // kind: 'add' | 'delete' | 'update' (codex SDK provides path+kind, no line diff).
+  // When called from the legacy text path, kind may be a full label string.
+  _addPatchBlock(kind, path, status) {
+    const KIND_META = {
+      add: { cls: 'cbx-patch-add', icon: '+', verb: 'add' },
+      delete: { cls: 'cbx-patch-del', icon: '−', verb: 'delete' },
+      update: { cls: 'cbx-patch-upd', icon: '✏', verb: 'edit' },
+    }
+    const meta = KIND_META[kind]
+    let cls, icon, label
+    if (meta && path != null) {
+      cls = meta.cls
+      icon = meta.icon
+      label = `${meta.verb} ${path}`
+    } else {
+      // Legacy single-arg call: `kind` is the whole label line.
+      cls = 'cbx-patch-upd'
+      icon = '✏'
+      label = String(kind)
+    }
+    const failed = status === 'failed'
+    const article = this._makeBlock(`cbx-block-patch ${cls}${failed ? ' cbx-patch-failed' : ''}`)
     article.innerHTML =
       `<div class="cbx-patch-header">` +
-      `<span class="cbx-patch-icon">✏</span>` +
-      `<span class="cbx-patch-label">${escHtml(line)}</span>` +
+      `<span class="cbx-patch-icon">${escHtml(icon)}</span>` +
+      `<span class="cbx-patch-label"></span>` +
+      (failed ? `<span class="cbx-patch-status">failed</span>` : '') +
       `</div>`
-    article.addEventListener('click', () => {
-      const cur = article.getAttribute('data-fold') || getFoldLevel()
-      const idx = FOLD_LEVELS.indexOf(cur)
-      const next = FOLD_LEVELS[(idx + 1) % FOLD_LEVELS.length]
-      article.setAttribute('data-fold', next)
-    })
+    appendRichText(article.querySelector('.cbx-patch-label'), label, { ansi: false })
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
@@ -1485,9 +2060,10 @@ export class CodexBlockRenderer {
     // Check if last block is a text block we can append to
     const last = this._scroll.lastElementChild
     if (last && last.classList.contains('cbx-block-text')) {
-      const pre = last.querySelector('.cbx-text-pre')
-      if (pre) {
-        pre.textContent += '\n' + line
+      const body = last.querySelector('.cbx-text-pre')
+      if (body) {
+        last._cbxTextRaw = (last._cbxTextRaw || body.textContent || '') + '\n' + line
+        renderCodexRichMarkdown(body, last._cbxTextRaw)
         this._scrollBottom()
         return
       }
@@ -1495,10 +2071,11 @@ export class CodexBlockRenderer {
 
     // Create new text block
     const article = this._makeBlock('cbx-block-text')
-    const pre = document.createElement('pre')
-    pre.className = 'cbx-text-pre'
-    pre.textContent = line
-    article.appendChild(pre)
+    article._cbxTextRaw = line
+    const body = document.createElement('div')
+    body.className = 'cbx-text-pre cbx-rich-text'
+    renderCodexRichMarkdown(body, line)
+    article.appendChild(body)
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
@@ -1547,14 +2124,21 @@ export class CodexBlockRenderer {
 
   _addSystemBlock(msg) {
     const article = this._makeBlock('cbx-block-system')
-    article.innerHTML = `<p class="cbx-system">${escHtml(msg)}</p>`
+    const p = document.createElement('p')
+    p.className = 'cbx-system'
+    appendRichText(p, msg, { ansi: false })
+    article.appendChild(p)
     this._scroll.appendChild(article)
     this._scrollBottom()
   }
 
   _appendUserBlock(text) {
     const article = this._makeBlock('cbx-block-user')
-    article.innerHTML = `<p class="cbx-user-prompt">&#10095; ${escHtml(text)}</p>`
+    const p = document.createElement('p')
+    p.className = 'cbx-user-prompt'
+    p.appendChild(document.createTextNode('❯ '))
+    appendRichText(p, text, { ansi: false })
+    article.appendChild(p)
     this._scroll.appendChild(article)
     this._scrollBottom()
   }

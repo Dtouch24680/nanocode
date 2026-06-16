@@ -107,16 +107,19 @@ process.stdin.on('end', () => {
     emitJson(ws, { type: 'input', data: 'hello from sdk route' })
     emitJson(ws, { type: 'input', data: '\r' })
 
-    await waitUntil(
-      () => ws.sent.find((m) => m.type === 'output' && /reply:hello from sdk route/.test(m.data || '')),
-      3000,
-      'sdk output'
-    )
+    // SDK driver renders via structured codex-event messages (not flattened text).
+    const isAgentReply = (m) =>
+      m.type === 'codex-event' &&
+      m.event?.type === 'item.completed' &&
+      m.event.item?.type === 'agent_message' &&
+      /reply:hello from sdk route/.test(m.event.item.text || '')
+
+    await waitUntil(() => ws.sent.find(isAgentReply), 3000, 'sdk agent_message event')
 
     const persistedTab = store.getTab(project.id, tab.id)
     assert.equal(persistedTab.codexThreadId, 'fake-thread-1')
     assert.equal(
-      ws.sent.some((m) => m.type === 'output' && m.data === '────────────\n'),
+      ws.sent.some((m) => m.type === 'codex-event' && m.event?.type === 'turn.completed'),
       true
     )
 
@@ -131,13 +134,16 @@ process.stdin.on('end', () => {
       rows: 40,
     })
 
-    const history = await waitUntil(
-      () => wsReplay.sent.find((m) => m.type === 'history'),
-      3000,
-      'history replay'
+    // Replay restores the structured event stream, including the history-only
+    // user_prompt event so the prompt survives reconnect.
+    await waitUntil(() => wsReplay.sent.find(isAgentReply), 3000, 'agent_message replay')
+    assert.equal(
+      wsReplay.sent.some((m) =>
+        m.type === 'codex-event' &&
+        m.event?.type === 'user_prompt' &&
+        m.event.text === 'hello from sdk route'),
+      true
     )
-    assert.match(history.data, /› hello from sdk route/)
-    assert.match(history.data, /reply:hello from sdk route/)
 
     ws.close()
     wsReplay.close()

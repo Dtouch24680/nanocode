@@ -1,64 +1,5 @@
 import { Codex as DefaultCodex } from '@openai/codex-sdk'
 
-const TURN_SEPARATOR = '────────────\n'
-
-function ensureTrailingNewline(text) {
-  if (!text) return ''
-  return text.endsWith('\n') ? text : `${text}\n`
-}
-
-function formatFileChanges(changes = []) {
-  if (!Array.isArray(changes) || changes.length === 0) return ''
-  const lines = changes.map((change) => `patch: ${change.kind || 'update'} ${change.path || ''}`.trimEnd())
-  return ensureTrailingNewline(lines.join('\n'))
-}
-
-function formatCodexEventAsOutput(event) {
-  if (!event || !event.type) return ''
-
-  if (event.type === 'item.started') {
-    if (event.item?.type === 'command_execution' && event.item.command) {
-      return ensureTrailingNewline(`Running: ${event.item.command}`)
-    }
-    if (event.item?.type === 'file_change') {
-      return formatFileChanges(event.item.changes)
-    }
-    return ''
-  }
-
-  if (event.type === 'item.completed') {
-    if (event.item?.type === 'agent_message') {
-      return ensureTrailingNewline(event.item.text || '')
-    }
-    if (event.item?.type === 'command_execution') {
-      let text = ''
-      if (event.item.aggregated_output) text += ensureTrailingNewline(event.item.aggregated_output)
-      if (event.item.exit_code != null && event.item.exit_code !== 0) {
-        text += ensureTrailingNewline(`exit ${event.item.exit_code}`)
-      }
-      return text
-    }
-    if (event.item?.type === 'file_change') {
-      return formatFileChanges(event.item.changes)
-    }
-    return ''
-  }
-
-  if (event.type === 'turn.completed') {
-    return TURN_SEPARATOR
-  }
-
-  if (event.type === 'turn.failed') {
-    return `[Error: ${event.error?.message || 'Codex turn failed'}]\n${TURN_SEPARATOR}`
-  }
-
-  if (event.type === 'error') {
-    return `[Error: ${event.message || 'Codex stream error'}]\n${TURN_SEPARATOR}`
-  }
-
-  return ''
-}
-
 function createCurrentTurnHandle(abortController) {
   const handle = {
     _nanocodeInterrupted: false,
@@ -77,6 +18,13 @@ export function createCodexSdkDriver({
   rerunTurn,
   CodexImpl = DefaultCodex,
 }) {
+  // Synthetic events (not emitted by the SDK) the frontend renderer understands.
+  // These travel on the same codex-event channel so they persist + replay like
+  // real events. `historyOnly` suppresses the live send (used for the user prompt,
+  // which the frontend already shows optimistically on send).
+  const notice = (cs, text) => codexBroadcastEvent(cs, { type: 'notice', text })
+  const endTurn = (cs) => codexBroadcastEvent(cs, { type: 'turn.completed' })
+
   async function runCodexTurn(cs, prompt, sessionKey, cwd) {
     const trimmedPrompt = typeof prompt === 'string' ? prompt.trim() : ''
     if (!trimmedPrompt) return
@@ -84,7 +32,7 @@ export function createCodexSdkDriver({
     if (cs.busy) {
       if (!Array.isArray(cs.queue)) cs.queue = []
       cs.queue.push(trimmedPrompt)
-      codexBroadcast(cs, `[queued: Message queued (position ${cs.queue.length}). Will run after current turn.]\n`)
+      notice(cs, `Message queued (position ${cs.queue.length}). Will run after current turn.`)
       return
     }
 
@@ -119,7 +67,9 @@ export function createCodexSdkDriver({
     const currentTurn = createCurrentTurnHandle(abortController)
     cs.currentProc = currentTurn
 
-    codexBroadcast(cs, `› ${trimmedPrompt}\n`)
+    // Persist the user prompt for reconnect replay, but do NOT send it live: the
+    // frontend already shows it optimistically via sendInputWithEcho().
+    codexBroadcastEvent(cs, { type: 'user_prompt', text: trimmedPrompt }, { historyOnly: true })
 
     let sawTerminalEvent = false
     let lastThreadId = cs.codexThreadId || null
@@ -139,8 +89,6 @@ export function createCodexSdkDriver({
           }
         }
 
-        const text = formatCodexEventAsOutput(event)
-        if (text) codexBroadcast(cs, text)
         if (event.type === 'turn.completed' || event.type === 'turn.failed' || event.type === 'error') {
           sawTerminalEvent = true
         }
@@ -148,12 +96,11 @@ export function createCodexSdkDriver({
     } catch (err) {
       const wasInterrupted = cs.currentProc?._nanocodeInterrupted === true || err?.name === 'AbortError'
       if (wasInterrupted) {
-        codexBroadcast(cs, '[Request interrupted by user]\n')
-        codexBroadcast(cs, TURN_SEPARATOR)
+        notice(cs, '[Request interrupted by user]')
       } else {
-        codexBroadcast(cs, `[Error: ${err?.message || String(err)}]\n`)
-        codexBroadcast(cs, TURN_SEPARATOR)
+        codexBroadcastEvent(cs, { type: 'error', message: err?.message || String(err) })
       }
+      endTurn(cs)
       sawTerminalEvent = true
     } finally {
       cs.busy = false
@@ -168,13 +115,13 @@ export function createCodexSdkDriver({
         if (cs.queue.length > 0) {
           const discarded = cs.queue.length
           cs.queue = []
-          codexBroadcast(cs, `[Queue cleared (${discarded} pending message${discarded > 1 ? 's' : ''} discarded after interrupt).]\n`)
+          notice(cs, `Queue cleared (${discarded} pending message${discarded > 1 ? 's' : ''} discarded after interrupt).`)
         }
       } else if (cs.queue.length > 0) {
         const nextPrompt = cs.queue.shift()
         setImmediate(() => rerunTurn(cs, nextPrompt, sessionKey, cwd))
       } else if (!sawTerminalEvent) {
-        codexBroadcast(cs, TURN_SEPARATOR)
+        endTurn(cs)
       }
     }
   }

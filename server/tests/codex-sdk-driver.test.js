@@ -57,9 +57,9 @@ function createCodexImplFactory(plan, calls) {
 }
 
 describe('codex sdk driver', () => {
-  it('forwards raw events, renders PTY-style output, and persists thread metadata', async () => {
-    const textEvents = []
+  it('forwards raw + synthetic events and persists thread metadata', async () => {
     const rawEvents = []
+    const liveEvents = []
     const metadataUpdates = []
     const calls = { codexOptions: [], threadCalls: [], turnCalls: [] }
     const store = {
@@ -89,8 +89,11 @@ describe('codex sdk driver', () => {
 
     const driver = createCodexSdkDriver({
       store,
-      codexBroadcast: (_cs, text) => { textEvents.push(text) },
-      codexBroadcastEvent: (_cs, event) => { rawEvents.push(event) },
+      codexBroadcast: () => { throw new Error('codexBroadcast (text) should not be used by the SDK driver') },
+      codexBroadcastEvent: (_cs, event, opts = {}) => {
+        rawEvents.push(event)
+        if (!opts.historyOnly) liveEvents.push(event)
+      },
       rerunTurn: () => { throw new Error('rerunTurn should not be called') },
       CodexImpl: FakeCodex,
     })
@@ -125,7 +128,10 @@ describe('codex sdk driver', () => {
     assert.deepEqual(metadataUpdates, [
       { projectId: 'project-1', tabId: 'tab-1', patch: { codexThreadId: 'thread-1' } },
     ])
+    // The prompt is persisted as a history-only synthetic event (first), followed
+    // by the raw SDK stream. Nothing is flattened to text.
     assert.deepEqual(rawEvents.map((event) => event.type), [
+      'user_prompt',
       'thread.started',
       'item.started',
       'item.completed',
@@ -133,20 +139,22 @@ describe('codex sdk driver', () => {
       'item.completed',
       'turn.completed',
     ])
-    assert.deepEqual(textEvents, [
-      '› summarize repo\n',
-      'Running: ls -la\n',
-      'file-a\nfile-b\n',
-      'patch: update src/app.js\n',
-      'Done.\n',
-      '────────────\n',
+    assert.deepEqual(rawEvents[0], { type: 'user_prompt', text: 'summarize repo' })
+    // user_prompt is history-only, so it is not sent live.
+    assert.deepEqual(liveEvents.map((event) => event.type), [
+      'thread.started',
+      'item.started',
+      'item.completed',
+      'item.completed',
+      'item.completed',
+      'turn.completed',
     ])
     assert.equal(cs.busy, false)
     assert.equal(cs.currentProc, null)
   })
 
   it('resumes existing threads and drains queued prompts one turn at a time', async () => {
-    const textEvents = []
+    const events = []
     const reruns = []
     const calls = { codexOptions: [], threadCalls: [], turnCalls: [] }
     const firstTurnGate = createDeferred()
@@ -166,8 +174,8 @@ describe('codex sdk driver', () => {
 
     const driver = createCodexSdkDriver({
       store,
-      codexBroadcast: (_cs, text) => { textEvents.push(text) },
-      codexBroadcastEvent: () => {},
+      codexBroadcast: () => { throw new Error('codexBroadcast (text) should not be used') },
+      codexBroadcastEvent: (_cs, event) => { events.push(event) },
       rerunTurn: (...args) => { reruns.push(args) },
       CodexImpl: FakeCodex,
     })
@@ -188,10 +196,10 @@ describe('codex sdk driver', () => {
 
     assert.equal(calls.threadCalls[0].mode, 'resume')
     assert.equal(calls.threadCalls[0].threadId, 'thread-existing')
-    assert.deepEqual(textEvents.slice(0, 3), [
-      '› first\n',
-      '[queued: Message queued (position 1). Will run after current turn.]\n',
-      '[queued: Message queued (position 2). Will run after current turn.]\n',
+    assert.deepEqual(events.slice(0, 3), [
+      { type: 'user_prompt', text: 'first' },
+      { type: 'notice', text: 'Message queued (position 1). Will run after current turn.' },
+      { type: 'notice', text: 'Message queued (position 2). Will run after current turn.' },
     ])
 
     firstTurnGate.resolve()
@@ -207,7 +215,7 @@ describe('codex sdk driver', () => {
   })
 
   it('emits interrupt fallback output and clears queued prompts after abort', async () => {
-    const textEvents = []
+    const events = []
     const reruns = []
     const calls = { codexOptions: [], threadCalls: [], turnCalls: [] }
     const store = {
@@ -223,8 +231,8 @@ describe('codex sdk driver', () => {
 
     const driver = createCodexSdkDriver({
       store,
-      codexBroadcast: (_cs, text) => { textEvents.push(text) },
-      codexBroadcastEvent: () => {},
+      codexBroadcast: () => { throw new Error('codexBroadcast (text) should not be used') },
+      codexBroadcastEvent: (_cs, event) => { events.push(event) },
       rerunTurn: (...args) => { reruns.push(args) },
       CodexImpl: FakeCodex,
     })
@@ -247,12 +255,12 @@ describe('codex sdk driver', () => {
 
     assert.equal(reruns.length, 0)
     assert.deepEqual(cs.queue, [])
-    assert.deepEqual(textEvents, [
-      '› first\n',
-      '[queued: Message queued (position 1). Will run after current turn.]\n',
-      '[Request interrupted by user]\n',
-      '────────────\n',
-      '[Queue cleared (1 pending message discarded after interrupt).]\n',
+    assert.deepEqual(events, [
+      { type: 'user_prompt', text: 'first' },
+      { type: 'notice', text: 'Message queued (position 1). Will run after current turn.' },
+      { type: 'notice', text: '[Request interrupted by user]' },
+      { type: 'turn.completed' },
+      { type: 'notice', text: 'Queue cleared (1 pending message discarded after interrupt).' },
     ])
   })
 })
