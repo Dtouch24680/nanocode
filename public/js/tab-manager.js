@@ -144,7 +144,12 @@ export class TabManager {
     this.onActiveChange(active?.pane || null, active ? { id: active.id, label: active.label, type: active.type } : null, direction)
     if (active) {
       this.onStatusChange(!!active.pane._ws && active.pane._ws.readyState === WebSocket.OPEN)
-      requestAnimationFrame(() => { try { active.pane.fitAddon.fit() } catch {} })
+      requestAnimationFrame(() => {
+        try { active.pane.fitAddon.fit() } catch {}
+        // A pane may have rendered/replayed its history while hidden (scrollHeight
+        // was 0), so re-pin it to the bottom now that it's visible.
+        try { active.pane.onActivated?.() } catch {}
+      })
     }
   }
 

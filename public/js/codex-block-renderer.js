@@ -868,12 +868,18 @@ export class CodexBlockRenderer {
     })
     container.appendChild(this._scrollBtn)
 
+    // Stick-to-bottom: stay pinned to the latest output unless the user has
+    // scrolled up. Lets replays (which may render while the tab is hidden) and
+    // live output both land at the bottom when the tab becomes visible.
+    this._pinToBottom = true
     let _scrollRafPending = false
     this._scroll.addEventListener('scroll', () => {
       if (_scrollRafPending) return
       _scrollRafPending = true
       requestAnimationFrame(() => {
         _scrollRafPending = false
+        const s = this._scroll
+        this._pinToBottom = s.scrollHeight - s.scrollTop - s.clientHeight < 60
         this._updateScrollBtn()
       })
     }, { passive: true })
@@ -2251,6 +2257,21 @@ export class CodexBlockRenderer {
   }
 
   _scrollBottom() {
+    if (!this._pinToBottom) {
+      this._updateScrollBtn()
+      return
+    }
+    requestAnimationFrame(() => {
+      this._scroll.scrollTop = this._scroll.scrollHeight
+      this._updateScrollBtn()
+    })
+  }
+
+  // Called by the tab manager when this pane becomes the active/visible tab.
+  // History may have replayed while hidden (scrollHeight was 0), so re-pin to
+  // the bottom now that the element has real layout.
+  onActivated() {
+    if (!this._pinToBottom) return
     requestAnimationFrame(() => {
       this._scroll.scrollTop = this._scroll.scrollHeight
       this._updateScrollBtn()

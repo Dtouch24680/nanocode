@@ -1279,6 +1279,9 @@ body.workspace-active .back-to-menu { display: inline-flex; }
    is mask-faded at both edges so off-center slots gracefully dissolve
    instead of getting hard-clipped. */
 .active-tab-chip {
+  /* Hidden everywhere: the full-width terminal tab strip above already shows
+     all tabs, so this in-composer carousel was a duplicate. */
+  display: none;
   position: relative;
   height: 38px;
   width: 340px;
@@ -4351,7 +4354,7 @@ body.workspace-active .landing-overlay { display: none; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
 }
 
