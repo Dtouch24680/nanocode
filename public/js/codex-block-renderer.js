@@ -934,6 +934,13 @@ export class CodexBlockRenderer {
     // P2: Welcome screen dedup — track content fingerprints already rendered
     this._renderedContentHashes = new Set()
 
+    // Structured SDK item updates are incremental. Keep DOM handles keyed by
+    // item id so item.updated refreshes the same visible block instead of
+    // waiting for item.completed and then appending a batch of blocks.
+    this._agentMessageBlocks = new Map()
+    this._reasoningBlocks = new Map()
+    this._todoBlocks = new Map()
+
     this._connect()
   }
 
@@ -1771,14 +1778,30 @@ export class CodexBlockRenderer {
       cmd,
       outputEl: article.querySelector('.cbx-bash-output'),
       outputLines: [],
+      outputText: '',
     }
   }
 
   _appendToBashOutput(line) {
     if (!this._currentBashBlock) return
     this._currentBashBlock.outputLines.push(line)
-    const lines = this._currentBashBlock.outputLines
-    const text = lines.join('\n')
+    this._currentBashBlock.outputText = this._currentBashBlock.outputLines.join('\n')
+    this._renderCurrentBashOutput()
+  }
+
+  _setBashOutputText(text) {
+    if (!this._currentBashBlock) return
+    const value = String(text || '')
+    if (this._currentBashBlock.outputText === value) return
+    this._currentBashBlock.outputText = value
+    this._currentBashBlock.outputLines = value ? value.split('\n') : []
+    this._renderCurrentBashOutput()
+  }
+
+  _renderCurrentBashOutput() {
+    if (!this._currentBashBlock) return
+    const lines = this._currentBashBlock.outputLines || []
+    const text = this._currentBashBlock.outputText || lines.join('\n')
     const MAX_CHARS = 4000
     const MAX_LINES = 80
     const isTooLong = text.length > MAX_CHARS || lines.length > MAX_LINES
@@ -1808,8 +1831,7 @@ export class CodexBlockRenderer {
     if (statusEl) {
       statusEl.classList.remove('cbx-bash-running')
       if (isSuccess) {
-        statusEl.className = 'cbx-bash-status cbx-bash-ok'
-        statusEl.textContent = '✓ exit 0'
+        statusEl.remove()
       } else {
         statusEl.className = 'cbx-bash-status cbx-bash-err'
         statusEl.textContent = `✗ exit ${exitCode}`
@@ -1835,10 +1857,16 @@ export class CodexBlockRenderer {
       this._scroll.innerHTML = ''
       this._currentBashBlock = null
       this._statusBannerEl = null
+      this._agentMessageBlocks.clear()
+      this._reasoningBlocks.clear()
+      this._todoBlocks.clear()
       this._setThinking(false)
       return
     }
     if (t === 'turn.started') {
+      this._agentMessageBlocks.clear()
+      this._reasoningBlocks.clear()
+      this._todoBlocks.clear()
       this._setThinking(true)
       return
     }
@@ -1858,10 +1886,30 @@ export class CodexBlockRenderer {
     if (t === 'item.started') {
       const item = event.item
       if (item?.type === 'command_execution' && item.command) {
-        this._finalizeCurrentBlock()
-        this._startBashBlock(item.command)
+        this._updateCommandExecution(item)
       } else if (item?.type === 'file_change') {
         this._renderFileChange(item)
+      } else if (item?.type === 'agent_message') {
+        this._upsertAgentMessageBlock(item)
+      } else if (item?.type === 'reasoning') {
+        this._upsertReasoningBlock(item)
+      } else if (item?.type === 'todo_list') {
+        this._upsertTodoList(item)
+      }
+      return
+    }
+
+    if (t === 'item.updated') {
+      const item = event.item
+      if (!item) return
+      if (item.type === 'command_execution') {
+        this._updateCommandExecution(item)
+      } else if (item.type === 'agent_message') {
+        this._upsertAgentMessageBlock(item)
+      } else if (item.type === 'reasoning') {
+        this._upsertReasoningBlock(item)
+      } else if (item.type === 'todo_list') {
+        this._upsertTodoList(item)
       }
       return
     }
@@ -1876,16 +1924,16 @@ export class CodexBlockRenderer {
       } else if (item.type === 'agent_message') {
         this._finalizeCurrentBlock()
         this._setThinking(false)
-        this._addAgentMessageBlock(item.text || '')
+        this._upsertAgentMessageBlock(item, { final: true })
       } else if (item.type === 'reasoning') {
-        this._addReasoningBlock(item.text || '')
+        this._upsertReasoningBlock(item, { final: true })
       } else if (item.type === 'web_search') {
         this._addSystemBlock(`🔎 web search: ${item.query || ''}`)
       } else if (item.type === 'mcp_tool_call') {
         const label = `${item.server || 'mcp'}/${item.tool || 'tool'}`
         this._addSystemBlock(`🔧 ${label}${item.status === 'failed' ? ' (failed)' : ''}`)
       } else if (item.type === 'todo_list') {
-        this._renderTodoList(item)
+        this._upsertTodoList(item, { final: true })
       } else if (item.type === 'error') {
         this._addSystemBlock(`[Error: ${item.message || 'unknown'}]`)
       }
@@ -1913,7 +1961,7 @@ export class CodexBlockRenderer {
     }
   }
 
-  _completeCommand(item) {
+  _updateCommandExecution(item) {
     // The command may complete without a preceding item.started (e.g. on replay
     // when the started event was trimmed) — start a block on demand.
     if (!this._currentBashBlock || this._currentBashBlock.cmd !== item.command) {
@@ -1921,11 +1969,14 @@ export class CodexBlockRenderer {
       this._startBashBlock(item.command || '')
     }
     const output = item.aggregated_output || ''
-    if (output) {
-      for (const line of output.split('\n')) this._appendToBashOutput(line)
-    }
+    this._setBashOutputText(output)
+  }
+
+  _completeCommand(item) {
+    this._updateCommandExecution(item)
     const code = item.exit_code
-    this._finalizeBashBlockWithExit(code == null ? '✓ exit 0' : `exit ${code}`)
+    const failed = item.status === 'failed'
+    this._finalizeBashBlockWithExit(code == null ? (failed ? 'exit ?' : 'exit 0') : `exit ${code}`)
   }
 
   _renderFileChange(item) {
@@ -1938,10 +1989,17 @@ export class CodexBlockRenderer {
     item._nanocodeRendered = true
   }
 
-  _renderTodoList(item) {
+  _upsertTodoList(item, { final = false } = {}) {
     const items = item.items || []
     if (!items.length) return
-    const article = this._makeBlock('cbx-block-todo')
+    const id = item.id || ''
+    let article = id ? this._todoBlocks.get(id) : null
+    if (!article || !article.isConnected) {
+      article = this._makeBlock('cbx-block-todo')
+      this._scroll.appendChild(article)
+      if (id) this._todoBlocks.set(id, article)
+    }
+    article.innerHTML = ''
     const ul = document.createElement('ul')
     ul.className = 'cbx-todo-list'
     for (const todo of items) {
@@ -1952,8 +2010,8 @@ export class CodexBlockRenderer {
       ul.appendChild(li)
     }
     article.appendChild(ul)
-    this._scroll.appendChild(article)
     this._scrollBottom()
+    if (final && id) this._todoBlocks.set(id, article)
   }
 
   _addAgentMessageBlock(text) {
@@ -1965,25 +2023,61 @@ export class CodexBlockRenderer {
     article.appendChild(body)
     this._scroll.appendChild(article)
     this._scrollBottom()
+    return article
+  }
+
+  _upsertAgentMessageBlock(item, { final = false } = {}) {
+    const text = item.text || ''
+    const id = item.id || ''
+    if (!id) {
+      this._addAgentMessageBlock(text)
+      return
+    }
+
+    let article = this._agentMessageBlocks.get(id)
+    if (!article || !article.isConnected) {
+      article = this._addAgentMessageBlock(text)
+      this._agentMessageBlocks.set(id, article)
+      return
+    }
+
+    article._cbxTextRaw = text
+    const body = article.querySelector('.cbx-text-pre')
+    if (body) renderCodexRichMarkdown(body, text)
+    this._scrollBottom()
+    if (final) this._agentMessageBlocks.set(id, article)
   }
 
   _addReasoningBlock(text) {
+    return this._upsertReasoningBlock({ id: '', text })
+  }
+
+  _upsertReasoningBlock(item, { final = false } = {}) {
+    const text = item.text || ''
     if (!text || !text.trim()) return
-    const article = this._makeBlock('cbx-block-reasoning')
-    article.setAttribute('data-fold', 'header')
-    article.innerHTML =
-      `<div class="cbx-reasoning-header">` +
-      `<span class="cbx-reasoning-icon">💭</span>` +
-      `<span class="cbx-reasoning-label">thinking</span>` +
-      `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
-      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
-      `</button></div>` +
-      `<div class="cbx-reasoning-body cbx-text-pre"></div>`
+    const id = item.id || ''
+    let article = id ? this._reasoningBlocks.get(id) : null
+    if (!article || !article.isConnected) {
+      article = this._makeBlock('cbx-block-reasoning')
+      article.setAttribute('data-fold', 'header')
+      article.innerHTML =
+        `<div class="cbx-reasoning-header">` +
+        `<span class="cbx-reasoning-icon">💭</span>` +
+        `<span class="cbx-reasoning-label">thinking</span>` +
+        `<button class="cbx-fold-btn" type="button" title="Toggle fold" aria-label="Toggle fold">` +
+        `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>` +
+        `</button></div>` +
+        `<div class="cbx-reasoning-body cbx-text-pre"></div>`
+      const header = article.querySelector('.cbx-reasoning-header')
+      _attachFoldToggle(header, article)
+      this._scroll.appendChild(article)
+      if (id) this._reasoningBlocks.set(id, article)
+    }
+
     renderRichLines(article.querySelector('.cbx-reasoning-body'), text)
-    const header = article.querySelector('.cbx-reasoning-header')
-    _attachFoldToggle(header, article)
-    this._scroll.appendChild(article)
     this._scrollBottom()
+    if (final && id) this._reasoningBlocks.set(id, article)
+    return article
   }
 
   _addTurnSeparator() {
@@ -1999,9 +2093,7 @@ export class CodexBlockRenderer {
     const { article } = this._currentBashBlock
     const statusEl = article.querySelector('.cbx-bash-status')
     if (statusEl && statusEl.classList.contains('cbx-bash-running')) {
-      statusEl.classList.remove('cbx-bash-running')
-      statusEl.className = 'cbx-bash-status cbx-bash-done'
-      statusEl.textContent = 'done'
+      statusEl.remove()
     }
     this._currentBashBlock = null
   }
@@ -2022,6 +2114,7 @@ export class CodexBlockRenderer {
 
   _addExitStatusBlock(line) {
     const isError = /\✗|[Ee]rror|exit\s+[1-9]/.test(line)
+    if (!isError) return
     const article = this._makeBlock('cbx-block-exit')
     article.innerHTML =
       `<span class="cbx-exit-badge ${isError ? 'cbx-exit-err' : 'cbx-exit-ok'}">` +
