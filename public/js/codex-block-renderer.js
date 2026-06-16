@@ -444,12 +444,12 @@ function escHtml(s) {
 }
 
 // ── URL / path auto-link ──────────────────────────────────────────────────────
-const URL_RE = /(?:https?:\/\/|file:\/\/|(?:vscode|cursor|windsurf|jetbrains):\/\/|mailto:)[^\s"'<>[\]()]+[^\s"'<>[\]().,;:!?]/gi
+const URL_RE = /(?:https?:\/\/|file:\/\/|(?:vscode|cursor|windsurf|jetbrains):\/\/|mailto:)[^\s"'`<>[\]()]+[^\s"'`<>[\]().,;:!?]/gi
 const MD_LINK_RE = /\[([^\]\n]{1,180})\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g
 // Local file paths are deliberately conservative. Codex CLI itself does not
 // link arbitrary git-ref shaped text like "myfork/main"; it mostly relies on
 // terminal URL/OSC8 hyperlinks. We only auto-link high-confidence local files.
-const PATH_RE = /(?:(?:\/[a-zA-Z0-9_.+@-]+(?:\/[^\s,;!?()[\]"'<>]+)+)|(?:~\/[^\s,;!?()[\]"'<>]+)|(?<![:/])(?:(?:\.{1,2}\/)?[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.+-]+)+(?:\.[a-zA-Z0-9_+-]{1,12})?))(?:[:#]\d+(?::\d+)?)?(?=\s|$|[,;!?()[\]"'<>])/g
+const PATH_RE = /(?:(?:\/[a-zA-Z0-9_.+@-]+(?:\/[^\s,;!?()[\]"'`<>]+)+)|(?:~\/[^\s,;!?()[\]"'`<>]+)|(?<![:/])(?:(?:\.{1,2}\/)?[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.+-]+)+(?:\.[a-zA-Z0-9_+-]{1,12})?))(?:[:#]\d+(?::\d+)?)?(?=\s|$|[,;!?()[\]"'`<>])/g
 const PROJECT_PATH_PREFIXES = new Set([
   '.github', '.openai', 'app', 'bin', 'cmd', 'docs', 'helper', 'lib',
   'packages', 'public', 'qa-test', 'research', 'scripts', 'server',
@@ -459,7 +459,7 @@ const TRUSTED_ABSOLUTE_PATH_RE = /^\/(?:storage|home|tmp|var|opt|mnt|workspace|w
 
 function trimTrailingLinkPunctuation(value) {
   let v = String(value)
-  while (/[.,;!?]$/.test(v)) v = v.slice(0, -1)
+  while (/[.,;!?`]$/.test(v)) v = v.slice(0, -1)
   return v
 }
 
