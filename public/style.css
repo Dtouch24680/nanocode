@@ -3260,7 +3260,7 @@ body.workspace-active .landing-overlay { display: none; }
 }
 .cbr-text strong { font-weight: 600; color: var(--text); }
 .cbr-text em     { color: var(--text-secondary); }
-.cbr-text a      { color: var(--primary); text-decoration: underline; text-decoration-style: dotted; overflow-wrap: anywhere; word-break: break-all; }
+.cbr-text a      { color: var(--primary); text-decoration: underline; text-decoration-style: solid; overflow-wrap: anywhere; word-break: break-all; }
 .cbr-text hr     { border: none; border-top: 1px solid var(--border); margin: 0.6em 0; }
 
 /* Heading utility (from renderInlineMarkdown) */
@@ -3276,7 +3276,7 @@ body.workspace-active .landing-overlay { display: none; }
   font-size: 0.87em;
   cursor: pointer;
   text-decoration: underline;
-  text-decoration-style: dotted;
+  text-decoration-style: solid;
   overflow-wrap: anywhere;
   word-break: break-all;
   transition: background 0.15s;
@@ -3289,12 +3289,9 @@ body.workspace-active .landing-overlay { display: none; }
 .cbr-autolink-url {
   color: var(--primary);
   text-decoration: underline;
-  text-decoration-style: dotted;
+  text-decoration-style: solid;
   overflow-wrap: anywhere;
   word-break: break-all;
-}
-.cbr-autolink-url:hover {
-  text-decoration-style: solid;
 }
 
 /* ── Client-side pending queue tray ─────────────────────────────── */

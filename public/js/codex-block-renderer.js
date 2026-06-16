@@ -446,14 +446,16 @@ function escHtml(s) {
 // ── URL / path auto-link ──────────────────────────────────────────────────────
 const URL_RE = /(?:https?:\/\/|file:\/\/|(?:vscode|cursor|windsurf|jetbrains):\/\/|mailto:)[^\s"'<>[\]()]+[^\s"'<>[\]().,;:!?]/gi
 const MD_LINK_RE = /\[([^\]\n]{1,180})\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g
-// Local file paths: absolute Unix paths, ~/ home-relative, or repo-relative
-// paths such as foo/bar.ext. Optional :line/:column suffixes stay clickable.
+// Local file paths are deliberately conservative. Codex CLI itself does not
+// link arbitrary git-ref shaped text like "myfork/main"; it mostly relies on
+// terminal URL/OSC8 hyperlinks. We only auto-link high-confidence local files.
 const PATH_RE = /(?:(?:\/[a-zA-Z0-9_.+@-]+(?:\/[^\s,;!?()[\]"'<>]+)+)|(?:~\/[^\s,;!?()[\]"'<>]+)|(?<![:/])(?:(?:\.{1,2}\/)?[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.+-]+)+(?:\.[a-zA-Z0-9_+-]{1,12})?))(?:[:#]\d+(?::\d+)?)?(?=\s|$|[,;!?()[\]"'<>])/g
 const PROJECT_PATH_PREFIXES = new Set([
   '.github', '.openai', 'app', 'bin', 'cmd', 'docs', 'helper', 'lib',
   'packages', 'public', 'qa-test', 'research', 'scripts', 'server',
   'src', 'test', 'tests', 'terminal', 'worker',
 ])
+const TRUSTED_ABSOLUTE_PATH_RE = /^\/(?:storage|home|tmp|var|opt|mnt|workspace|workspaces)\//
 
 function trimTrailingLinkPunctuation(value) {
   let v = String(value)
@@ -470,12 +472,12 @@ function splitPathLocation(value) {
 
 function shouldAutolinkLocalPath(value) {
   const { path, line } = splitPathLocation(value)
-  if (/^(?:\/|~\/|\.{1,2}\/)/.test(path)) return true
+  if (TRUSTED_ABSOLUTE_PATH_RE.test(path)) return true
+  if (/^(?:\/|~\/|\.{1,2}\/)/.test(path)) return false
   const parts = path.split('/').filter(Boolean)
   if (parts.length < 2) return false
-  if (line) return true
-  if (PROJECT_PATH_PREFIXES.has(parts[0])) return true
-  return /\.[a-zA-Z0-9_+-]{1,12}$/.test(parts[parts.length - 1])
+  if (!PROJECT_PATH_PREFIXES.has(parts[0])) return false
+  return Boolean(line) || /\.[a-zA-Z0-9_+-]{1,12}$/.test(parts[parts.length - 1])
 }
 
 function fileUrlToPath(href) {
