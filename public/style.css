@@ -4563,8 +4563,8 @@ body.workspace-active .landing-overlay { display: none; }
 
 /* Git/diff output: full-line background, matching Codex CLI readability. */
 .cbx-diff-add {
-  color: #1f6fa8;
-  background: rgba(74, 136, 196, 0.12);
+  color: #27623b;
+  background: rgba(61, 154, 90, 0.12);
 }
 .cbx-diff-del {
   color: #922b24;
@@ -4615,8 +4615,8 @@ body.workspace-active .landing-overlay { display: none; }
 [data-theme="dark"] .cbx-ansi-bg-bright-white { background-color: rgba(255, 255, 255, 0.16); }
 
 [data-theme="dark"] .cbx-diff-add {
-  color: #79c0ff;
-  background: rgba(74, 136, 196, 0.18);
+  color: #7ee787;
+  background: rgba(126, 231, 135, 0.16);
 }
 [data-theme="dark"] .cbx-diff-del {
   color: #ff7b72;
