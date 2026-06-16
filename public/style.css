@@ -4668,7 +4668,6 @@ body.workspace-active .landing-overlay { display: none; }
 .cbx-block-bash {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  cursor: pointer;
 }
 
 .cbx-bash-card {
@@ -4686,14 +4685,12 @@ body.workspace-active .landing-overlay { display: none; }
   border-bottom: 1px solid var(--border);
   min-height: 44px; /* mobile tap target */
   flex-wrap: wrap;
-  cursor: pointer;
-  user-select: none;
+  cursor: default;
+  user-select: text;
+  -webkit-user-select: text;
   touch-action: manipulation; /* iOS: no 300ms double-tap delay */
   -webkit-tap-highlight-color: transparent;
   transition: background var(--duration-fast, 0.12s);
-}
-.cbx-bash-header:hover {
-  background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
 }
 /* No border-bottom when body is hidden (folded to header-only) */
 .cbx-block-bash[data-fold='header'] .cbx-bash-header {
@@ -4771,9 +4768,17 @@ body.workspace-active .landing-overlay { display: none; }
   align-items: center;
   border-radius: 4px;
   flex-shrink: 0;
-  transition: color 0.15s, background 0.15s;
+  transition: color 0.15s, background 0.15s, transform 0.15s;
 }
 .cbx-fold-btn:hover { color: var(--primary); background: var(--bg); }
+.cbx-block[data-fold='full'] .cbx-fold-btn,
+.cbx-block:not([data-fold]) .cbx-fold-btn {
+  transform: rotate(180deg);
+}
+.cbx-block[data-fold='header'] .cbx-fold-btn,
+.cbx-block[data-fold='line'] .cbx-fold-btn {
+  transform: rotate(0deg);
+}
 
 /* Bash output — shown in 'full' state, hidden in 'header'/'line' */
 .cbx-bash-output {
@@ -4855,7 +4860,6 @@ body.workspace-active .landing-overlay { display: none; }
 .cbx-block-patch {
   background: color-mix(in srgb, #d3a45a 8%, var(--bg-secondary));
   border: 1px solid color-mix(in srgb, #d3a45a 20%, transparent);
-  cursor: pointer;
 }
 
 .cbx-patch-header {
@@ -4917,7 +4921,9 @@ body.workspace-active .landing-overlay { display: none; }
   align-items: center;
   gap: var(--s-2);
   padding: var(--s-2) var(--s-3);
-  cursor: pointer;
+  cursor: default;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .cbx-reasoning-label { font-size: 0.8rem; color: var(--text-muted); }
 .cbx-reasoning-body {
@@ -4930,7 +4936,6 @@ body.workspace-active .landing-overlay { display: none; }
   word-break: break-word;
 }
 .cbx-block-reasoning[data-fold='header'] .cbx-reasoning-body { display: none; }
-.cbx-block-reasoning[data-fold='header'] .cbx-fold-btn { transform: rotate(-90deg); }
 
 /* Todo list block. */
 .cbx-block-todo { padding: var(--s-2) var(--s-3); }
@@ -5022,7 +5027,6 @@ body.workspace-active .landing-overlay { display: none; }
 .cbx-block-altscreen {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  cursor: pointer;
 }
 
 .cbx-altscreen-card {
@@ -5038,14 +5042,12 @@ body.workspace-active .landing-overlay { display: none; }
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
   min-height: 44px; /* mobile tap target */
-  cursor: pointer;
-  user-select: none;
+  cursor: default;
+  user-select: text;
+  -webkit-user-select: text;
   touch-action: manipulation; /* iOS: no 300ms double-tap delay */
   -webkit-tap-highlight-color: transparent;
   transition: background var(--duration-fast, 0.12s);
-}
-.cbx-altscreen-header:hover {
-  background: var(--bg-hover, color-mix(in srgb, var(--bg-tertiary) 85%, var(--primary) 15%));
 }
 /* No border-bottom when body is hidden (folded to header-only) */
 .cbx-block-altscreen[data-fold='header'] .cbx-altscreen-header,

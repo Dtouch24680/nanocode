@@ -37,35 +37,34 @@ function getFoldLevel() {
 }
 
 /**
- * Attach fold toggle interaction to a header element.
- * Handles both click (desktop) and touchend (iOS Safari) to toggle
- * the article's data-fold attribute between 'full' and 'header'.
- *
- * iOS Safari does not reliably fire 'click' on non-interactive (div)
- * elements — using touchend as a primary handler avoids the 300ms delay
- * and ensures consistent tap response.
+ * Attach fold toggle interaction to the header's chevron button only.
+ * The surrounding header stays selectable/copyable text.
  */
 function _attachFoldToggle(headerEl, article) {
   if (!headerEl) return
+  const toggleEl = headerEl.querySelector('.cbx-fold-btn')
+  if (!toggleEl) return
   let _touchHandled = false
 
   const _doToggle = (e) => {
-    if (e.target.closest('a') || e.target.tagName === 'A') return
     const cur = article.getAttribute('data-fold') || 'full'
-    article.setAttribute('data-fold', cur === 'full' ? 'header' : 'full')
+    const next = cur === 'full' ? 'header' : 'full'
+    article.setAttribute('data-fold', next)
+    toggleEl.setAttribute('aria-expanded', next === 'full' ? 'true' : 'false')
     e.stopPropagation()
   }
 
-  headerEl.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
-  headerEl.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
-  headerEl.addEventListener('touchend', (e) => {
+  toggleEl.setAttribute('aria-expanded', (article.getAttribute('data-fold') || 'full') === 'full' ? 'true' : 'false')
+  toggleEl.addEventListener('touchstart', () => { _touchHandled = false }, { passive: true })
+  toggleEl.addEventListener('touchmove', () => { _touchHandled = true }, { passive: true })
+  toggleEl.addEventListener('touchend', (e) => {
     if (_touchHandled) return
     _touchHandled = true
     _doToggle(e)
     e.preventDefault()  // prevent delayed synthesized click from firing too
   }, { passive: false })
 
-  headerEl.addEventListener('click', (e) => {
+  toggleEl.addEventListener('click', (e) => {
     if (_touchHandled) { _touchHandled = false; return }
     _doToggle(e)
   })
@@ -450,6 +449,11 @@ const MD_LINK_RE = /\[([^\]\n]{1,180})\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g
 // Local file paths: absolute Unix paths, ~/ home-relative, or repo-relative
 // paths such as foo/bar.ext. Optional :line/:column suffixes stay clickable.
 const PATH_RE = /(?:(?:\/[a-zA-Z0-9_.+@-]+(?:\/[^\s,;!?()[\]"'<>]+)+)|(?:~\/[^\s,;!?()[\]"'<>]+)|(?<![:/])(?:(?:\.{1,2}\/)?[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.+-]+)+(?:\.[a-zA-Z0-9_+-]{1,12})?))(?:[:#]\d+(?::\d+)?)?(?=\s|$|[,;!?()[\]"'<>])/g
+const PROJECT_PATH_PREFIXES = new Set([
+  '.github', '.openai', 'app', 'bin', 'cmd', 'docs', 'helper', 'lib',
+  'packages', 'public', 'qa-test', 'research', 'scripts', 'server',
+  'src', 'test', 'tests', 'terminal', 'worker',
+])
 
 function trimTrailingLinkPunctuation(value) {
   let v = String(value)
@@ -462,6 +466,16 @@ function splitPathLocation(value) {
   const m = raw.match(/^(.*?)(?::(\d+)(?::(\d+))?|#(\d+))$/)
   if (!m) return { path: raw, line: null, column: null }
   return { path: m[1], line: m[2] || m[4] || null, column: m[3] || null }
+}
+
+function shouldAutolinkLocalPath(value) {
+  const { path, line } = splitPathLocation(value)
+  if (/^(?:\/|~\/|\.{1,2}\/)/.test(path)) return true
+  const parts = path.split('/').filter(Boolean)
+  if (parts.length < 2) return false
+  if (line) return true
+  if (PROJECT_PATH_PREFIXES.has(parts[0])) return true
+  return /\.[a-zA-Z0-9_+-]{1,12}$/.test(parts[parts.length - 1])
 }
 
 function fileUrlToPath(href) {
@@ -574,6 +588,7 @@ function appendRunWithLinks(el, text, state) {
   while ((m = PATH_RE.exec(text)) !== null) {
     if (m[0].length > 300) continue
     const value = trimTrailingLinkPunctuation(m[0])
+    if (!shouldAutolinkLocalPath(value)) continue
     matches.push({ type: 'path', start: m.index, end: m.index + value.length, value })
   }
   if (!matches.length) {
@@ -1371,7 +1386,6 @@ export class CodexBlockRenderer {
     // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
     _attachFoldToggle(header, article)
-    article.style.cursor = 'pointer'
 
     this._scroll.appendChild(article)
     this._scrollBottom()
@@ -1582,7 +1596,6 @@ export class CodexBlockRenderer {
     // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-altscreen-header')
     _attachFoldToggle(header, article)
-    article.style.cursor = 'pointer'
 
     this._scroll.appendChild(article)
     this._scrollBottom()
@@ -1747,7 +1760,6 @@ export class CodexBlockRenderer {
     // Click/touch header to toggle fold: full ↔ header
     const header = article.querySelector('.cbx-bash-header')
     _attachFoldToggle(header, article)
-    article.style.cursor = 'pointer'
 
     this._scroll.appendChild(article)
     this._scrollBottom()
