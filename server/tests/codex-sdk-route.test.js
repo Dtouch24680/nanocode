@@ -137,6 +137,16 @@ process.stdin.on('end', () => {
     // Replay restores the structured event stream, including the history-only
     // user_prompt event so the prompt survives reconnect.
     await waitUntil(() => wsReplay.sent.find(isAgentReply), 3000, 'agent_message replay')
+    const replayStartIdx = wsReplay.sent.findIndex((m) => m.type === 'codex-replay-start')
+    const replayEndIdx = wsReplay.sent.findIndex((m) => m.type === 'codex-replay-end')
+    const replayPromptIdx = wsReplay.sent.findIndex((m) =>
+      m.type === 'codex-event' &&
+      m.event?.type === 'user_prompt' &&
+      m.event.text === 'hello from sdk route'
+    )
+    assert.ok(replayStartIdx >= 0, 'codex replay must announce start')
+    assert.ok(replayEndIdx > replayStartIdx, 'codex replay end must follow start')
+    assert.ok(replayPromptIdx > replayStartIdx && replayPromptIdx < replayEndIdx, 'replay events must be bracketed')
     assert.equal(
       wsReplay.sent.some((m) =>
         m.type === 'codex-event' &&

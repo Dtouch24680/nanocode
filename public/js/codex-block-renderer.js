@@ -841,6 +841,7 @@ export class CodexBlockRenderer {
     this.fitAddon = { fit: () => {} }
 
     container.classList.add('cbx-container')
+    container.classList.add('cbx-restoring')
     this._scroll = document.createElement('div')
     this._scroll.className = 'cbx-scroll'
     container.appendChild(this._scroll)
@@ -872,6 +873,9 @@ export class CodexBlockRenderer {
     // scrolled up. Lets replays (which may render while the tab is hidden) and
     // live output both land at the bottom when the tab becomes visible.
     this._pinToBottom = true
+    this._restorePending = true
+    this._replayActive = false
+    this._restoreFallbackTimer = setTimeout(() => this._finishReplayRestore(), 600)
     let _scrollRafPending = false
     this._scroll.addEventListener('scroll', () => {
       if (_scrollRafPending) return
@@ -991,6 +995,7 @@ export class CodexBlockRenderer {
 
   dispose() {
     clearTimeout(this._reconnectTimer)
+    clearTimeout(this._restoreFallbackTimer)
     this._stopPing()
     if (this._ws) {
       this._ws.onclose = null
@@ -1031,22 +1036,31 @@ export class CodexBlockRenderer {
         this._connectingEl = null
       }
 
-      if (msg.type === 'codex-event') {
+      if (msg.type === 'codex-replay-start') {
+        this._beginReplayRestore()
+      } else if (msg.type === 'codex-replay-end') {
+        this._finishReplayRestore()
+      } else if (msg.type === 'codex-event') {
         // SDK driver path: render from structured events (live + replay).
         if (msg.event) this._handleCodexEvent(msg.event)
+        this._finishInitialRestoreIfNoReplay()
       } else if (msg.type === 'history') {
         // Replay historical PTY data (legacy PTY driver only)
         if (msg.data) this._handlePtyData(msg.data, true)
+        this._finishInitialRestoreIfNoReplay()
       } else if (msg.type === 'output') {
         this._handlePtyData(msg.data, false)
         document.dispatchEvent(new CustomEvent('nanocode:terminal-output', { detail: msg.data }))
+        this._finishInitialRestoreIfNoReplay()
       } else if (msg.type === 'exit') {
         this._exited = true
         this._setThinking(false)
         this._finalizeCurrentBlock()
         this._addSystemBlock(`[Codex exited (code ${msg.exitCode ?? '?'}). Send a message to start a new session.]`)
+        this._finishInitialRestoreIfNoReplay()
       } else if (msg.type === 'error') {
         this._addSystemBlock('[Error: ' + (msg.error || 'unknown') + ']')
+        this._finishInitialRestoreIfNoReplay()
       } else if (msg.type === 'pong') {
         // ignore
       }
@@ -2256,13 +2270,48 @@ export class CodexBlockRenderer {
     this._scrollBottom()
   }
 
+  _beginReplayRestore() {
+    this._restorePending = true
+    this._replayActive = true
+    clearTimeout(this._restoreFallbackTimer)
+    this.container.classList.add('cbx-restoring')
+    this._restoreFallbackTimer = setTimeout(() => this._finishReplayRestore(), 3000)
+  }
+
+  _finishInitialRestoreIfNoReplay() {
+    if (this._restorePending && !this._replayActive) this._finishReplayRestore()
+  }
+
+  _jumpToBottomNow() {
+    this._scroll.scrollTop = this._scroll.scrollHeight
+  }
+
+  _finishReplayRestore() {
+    if (!this._restorePending && !this.container.classList.contains('cbx-restoring')) return
+    clearTimeout(this._restoreFallbackTimer)
+    this._restoreFallbackTimer = null
+    this._restorePending = false
+    this._replayActive = false
+    this._pinToBottom = true
+    this._jumpToBottomNow()
+    requestAnimationFrame(() => {
+      this._jumpToBottomNow()
+      this.container.classList.remove('cbx-restoring')
+      this._updateScrollBtn()
+    })
+  }
+
   _scrollBottom() {
     if (!this._pinToBottom) {
       this._updateScrollBtn()
       return
     }
+    if (this._restorePending) {
+      this._jumpToBottomNow()
+      return
+    }
     requestAnimationFrame(() => {
-      this._scroll.scrollTop = this._scroll.scrollHeight
+      this._jumpToBottomNow()
       this._updateScrollBtn()
     })
   }
@@ -2273,7 +2322,7 @@ export class CodexBlockRenderer {
   onActivated() {
     if (!this._pinToBottom) return
     requestAnimationFrame(() => {
-      this._scroll.scrollTop = this._scroll.scrollHeight
+      this._jumpToBottomNow()
       this._updateScrollBtn()
     })
   }

@@ -4358,6 +4358,15 @@ body.workspace-active .landing-overlay { display: none; }
   -webkit-overflow-scrolling: touch;
 }
 
+.cbx-container.cbx-restoring .cbx-scroll {
+  opacity: 0;
+}
+
+.cbx-container.cbx-restoring .cbr-scroll-to-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Base block */
 .cbx-block {
   border-radius: var(--radius-md);

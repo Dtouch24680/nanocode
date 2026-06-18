@@ -839,6 +839,10 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       codexSessions.set(sessionKey, cs)
     }
 
+    const hasCodexReplay = Boolean(cs.scrollback) || (Array.isArray(cs.eventHistory) && cs.eventHistory.length > 0)
+    if (hasCodexReplay && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'codex-replay-start' })) } catch {}
+    }
     if (cs.scrollback && ws.readyState === 1) {
       try { ws.send(JSON.stringify({ type: 'history', data: cs.scrollback })) } catch {}
     }
@@ -846,6 +850,9 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
       if (ws.readyState === 1) {
         try { ws.send(JSON.stringify({ type: 'codex-event', event })) } catch {}
       }
+    }
+    if (hasCodexReplay && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'codex-replay-end' })) } catch {}
     }
 
     cs.clients.add(ws)
