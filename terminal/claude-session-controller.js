@@ -6,8 +6,10 @@ import { join } from 'node:path'
 import * as sessions from './sessions.js'
 import { buildReplaySeed, buildUserReplayId } from './claude-history.js'
 import { loadCodexThreadEvents } from './codex-history.js'
+import { loadOpenCodeHistoryEvents } from './opencode-history.js'
 import { createClaudeSdkDriver } from './claude-sdk-driver.js'
 import { createCodexSdkDriver } from './codex-sdk-driver.js'
+import { createOpenCodeSdkDriver } from './opencode-sdk-driver.js'
 
 export function createClaudeSessionController({ store, home, recentAgents }) {
   const IS_WIN = platform() === 'win32'
@@ -19,6 +21,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
   // Map: sessionKey -> { claudeSessionId, clients, history, busy }
   const claudeSessions = new Map()
   const codexSessions = new Map()
+  const opencodeSessions = new Map()
   const replaySeeds = new Map()
 
   const TAB_LAUNCHERS = {
@@ -83,6 +86,10 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
 
   function codexSessionKeyFor(projectId, tabId) {
     return `${projectId}:codex:${tabId}`
+  }
+
+  function opencodeSessionKeyFor(projectId, tabId) {
+    return `${projectId}:opencode:${tabId}`
   }
 
   function setClaudeSessionId(projectId, tabId, claudeSessionId, { resetTurnCount = false } = {}) {
@@ -212,6 +219,55 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     return store.getSetting('codex_driver') === 'pty' ? 'pty' : 'sdk'
   }
 
+  // ── OpenCode event-history disk persistence ─────────────────────────────────
+  // Same pattern as codex: a JSON snapshot of cs.eventHistory survives browser
+  // refreshes and server restarts. We also lazily fetch the authoritative
+  // history from `opencode export <sessionID>` when a session has an
+  // opencodeSessionId but no local snapshot yet.
+  const opencodeHistoryDir = process.env.NANOCODE_OPENCODE_HISTORY_DIR
+    || (home ? join(home, '.nanocode', 'opencode-history') : null)
+
+  function opencodeHistoryPath(projectId, tabId) {
+    if (!opencodeHistoryDir) return null
+    return join(opencodeHistoryDir, `${projectId}__${tabId}.json`)
+  }
+
+  function loadOpenCodeHistory(path) {
+    if (!path || !existsSync(path)) return []
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8'))
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
+  }
+
+  function persistOpenCodeHistory(cs) {
+    if (!cs._persistPath) return
+    try {
+      if (opencodeHistoryDir && !existsSync(opencodeHistoryDir)) mkdirSync(opencodeHistoryDir, { recursive: true })
+      writeFileSync(cs._persistPath, JSON.stringify(cs.eventHistory))
+    } catch {}
+  }
+
+  function schedulePersistOpenCode(cs) {
+    if (!cs._persistPath) return
+    if (cs._persistTimer) return
+    cs._persistTimer = setTimeout(() => {
+      cs._persistTimer = null
+      persistOpenCodeHistory(cs)
+    }, 400)
+  }
+
+  function opencodeBroadcastEvent(cs, event, { historyOnly = false } = {}) {
+    cs.eventHistory.push(event)
+    if (cs.eventHistory.length > 500) cs.eventHistory.shift()
+    schedulePersistOpenCode(cs)
+    if (historyOnly) return
+    const msg = JSON.stringify({ type: 'opencode-event', event })
+    for (const client of cs.clients) {
+      if (client.readyState === 1) try { client.send(msg) } catch {}
+    }
+  }
+
   let dispatchClaudeTurn = null
   const sdkDriver = createClaudeSdkDriver({
     store,
@@ -225,6 +281,12 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     codexBroadcast,
     codexBroadcastEvent,
     rerunTurn: (...args) => dispatchCodexTurn(...args),
+  })
+  let dispatchOpenCodeTurn = null
+  const opencodeSdkDriver = createOpenCodeSdkDriver({
+    store,
+    opencodeBroadcastEvent,
+    rerunTurn: (...args) => dispatchOpenCodeTurn(...args),
   })
 
   let _lastGcMs = 0
@@ -656,6 +718,10 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     codexSdkDriver.runCodexTurn(cs, userText, sessionKey, cwd)
   )
 
+  dispatchOpenCodeTurn = (cs, userText, sessionKey, cwd) => (
+    opencodeSdkDriver.runOpenCodeTurn(cs, userText, sessionKey, cwd)
+  )
+
   function attachClaudeSession(ws, { projectId, tabId, project }) {
     const sessionKey = sessionKeyFor(projectId, tabId)
     let cs = claudeSessions.get(sessionKey)
@@ -911,13 +977,148 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
     })
   }
 
+  function attachOpenCodeSession(ws, { projectId, tabId, project }) {
+    const sessionKey = opencodeSessionKeyFor(projectId, tabId)
+    let cs = opencodeSessions.get(sessionKey)
+
+    if (!cs) {
+      const tab = store.getTab ? store.getTab(projectId, tabId) : null
+      const persistPath = opencodeHistoryPath(projectId, tabId)
+      const opencodeSessionId = tab?.opencodeSessionId || null
+      // Prefer our own snapshot if present (fast, offline). Otherwise lazily
+      // fetch from `opencode export` when we have a sessionID. The fetch is
+      // async; we seed cs.eventHistory with the local snapshot now and merge
+      // the export later (see _opencodeHistoryHydrated guard).
+      let eventHistory = loadOpenCodeHistory(persistPath)
+      cs = {
+        opencodeSessionId,
+        clients: new Set(),
+        eventHistory,
+        busy: false,
+        turnCount: 0,
+        cwd: project.cwd,
+        currentProc: null,
+        queue: [],
+        inputBuffer: '',
+        _persistPath: persistPath,
+        _persistTimer: null,
+        _opencodeHistoryHydrated: eventHistory.length > 0 || !opencodeSessionId,
+      }
+      opencodeSessions.set(sessionKey, cs)
+
+      // Lazily hydrate from `opencode export` if we have a sessionID but no
+      // local snapshot yet. This makes sessions created in another client (or
+      // before in-app persistence) visible on first attach.
+      if (opencodeSessionId && !eventHistory.length) {
+        loadOpenCodeHistoryEvents(home, opencodeSessionId).then((events) => {
+          if (!Array.isArray(events) || !events.length) {
+            cs._opencodeHistoryHydrated = true
+            return
+          }
+          // Only seed if still empty (a live turn may have started meanwhile).
+          if (cs.eventHistory.length === 0) {
+            cs.eventHistory = events
+            persistOpenCodeHistory(cs)
+            // Replay to the now-attached client(s).
+            const replayMsgs = events.map((ev) => JSON.stringify({ type: 'opencode-event', event: ev }))
+            for (const client of cs.clients) {
+              if (client.readyState !== 1) continue
+              try { client.send(JSON.stringify({ type: 'opencode-replay-start' })) } catch {}
+              for (const m of replayMsgs) { try { client.send(m) } catch {} }
+              try { client.send(JSON.stringify({ type: 'opencode-replay-end' })) } catch {}
+            }
+          }
+          cs._opencodeHistoryHydrated = true
+        }).catch(() => { cs._opencodeHistoryHydrated = true })
+      }
+    }
+
+    const hasOpenCodeReplay = Array.isArray(cs.eventHistory) && cs.eventHistory.length > 0
+    if (hasOpenCodeReplay && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'opencode-replay-start' })) } catch {}
+    }
+    for (const event of cs.eventHistory) {
+      if (ws.readyState === 1) {
+        // Tag replay events so the renderer can distinguish them from live
+        // events (e.g. skip the optimistic user-prompt echo on replay).
+        const replayEvent = event._replay ? event : { ...event, _replay: true }
+        try { ws.send(JSON.stringify({ type: 'opencode-event', event: replayEvent })) } catch {}
+      }
+    }
+    if (hasOpenCodeReplay && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'opencode-replay-end' })) } catch {}
+    }
+
+    cs.clients.add(ws)
+
+    const flushOpenCodeInput = (buffer) => {
+      const text = buffer.trim()
+      if (!text) return
+      dispatchOpenCodeTurn(cs, text, sessionKey, project.cwd)
+    }
+
+    const onMsg = (raw) => {
+      let msg
+      try { msg = JSON.parse(raw) } catch { return }
+
+      if (msg.type === 'input' && typeof msg.data === 'string') {
+        const data = msg.data
+        if (data === '\x03') {
+          if (cs.busy && cs.currentProc) {
+            try {
+              cs.currentProc._nanocodeInterrupted = true
+              cs.currentProc.kill('SIGINT')
+            } catch {}
+          }
+          return
+        }
+        if (data === '\x0c') {
+          cs.eventHistory = []
+          persistOpenCodeHistory(cs)
+          const clearMsg = JSON.stringify({ type: 'opencode-event', event: { type: 'clear' } })
+          for (const client of cs.clients) {
+            if (client.readyState === 1) try { client.send(clearMsg) } catch {}
+          }
+          return
+        }
+
+        cs.inputBuffer += data
+        const segments = cs.inputBuffer.split('\r')
+        cs.inputBuffer = segments.pop() || ''
+        for (const segment of segments) {
+          flushOpenCodeInput(segment)
+        }
+      } else if (msg.type === 'ping') {
+        try { ws.send(JSON.stringify({ type: 'pong', id: msg.id })) } catch {}
+      }
+    }
+
+    ws.on('message', onMsg)
+    ws.on('close', () => {
+      ws.removeListener('message', onMsg)
+      cs.clients.delete(ws)
+    })
+  }
+
   function handleInterrupt(req, res) {
     const sessionKey = sessionKeyFor(req.params.id, req.params.tabId)
     const cs = claudeSessions.get(sessionKey)
     if (!cs) {
       const codexSessionKey = codexSessionKeyFor(req.params.id, req.params.tabId)
       const codexSession = codexSessions.get(codexSessionKey)
-      if (!codexSession) return res.status(404).json({ error: 'no claude or codex session' })
+      if (!codexSession) {
+        const opencodeSessionKey = opencodeSessionKeyFor(req.params.id, req.params.tabId)
+        const opencodeSession = opencodeSessions.get(opencodeSessionKey)
+        if (!opencodeSession) return res.status(404).json({ error: 'no claude, codex, or opencode session' })
+        if (!opencodeSession.busy || !opencodeSession.currentProc) return res.json({ ok: false, reason: 'not busy' })
+        try {
+          opencodeSession.currentProc._nanocodeInterrupted = true
+          opencodeSession.currentProc.kill('SIGINT')
+          return res.json({ ok: true, force: false })
+        } catch (err) {
+          return res.status(500).json({ error: err.message })
+        }
+      }
       if (!codexSession.busy || !codexSession.currentProc) return res.json({ ok: false, reason: 'not busy' })
       try {
         codexSession.currentProc._nanocodeInterrupted = true
@@ -1018,6 +1219,12 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
         return
       }
 
+      if (tabType === 'opencode' && !project.ssh_host) {
+        console.log('[ws:attach] routing opencode to sdk bridge')
+        attachOpenCodeSession(ws, { projectId, tabId, project })
+        return
+      }
+
       const launcherFn = TAB_LAUNCHERS[tabType] || TAB_LAUNCHERS.bash
       const launchCmd = launcherFn()
 
@@ -1068,6 +1275,7 @@ export function createClaudeSessionController({ store, home, recentAgents }) {
   return {
     claudeSessions,
     codexSessions,
+    opencodeSessions,
     handleInterrupt,
     handleReset,
     handleTerminalWs,

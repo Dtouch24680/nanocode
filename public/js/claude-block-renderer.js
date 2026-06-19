@@ -37,6 +37,15 @@ import {
 } from './claude-block-renderer/dom-render.js'
 import { ReplayCache } from './claude-block-renderer/replay-cache.js'
 import { pairToolResult, stampToolUseIdentity } from './claude-block-renderer/tool-result-pair.js'
+import {
+  TOOL_FOLD_KEY,
+  TOOL_FOLD_LEVELS,
+  TOOL_FOLD_CYCLE,
+  getToolFoldLevel,
+  setToolFoldLevel,
+  applyToolFold,
+  cycleToolFold,
+} from './claude-block-renderer/fold-state.js'
 
 // ── WS constants ──────────────────────────────────────────────────────────────
 const WS_PATH = '/ws/terminal'
@@ -203,36 +212,8 @@ function getToolIcon(toolName) {
 }
 
 // ── Tool-block fold level ──────────────────────────────────────────────────────
-// Three levels (persisted in localStorage):
-//   'full'    — show tool name + full input/output content
-//   'header'  — show only the tool name header (block state)
-//   'line'    — collapse to a single thin line (default, Q4 answer C)
-//
-// Cycle order (Q2 answer A): full → header → line → full → …
-// Default is 'line' (most screen-efficient, user-requested).
-const TOOL_FOLD_KEY = 'cbr_tool_fold'
-const TOOL_FOLD_LEVELS = ['full', 'header', 'line']
-
-// 2-state click cycle: full ↔ line (header accessible via settings panel only)
-const TOOL_FOLD_CYCLE = { full: 'line', header: 'full', line: 'full' }
-
-function getToolFoldLevel() {
-  const v = localStorage.getItem(TOOL_FOLD_KEY)
-  // Default: 'line' (Q4 answer C — most screen-efficient)
-  return TOOL_FOLD_LEVELS.includes(v) ? v : 'line'
-}
-
-/**
- * Cycle a tool block's data-fold attribute through 2 states on click.
- * full → line → full → …
- * Header state is still reachable via settings panel only.
- * Works for both .cbr-block-tool and .cbr-block-tool-result articles.
- */
-function cycleToolFold(article) {
-  const cur = article.getAttribute('data-fold') || getToolFoldLevel()
-  const next = TOOL_FOLD_CYCLE[cur] || 'full'
-  article.setAttribute('data-fold', next)
-}
+// Fold state now lives in ./claude-block-renderer/fold-state.js (shared with
+// OpenCodeBlockRenderer). The constants/functions are re-imported above.
 
 // ── Subagent visibility toggles ───────────────────────────────────────────────
 // Two independent booleans (persisted in localStorage):
@@ -268,20 +249,6 @@ function setSubagentActivityVisible(val) {
     el.style.display = val ? '' : 'none'
   })
   document.dispatchEvent(new CustomEvent('cbr:subagent-activity-changed', { detail: { visible: val } }))
-}
-
-function setToolFoldLevel(level) {
-  if (!TOOL_FOLD_LEVELS.includes(level)) return
-  localStorage.setItem(TOOL_FOLD_KEY, level)
-  // Apply to all currently-rendered tool blocks in the page
-  document.querySelectorAll('.cbr-block-tool, .cbr-block-tool-result').forEach((el) => {
-    applyToolFold(el, level)
-  })
-  document.dispatchEvent(new CustomEvent('cbr:tool-fold-changed', { detail: { level } }))
-}
-
-function applyToolFold(el, level) {
-  el.setAttribute('data-fold', level || getToolFoldLevel())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

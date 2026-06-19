@@ -12,6 +12,7 @@
 import { TerminalPane } from './terminal-pane.js'
 import { ClaudeBlockRenderer } from './claude-block-renderer.js'
 import { CodexBlockRenderer } from './codex-block-renderer.js'
+import { OpenCodeBlockRenderer } from './opencode-block-renderer.js'
 import { fetchTabs, createTab, deleteTab, patchTab } from './api.js'
 
 const ACTIVE_KEY_PREFIX = 'activeTab:'
@@ -377,13 +378,17 @@ export class TabManager {
     // fall back to the legacy raw-PTY xterm view.
     const renderMode = (() => { try { return window.__nanocodeState?.renderMode || 'block' } catch { return 'block' } })()
     const codexRenderMode = (() => { try { return window.__nanocodeState?.codexRenderMode || 'block' } catch { return 'block' } })()
+    const opencodeRenderMode = (() => { try { return window.__nanocodeState?.opencodeRenderMode || 'block' } catch { return 'block' } })()
     const useClaudeRenderer = type === 'claude' && renderMode !== 'terminal'
     const useCodexRenderer = type === 'codex' && codexRenderMode !== 'terminal'
+    const useOpenCodeRenderer = type === 'opencode' && opencodeRenderMode !== 'terminal'
     let pane
     if (useClaudeRenderer) {
       pane = new ClaudeBlockRenderer(paneEl, paneOpts)
     } else if (useCodexRenderer) {
       pane = new CodexBlockRenderer(paneEl, paneOpts)
+    } else if (useOpenCodeRenderer) {
+      pane = new OpenCodeBlockRenderer(paneEl, paneOpts)
     } else {
       pane = new TerminalPane(paneEl, paneOpts)
     }

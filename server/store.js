@@ -127,6 +127,8 @@ export function createStore(filePath = ':memory:') {
       tab.claudeSessionStarted = false
     } else if (type === 'codex') {
       tab.codexThreadId = opts.codexThreadId || null
+    } else if (type === 'opencode') {
+      tab.opencodeSessionId = opts.opencodeSessionId || null
     }
     existing.push(tab)
     save()
@@ -168,7 +170,7 @@ export function createStore(filePath = ':memory:') {
     if (!data.tabs[projectId]) return null
     const tab = data.tabs[projectId].find((t) => t.id === tabId)
     if (!tab) return null
-    const allowed = ['claudeSessionId', 'claudeSessionStarted', 'codexThreadId', 'pendingQueue']
+    const allowed = ['claudeSessionId', 'claudeSessionStarted', 'codexThreadId', 'opencodeSessionId', 'pendingQueue']
     let changed = false
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(patch, key)) {

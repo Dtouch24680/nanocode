@@ -589,6 +589,7 @@ function setupChatInput() {
   // ── State ─────────────────────────────────────────────────────────────────
   let isClaudeTab = false      // is the active tab a claude tab?
   let isCodexTab = false       // is the active tab a codex tab? (N43: slash passthrough)
+  let isOpencodeTab = false    // is the active tab an opencode tab? (bubble renderer)
   let isClaudeThinking = false // is claude currently thinking?
   let isCodexThinking = false  // is codex currently thinking? (P2: visual feedback)
   let claudeSlashOpen = false  // is the slash commands dropdown open?
@@ -596,6 +597,7 @@ function setupChatInput() {
   function updateInputBarForTabType({ skipFlush = false } = {}) {
     const tabType = _activeTabType
     isClaudeTab = tabType === 'claude'
+    isOpencodeTab = tabType === 'opencode'
     isCodexTab = tabType === 'codex'
     // Agent tabs (claude/codex/cursor-agent/opencode) 都用聊天布局；只有 bash 是纯终端。
     const isAgentTab = tabType === 'claude' || tabType === 'codex' || tabType === 'agent' || tabType === 'opencode'
@@ -622,20 +624,26 @@ function setupChatInput() {
     isClaudeThinking = thinking
     const activeTabId = tabManager ? tabManager.activeId : null
     const isActiveBg = activeTabId && _bgTabIds.has(activeTabId)
-    if (isClaudeTab && thinking && !isActiveBg) {
+    // claude and opencode are turn-based agents — show Stop + BG buttons while
+    // thinking. codex keeps its own REPL-style handling (send stays enabled).
+    // opencode also keeps send visible: its driver queues messages server-side
+    // (cs.queue), so the user can type/queue follow-ups while it works.
+    const isTurnAgent = isClaudeTab || isOpencodeTab
+    const keepSendVisible = isOpencodeTab
+    if (isTurnAgent && thinking && !isActiveBg) {
       chatInput.classList.add('claude-thinking')
       // Restore stop button to default icon/state
       stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
-      stopBtn.title = 'Stop Claude (interrupt)'
+      stopBtn.title = isOpencodeTab ? 'Stop OpenCode (interrupt)' : 'Stop Claude (interrupt)'
       stopBtn.disabled = false
       stopBtn.hidden = false
       bgBtn.hidden = false
-      sendBtn.hidden = true
+      sendBtn.hidden = keepSendVisible ? false : true
     } else {
       chatInput.classList.remove('claude-thinking')
       // Result arrived — restore normal send UI.
       stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`
-      stopBtn.title = 'Stop Claude (interrupt)'
+      stopBtn.title = isOpencodeTab ? 'Stop OpenCode (interrupt)' : 'Stop Claude (interrupt)'
       stopBtn.disabled = false
       stopBtn.hidden = true
       bgBtn.hidden = true
@@ -644,6 +652,8 @@ function setupChatInput() {
       // as one combined turn (matches CLI "send all at once when idle" behaviour).
       // skipFlush=true when called from nanocode:tab-active to prevent premature
       // flush — flush must only happen on a real WS result event (b67a2b6, P0).
+      // opencode does not use the frontend pendingQueue (its driver queues
+      // server-side), so only flush for claude tabs.
       if (!thinking && isClaudeTab && _pendingQueue.length > 0 && !skipFlush) {
         const all = _pendingQueue.splice(0)
         _schedulePersist()
@@ -737,6 +747,20 @@ function setupChatInput() {
       // sendBtn.disabled intentionally NOT set for codex tabs — keep enabled
       sendBtn.title = isCodexThinking ? 'Codex is working… (send to interact)' : 'Send'
     } else {
+      updateThinkingState(!!detail.thinking)
+    }
+  })
+
+  // OpenCode thinking state — same Stop/queue UI as claude (turn-based model).
+  document.addEventListener('nanocode:opencode-thinking', (e) => {
+    const detail = e.detail || {}
+    const thinkingTabId = detail.tabId
+    if (!detail.thinking && thinkingTabId) {
+      _clearBgTab(thinkingTabId)
+    }
+    const activeId = tabManager ? tabManager.activeId : null
+    if (!activeId || thinkingTabId !== activeId) return
+    if (isOpencodeTab) {
       updateThinkingState(!!detail.thinking)
     }
   })

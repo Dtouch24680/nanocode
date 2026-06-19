@@ -5216,28 +5216,91 @@ body.workspace-active .landing-overlay { display: none; }
 }
 
 /* ── Mobile tweaks ──────────────────────────────────────────────── */
+/* Tighten padding/margin on phones to maximise screen real estate.
+   Horizontal padding is reduced so bubbles use more of the narrow viewport;
+   vertical gaps are shrunk so more turns fit on screen at once. */
 
 @media (max-width: 768px) {
-  .cbr-scroll {
-    padding: var(--s-3) var(--s-3) var(--s-5);
-    gap: var(--s-2);
+  .cbr-scroll,
+  .oc-scroll {
+    padding: var(--s-2) var(--s-2) var(--s-4);
+    gap: 6px;
   }
   .cbr-block-text {
-    padding: var(--s-2) var(--s-3);
+    padding: var(--s-2);
   }
   .cbr-text {
     font-size: 0.9rem;
+    line-height: 1.55;
   }
   .cbr-pre {
-    padding: var(--s-2) var(--s-3);
+    padding: var(--s-2);
+    margin: 0;
   }
   .cbr-code {
-    font-size: 0.75rem;
+    font-size: 0.74rem;
   }
   .cbr-table th,
   .cbr-table td {
     padding: var(--s-1) var(--s-2);
     font-size: 0.8rem;
+  }
+  /* User prompt: tighter on mobile so the user's own message stays compact */
+  .cbr-block-prompt,
+  .cbr-user-prompt {
+    padding: var(--s-1) var(--s-2);
+  }
+  .cbr-prompt-text {
+    font-size: 0.88rem;
+  }
+  /* Tool line-mode strip: minimal vertical footprint on phones */
+  .cbr-block-tool[data-fold="line"],
+  .cbr-block-tool-result[data-fold="line"] {
+    min-height: 22px;
+    margin: 0 -2px;
+  }
+  .cbr-tool-header {
+    padding: 3px 6px;
+    min-height: 28px;
+  }
+  .cbr-tool-name {
+    font-size: 0.78rem;
+  }
+  .cbr-tool-subhint--line {
+    font-size: 0.72rem;
+  }
+  .cbr-tool-body,
+  .cbr-tool-output {
+    font-size: 0.78rem;
+  }
+  .cbr-system {
+    font-size: 0.8rem;
+    padding: 2px 6px;
+  }
+  .cbr-code-header {
+    padding: 2px 6px;
+    min-height: 24px;
+  }
+  .cbr-copy-btn {
+    font-size: 0.7rem;
+    padding: 1px 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Very narrow phones: trim side padding further and shrink code */
+  .cbr-scroll,
+  .oc-scroll {
+    padding: 6px 6px var(--s-3);
+  }
+  .cbr-block-text {
+    padding: var(--s-1) var(--s-2);
+  }
+  .cbr-text {
+    font-size: 0.86rem;
+  }
+  .cbr-code {
+    font-size: 0.7rem;
   }
 }
 
