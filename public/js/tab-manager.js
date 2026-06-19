@@ -645,9 +645,10 @@ export class TabManager {
 
     let sessions = []
     try {
-      sessions = await fetch(`/api/projects/${this.projectId}/agent-sessions`).then(r => r.json())
-    } catch {
-      menu.innerHTML = `<div class="tab-resume-loading">载入失败</div>`
+      sessions = await this._fetchResumeSessions()
+    } catch (err) {
+      const detail = err?.message ? ` · ${err.message}` : ''
+      menu.innerHTML = `<div class="tab-resume-loading">载入失败${detail}</div>`
       this._positionMenu(menu, anchor)
       return
     }
@@ -708,6 +709,26 @@ export class TabManager {
       }
       document.addEventListener('click', close, true)
     }, 0)
+  }
+
+  async _fetchResumeSessions() {
+    const agentRes = await fetch(`/api/projects/${this.projectId}/agent-sessions`)
+    if (agentRes.ok) return agentRes.json()
+
+    // Backward-compatible fallback for a running server process that has not
+    // been restarted since the all-agent endpoint was added. It can still serve
+    // Claude sessions via the older route, so the picker should degrade instead
+    // of showing a hard failure.
+    if (agentRes.status === 404) {
+      const claudeRes = await fetch(`/api/projects/${this.projectId}/claude-sessions`)
+      if (claudeRes.ok) {
+        const rows = await claudeRes.json()
+        return Array.isArray(rows) ? rows.map((s) => ({ ...s, type: 'claude' })) : []
+      }
+      throw new Error(`HTTP ${claudeRes.status}`)
+    }
+
+    throw new Error(`HTTP ${agentRes.status}`)
   }
 }
 
