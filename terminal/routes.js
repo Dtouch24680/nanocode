@@ -9,6 +9,7 @@ import * as sessions from './sessions.js'
 import { createClaudeHistoryService } from './claude-history.js'
 import { createClaudeSessionController } from './claude-session-controller.js'
 import { createRecentAgentsService, extractSummary, relTimeFromMtime } from './recent-agents.js'
+import { listAgentSessions } from './agent-sessions.js'
 
 /**
  * Create terminal routes backed by the given store.
@@ -225,6 +226,28 @@ export function createTerminalRoutes(store) {
     res.json(entries.map(({ _mtimeMs, ...rest }) => rest))
   })
 
+  /**
+   * GET /api/projects/:id/agent-sessions
+   *
+   * Aggregate resumable sessions across ALL agent types (claude, codex,
+   * opencode) for this project's cwd. Each entry carries a `type` field so
+   * the client can group by agent and route the resume correctly:
+   *   { type, sessionId, summary, mtime, relTime, active, hasTab, tabId }
+   * Sorted by mtime descending.
+   */
+  router.get('/api/projects/:id/agent-sessions', async (req, res) => {
+    const project = store.getProject(req.params.id)
+    if (!project) return res.status(404).json({ error: 'project not found' })
+    try {
+      const tabs = store.listTabs(req.params.id)
+      const entries = await listAgentSessions(home, project.cwd, tabs)
+      res.json(entries)
+    } catch (err) {
+      console.error('[agent-sessions] error', err)
+      res.json([])
+    }
+  })
+
   router.post('/api/projects/:id/tabs', (req, res) => {
     const project = store.getProject(req.params.id)
     if (!project) return res.status(404).json({ error: 'project not found' })
@@ -232,12 +255,19 @@ export function createTerminalRoutes(store) {
       ? req.body.label.trim().slice(0, 40)
       : undefined
     const type = typeof req.body?.type === 'string' ? req.body.type : undefined
-    // Optional: pre-set claudeSessionId so history endpoint immediately finds the right jsonl.
-    // Used by the Recent Agents resume flow to avoid a create+patch two-step race.
+    // Optional: pre-set session IDs so history/replay endpoints immediately
+    // find the right session. Used by the resume flow to avoid a create+patch
+    // two-step race (CBR connects via WS and fetches history before PATCH lands).
     const claudeSessionId = typeof req.body?.claudeSessionId === 'string' && req.body.claudeSessionId.trim()
       ? req.body.claudeSessionId.trim()
       : undefined
-    const tab = store.createTab(req.params.id, { label, type, claudeSessionId })
+    const codexThreadId = typeof req.body?.codexThreadId === 'string' && req.body.codexThreadId.trim()
+      ? req.body.codexThreadId.trim()
+      : undefined
+    const opencodeSessionId = typeof req.body?.opencodeSessionId === 'string' && req.body.opencodeSessionId.trim()
+      ? req.body.opencodeSessionId.trim()
+      : undefined
+    const tab = store.createTab(req.params.id, { label, type, claudeSessionId, codexThreadId, opencodeSessionId })
     broadcastTabs(req.params.id)
     res.status(201).json(tab)
   })
