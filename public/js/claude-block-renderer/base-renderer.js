@@ -345,6 +345,11 @@ export class BaseBlockRenderer {
     this._reconnectAttempts = 0
     this._reconnectTimer = null
     this._pingInterval = null
+    // Outbox for user input that was sent while the WS was closed/reconnecting.
+    // Without this, _send() silently drops the message (returns false) and the
+    // user sees their bubble + a thinking spinner but never gets a reply — most
+    // commonly right after a server hot-reload, when the socket briefly flaps.
+    this._outbox = []
 
     // Thinking state
     this._thinking = false
@@ -447,6 +452,12 @@ export class BaseBlockRenderer {
           rows: 50,
         })
       }
+      // Attach has been sent (subclasses send it synchronously in _onWsOpen);
+      // now flush any input buffered while the socket was down, in order.
+      if (this._outbox.length > 0) {
+        const pending = this._outbox.splice(0)
+        for (const m of pending) this._ws.send(JSON.stringify(m))
+      }
       this._startPing()
     }
 
@@ -491,6 +502,10 @@ export class BaseBlockRenderer {
       this._ws.send(JSON.stringify(msg))
       return true
     }
+    // Buffer user input so it survives a closed/reconnecting socket; flushed in
+    // onopen. Transient/idempotent traffic (ping, attach) is fine to drop — it
+    // gets re-sent on the next open anyway.
+    if (msg && msg.type === 'input') this._outbox.push(msg)
     return false
   }
 
