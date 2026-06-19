@@ -192,7 +192,7 @@ function setupTabs(projectId) {
 // already handles the jsonl replay via ClaudeBlockRenderer.
 
 document.addEventListener('nanocode:resume-session', async (e) => {
-  const { projectId, sessionId } = e.detail || {}
+  const { projectId, sessionId, type = 'claude' } = e.detail || {}
   if (!projectId || !sessionId) return
 
   // Make sure we are in the right workspace
@@ -203,10 +203,18 @@ document.addEventListener('nanocode:resume-session', async (e) => {
 
   if (!tabManager) return
 
-  // Find a claude tab with this sessionId
+  // Each agent type stores its session ID under a different metadata field.
+  const SESSION_FIELD = {
+    claude: 'claudeSessionId',
+    codex: 'codexThreadId',
+    opencode: 'opencodeSessionId',
+  }
+  const sessionField = SESSION_FIELD[type] || SESSION_FIELD.claude
+
+  // Find an existing tab of the right type with this session ID
   try {
     const tabs = await fetch(`/api/projects/${projectId}/tabs`).then(r => r.json())
-    const match = tabs.find(t => t.type === 'claude' && t.claudeSessionId === sessionId)
+    const match = tabs.find(t => t.type === type && t[sessionField] === sessionId)
     if (match) {
       // Tab exists — just activate it
       if (tabManager.projectId === projectId) {
@@ -215,16 +223,17 @@ document.addEventListener('nanocode:resume-session', async (e) => {
         tabManager._pendingActiveId = match.id
       }
     } else {
-      // Create a new claude tab pre-loaded with this sessionId.
-      // Pass claudeSessionId in the POST body so the tab is created with the
-      // correct session ID immediately — before the WS broadcast causes the
-      // ClaudeBlockRenderer to connect and fetch history. This avoids the
-      // create+patch two-step race where CBR fetches history with the wrong
-      // (freshly-generated) UUID before the PATCH arrives.
+      // Create a new tab pre-loaded with this session ID.
+      // Pass the session ID in the POST body so the tab is created with the
+      // correct session immediately — before the WS broadcast causes the
+      // block renderer to connect and fetch history. This avoids the
+      // create+patch two-step race.
+      const body = { type, label: 'resume' }
+      body[sessionField] = sessionId
       const newTab = await fetch(`/api/projects/${projectId}/tabs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'claude', label: `resume`, claudeSessionId: sessionId }),
+        body: JSON.stringify(body),
       }).then(r => r.json())
 
       if (newTab?.id) {
