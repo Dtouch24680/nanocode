@@ -597,17 +597,23 @@ function setupChatInput() {
     const tabType = _activeTabType
     isClaudeTab = tabType === 'claude'
     isCodexTab = tabType === 'codex'
+    // Agent tabs (claude/codex/cursor-agent/opencode) 都用聊天布局；只有 bash 是纯终端。
+    const isAgentTab = tabType === 'claude' || tabType === 'codex' || tabType === 'agent' || tabType === 'opencode'
     if (isClaudeTab) {
       chatInput.placeholder = 'Message Claude… (/ for commands)'
     } else if (isCodexTab) {
       // N43: codex tab — "/" should pass through to codex, not trigger nanocode slash menu
       chatInput.placeholder = 'Send to Codex… (/ for codex commands)'
+    } else if (tabType === 'agent') {
+      chatInput.placeholder = 'Send to Cursor Agent…'
+    } else if (tabType === 'opencode') {
+      chatInput.placeholder = 'Send to OpenCode…'
     } else {
       chatInput.placeholder = 'Type a command...'
     }
     // Terminal mode (bash 等非聊天 tab)：触屏下隐藏输入框/喇叭/压缩/发送,改用终端控制键。
     const bar = document.getElementById('chat-input-bar')
-    if (bar) bar.classList.toggle('terminal-mode', !isClaudeTab && !isCodexTab)
+    if (bar) bar.classList.toggle('terminal-mode', !isAgentTab)
     // Stop btn only visible when claude is thinking
     updateThinkingState(isClaudeThinking && isClaudeTab, { skipFlush })
   }
