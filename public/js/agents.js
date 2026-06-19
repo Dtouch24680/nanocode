@@ -168,7 +168,7 @@ async function _resumeSession(entry) {
   // After a tick, dispatch the resume event so terminal-view can handle it
   setTimeout(() => {
     document.dispatchEvent(new CustomEvent('nanocode:resume-session', {
-      detail: { projectId: project.id, sessionId: entry.sessionId },
+      detail: { projectId: project.id, sessionId: entry.sessionId, type: entry.type || 'claude' },
     }))
   }, 600)
 }

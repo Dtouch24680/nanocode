@@ -136,6 +136,12 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
     this._liveTextBuffer = ''
     this._liveMessageId = null
 
+    // "Thinking…" indicator block shown between step_start and the first
+    // text/tool event. OpenCode's CLI emits the full text only when the model
+    // step completes, so without this the user sees nothing for seconds at a
+    // time and can't tell if the turn is still running or has hung.
+    this._thinkingEl = null
+
     // Pending tool_use blocks keyed by callID (so we can attach results later)
     this._pendingToolBlocks = new Map()
 
@@ -161,6 +167,10 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
     this._liveTextBuffer = ''
     this._liveMessageId = null
     this._setThinking(true)
+    // Show the thinking indicator immediately — step_start may take a moment
+    // to arrive from the opencode CLI, and without this the user sees no
+    // feedback that their message was received and is being processed.
+    this._showThinkingIndicator()
   }
 
   sendRaw(data) {
@@ -243,6 +253,7 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
   }
 
   _onDispose() {
+    this._hideThinkingIndicator()
     this._pendingToolBlocks.clear()
   }
 
@@ -314,6 +325,7 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
         this._liveTextBlock = null
         this._liveTextBuffer = ''
         this._liveMessageId = null
+        this._thinkingEl = null
         this._pendingToolBlocks.clear()
         break
       default:
@@ -333,11 +345,42 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
     }
     // Remember the messageID so text events can be associated.
     if (event.messageID) this._liveMessageId = event.messageID
+    // Show a "thinking" indicator — OpenCode doesn't stream partial text,
+    // so without this the user sees nothing while the model is working.
+    // Skip during replay (past events being re-rendered, not a live turn).
+    if (!event._replay) this._showThinkingIndicator()
+  }
+
+  _showThinkingIndicator() {
+    // Don't double-create if already showing
+    if (this._thinkingEl) return
+    const el = document.createElement('div')
+    el.className = 'oc-thinking-indicator'
+    el.innerHTML =
+      `<span class="oc-thinking-dots">` +
+      `<span class="oc-thinking-dot"></span>` +
+      `<span class="oc-thinking-dot"></span>` +
+      `<span class="oc-thinking-dot"></span>` +
+      `</span>` +
+      `<span class="oc-thinking-label">思考中…</span>`
+    this._scroll.appendChild(el)
+    this._thinkingEl = el
+    this._scrollBottom()
+  }
+
+  _hideThinkingIndicator() {
+    if (this._thinkingEl) {
+      this._thinkingEl.remove()
+      this._thinkingEl = null
+    }
   }
 
   _handleText(event) {
     const text = event.text || ''
     if (!text) return
+
+    // Text arrived — the model has finished thinking for this step.
+    this._hideThinkingIndicator()
 
     // If this text belongs to a new message (or no live block yet), start one.
     const sameMessage = event.messageID && this._liveMessageId === event.messageID
@@ -372,6 +415,9 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
     const input = state.input || {}
     const output = state.output
     const callID = event.callID
+
+    // A tool call means the model finished thinking for this step.
+    this._hideThinkingIndicator()
 
     // Build a tool-use block. opencode carries the result inline in state, so
     // when status is completed/error we render input + output together.
@@ -455,6 +501,7 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
 
   _handleStepFinish(event) {
     // Finalise any live text block
+    this._hideThinkingIndicator()
     if (this._liveTextBlock) {
       this._liveTextBlock.classList.remove('cbr-live')
       // Re-render non-streaming to fix any unclosed fences
@@ -479,6 +526,7 @@ export class OpenCodeBlockRenderer extends BaseBlockRenderer {
 
   _handleTurnCompleted(_event) {
     // Synthetic turn-completed from the driver (e.g. after interrupt cleanup)
+    this._hideThinkingIndicator()
     if (this._liveTextBlock) {
       this._liveTextBlock.classList.remove('cbr-live')
       this._liveTextBlock = null
